@@ -20,6 +20,7 @@ import json
 import logging
 import os
 import sys
+from pathlib import Path
 
 import numpy as np
 import torch
@@ -38,6 +39,7 @@ from ponychart_classifier.training import (
     OUTPUT_ONNX,
     OUTPUT_THRESHOLDS,
     PRE_RESIZE,
+    RAWIMAGE_DIR,
     RETRAIN_NEW_DATA_RATIO,
     SEED,
     VAL_SIZE,
@@ -56,6 +58,16 @@ from ponychart_classifier.training import (
 )
 
 logger = logging.getLogger(__name__)
+
+_REPO_DIR = RAWIMAGE_DIR.parent
+
+
+def _sample_path_to_key(filepath: str) -> str:
+    """將 sample 的絕對路徑轉為 labels.json 的 key。"""
+    try:
+        return str(Path(filepath).relative_to(_REPO_DIR))
+    except ValueError:
+        return f"rawimage/{os.path.basename(filepath)}"
 
 
 def main() -> None:
@@ -235,8 +247,7 @@ def main() -> None:
     # Build labels snapshot from loaded samples (filtered by file existence)
     # to stay consistent with n_orig / n_crop counts.
     current_labels = {
-        f"rawimage/{os.path.basename(p)}": labels
-        for p, labels in orig_samples + crop_samples
+        _sample_path_to_key(p): labels for p, labels in orig_samples + crop_samples
     }
     if resume_from is not None:
         labels_at_full_train = ckpt["labels_at_full_train"]

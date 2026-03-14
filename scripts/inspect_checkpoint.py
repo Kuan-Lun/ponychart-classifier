@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import os
 import sys
 from pathlib import Path
 
@@ -50,12 +49,17 @@ def inspect(path: Path = OUTPUT_CHECKPOINT) -> None:
     logger.info("Latest image ts : %s", created_at)
 
     samples = load_samples()
+    _repo_dir = RAWIMAGE_DIR.parent
     labels_current = {
-        f"rawimage/{os.path.basename(p)}": labels for p, labels in samples
+        str(Path(p).relative_to(_repo_dir)): labels for p, labels in samples
     }
 
-    # Count current images by scanning rawimage/ directory
-    all_files = [f for f in os.listdir(RAWIMAGE_DIR) if f.endswith((".png", ".jpg"))]
+    # Count current images by scanning rawimage/ directory (recursive)
+    all_files = [
+        f.name
+        for f in Path(RAWIMAGE_DIR).rglob("*")
+        if f.is_file() and f.suffix.lower() in (".png", ".jpg")
+    ]
     n_cur_orig = sum(1 for f in all_files if is_original(f))
     n_cur_crop = len(all_files) - n_cur_orig
 

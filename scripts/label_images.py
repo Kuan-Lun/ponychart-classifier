@@ -13,6 +13,7 @@ import glob
 import json
 import random
 import re
+import shutil
 import threading
 import tkinter as tk
 from collections.abc import Callable
@@ -42,6 +43,116 @@ LABEL_MAP = {
     5: "Pinkie Pie",
     6: "Applejack",
 }
+# 資料夾名稱用小寫底線格式
+_LABEL_DIR_NAMES = {
+    1: "twilight",
+    2: "rarity",
+    3: "fluttershy",
+    4: "rainbow_dash",
+    5: "pinkie_pie",
+    6: "applejack",
+}
+_UNLABELED_SUBDIR = "unlabeled"
+
+
+def _labels_to_subdir(labels: list[int]) -> str:
+    """根據標籤組合計算子資料夾相對路徑（相對於 IMAGE_DIR）。
+
+    Examples:
+        [1]    -> "1/twilight"
+        [1, 3] -> "2/twilight+fluttershy"
+        []     -> "unlabeled"
+    """
+    if not labels:
+        return _UNLABELED_SUBDIR
+    sorted_labels = sorted(set(labels))
+    n = len(sorted_labels)
+    combo = "+".join(_LABEL_DIR_NAMES[lbl] for lbl in sorted_labels)
+    return f"{n}/{combo}"
+
+
+def _target_path_for(filename: str, labels: list[int]) -> Path:
+    """計算圖片在整理後的完整路徑。"""
+    return IMAGE_DIR / _labels_to_subdir(labels) / filename
+
+
+_CONFLICT_SUBDIR = "_conflicts"
+
+
+def _file_hash(path: Path) -> str:
+    """計算檔案的 SHA-256 hash。"""
+    import hashlib
+
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(8192), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def organize_single(
+    current_path: Path,
+    labels: list[int],
+) -> Path:
+    """將單張圖片搬到正確的子資料夾，回傳新路徑。
+
+    如果已在正確位置則不搬移。
+    目標位置已有同名檔案時：
+    - hash 相同：刪除來源，視為同一檔案
+    - hash 不同：將來源搬到 _conflicts/ 資料夾
+    """
+    target = _target_path_for(current_path.name, labels)
+    if current_path == target:
+        return current_path
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if target.exists():
+        if _file_hash(current_path) == _file_hash(target):
+            # 內容相同，刪除來源即可
+            current_path.unlink()
+            return target
+        # 內容不同，搬到 _conflicts/
+        conflict_dir = IMAGE_DIR / _CONFLICT_SUBDIR
+        conflict_dir.mkdir(parents=True, exist_ok=True)
+        conflict_path = conflict_dir / current_path.name
+        # 避免 _conflicts/ 內也重複
+        n = 1
+        while conflict_path.exists():
+            stem = f"{current_path.stem}_{n}"
+            conflict_path = conflict_dir / f"{stem}{current_path.suffix}"
+            n += 1
+        shutil.move(str(current_path), str(conflict_path))
+        return conflict_path
+    shutil.move(str(current_path), str(target))
+    return target
+
+
+def dedup_images(
+    paths: list[Path],
+) -> list[tuple[Path, Path]]:
+    """找出 hash 相同的重複圖片，保留最舊的（檔名排序最小的）。
+
+    Returns:
+        list of (duplicate_to_remove, original_to_keep) pairs.
+    """
+    import hashlib
+
+    hash_map: dict[str, Path] = {}
+    duplicates: list[tuple[Path, Path]] = []
+    for p in sorted(paths):  # sorted 確保最舊的先進 hash_map
+        h = hashlib.sha256(p.read_bytes()).hexdigest()
+        if h in hash_map:
+            duplicates.append((p, hash_map[h]))
+        else:
+            hash_map[h] = p
+    return duplicates
+
+
+def _cleanup_empty_dirs(base: Path) -> None:
+    """遞迴刪除空的子資料夾。"""
+    for dirpath in sorted(base.rglob("*"), reverse=True):
+        if dirpath.is_dir() and not any(dirpath.iterdir()):
+            dirpath.rmdir()
+
 
 CHECKPOINT_FILE = _REPO_DIR / "checkpoint.pt"
 THRESHOLDS_FILE = _PKG_DIR / "thresholds.json"
@@ -71,7 +182,10 @@ class LabelStore:
             self._data = {}
 
     def _normalize(self, raw: dict[str, list[int]]) -> dict[str, list[int]]:
-        """正規化舊的 key 格式（去掉 data/ 前綴、處理絕對路徑等）。"""
+        """正規化舊的 key 格式（去掉 data/ 前綴、處理絕對路徑等）。
+
+        接受 rawimage/xxx.png 和 rawimage/1/twilight/xxx.png 兩種格式。
+        """
         norm: dict[str, list[int]] = {}
         for k, v in raw.items():
             if not isinstance(k, str):
@@ -103,6 +217,15 @@ class LabelStore:
         """刪除指定 key 的標籤。"""
         self._data.pop(key, None)
 
+    def rename_key(self, old_key: str, new_key: str) -> None:
+        """將 key 更名（搬移檔案後用）。"""
+        if old_key in self._data:
+            self._data[new_key] = self._data.pop(old_key)
+
+    def all_keys(self) -> list[str]:
+        """回傳所有 key。"""
+        return list(self._data)
+
     def purge_orphans(self, base_dir: Path) -> list[str]:
         """移除檔案不存在的孤兒 entries，回傳被清除的 keys。"""
         orphans = [k for k in self._data if not (base_dir / k).is_file()]
@@ -117,7 +240,14 @@ class LabelStore:
         )
 
     def path_to_key(self, p: Path) -> str:
-        return self._subdir + "/" + p.name
+        """將絕對路徑轉為 labels.json 的 key（相對於 repo root）。
+
+        支援子資料夾結構，例如 rawimage/1/twilight/xxx.png。
+        """
+        try:
+            return str(p.relative_to(IMAGE_DIR.parent))
+        except ValueError:
+            return self._subdir + "/" + p.name
 
 
 def is_raw_image(p: Path) -> bool:
@@ -242,6 +372,17 @@ class ImageNavigator:
             self._idx = next(i for i, p in enumerate(self._paths) if p == path)
         except StopIteration:
             pass
+
+    def replace_path(self, old_path: Path, new_path: Path) -> None:
+        """替換路徑（檔案搬移後用），保持目前索引位置。"""
+        for i, p in enumerate(self._all_paths):
+            if p == old_path:
+                self._all_paths[i] = new_path
+                break
+        for i, p in enumerate(self._paths):
+            if p == old_path:
+                self._paths[i] = new_path
+                break
 
     def remove_path(self, path: Path) -> None:
         """移除圖片並調整索引。"""
@@ -470,6 +611,12 @@ class LabelApp:
             action_frame,
             text="清理孤兒標籤",
             command=self._purge_orphans,
+        ).pack(side="left", padx=(0, 16))
+
+        tk.Button(
+            action_frame,
+            text="全部整理",
+            command=self._organize_all,
         ).pack(side="left")
 
         # Analyze button
@@ -600,7 +747,18 @@ class LabelApp:
 
     def _save(self) -> None:
         key = self.nav.current_key
+        old_path = self.nav.current_path
         self.store.set(key, self.current_labels)
+
+        # 自動搬移到正確的子資料夾
+        new_path = organize_single(old_path, self.current_labels)
+        if new_path != old_path:
+            new_key = self.store.path_to_key(new_path)
+            self.store.rename_key(key, new_key)
+            # 更新 navigator 中的路徑
+            self.nav.replace_path(old_path, new_path)
+            key = new_key
+
         self.store.save()
 
         if not self.nav.is_filtered:
@@ -668,6 +826,86 @@ class LabelApp:
             "清理孤兒標籤",
             f"已移除 {len(orphans)} 筆孤兒標籤。",
         )
+
+    def _organize_all(self) -> None:
+        """掃描所有圖片，批次搬移到正確的子資料夾（含去重）。"""
+        # --- 去重：找出 hash 相同的圖片，保留最舊的 ---
+        dups = dedup_images(list(self.nav.all_paths))
+        n_dedup = 0
+        if dups:
+            dup_lines = "\n".join(
+                f"  刪除: {d.name}  (保留: {o.name})" for d, o in dups[:20]
+            )
+            if len(dups) > 20:
+                dup_lines += "\n  ..."
+            if not messagebox.askyesno(
+                "去重",
+                f"發現 {len(dups)} 張重複圖片（SHA-256 相同）：\n\n"
+                + dup_lines
+                + "\n\n刪除重複、保留最舊的？",
+            ):
+                return
+            for dup_path, _orig in dups:
+                dup_key = self.store.path_to_key(dup_path)
+                self.store.delete(dup_key)
+                self.nav.remove_path(dup_path)
+                dup_path.unlink()
+                n_dedup += 1
+            self.store.save()
+
+        # --- 搬移到正確的子資料夾 ---
+        pending: list[tuple[Path, str]] = []  # (current_path, old_key)
+        for p in list(self.nav.all_paths):
+            key = self.store.path_to_key(p)
+            labels = self.store.get(key)
+            target = _target_path_for(p.name, labels)
+            if p != target:
+                pending.append((p, key))
+
+        if not pending and not n_dedup:
+            messagebox.showinfo("全部整理", "所有圖片已在正確位置，無重複。")
+            return
+
+        n_moved = 0
+        n_conflict = 0
+        if pending:
+            confirm = messagebox.askyesno(
+                "全部整理",
+                f"將整理 {len(pending)} 張圖片到對應的子資料夾。\n\n"
+                + "\n".join(f"  {p.name}" for p, _ in pending[:20])
+                + ("\n  ..." if len(pending) > 20 else "")
+                + "\n\n確定執行？",
+            )
+            if not confirm:
+                return
+
+            for old_path, old_key in pending:
+                labels = self.store.get(old_key)
+                new_path = organize_single(old_path, labels)
+                if new_path != old_path:
+                    new_key = self.store.path_to_key(new_path)
+                    self.store.rename_key(old_key, new_key)
+                    self.nav.replace_path(old_path, new_path)
+                    n_moved += 1
+                    if _CONFLICT_SUBDIR in new_path.parts:
+                        n_conflict += 1
+
+            self.store.save()
+
+        # 清理空資料夾
+        _cleanup_empty_dirs(IMAGE_DIR)
+
+        parts = []
+        if n_dedup:
+            parts.append(f"已刪除 {n_dedup} 張重複圖片。")
+        if n_moved:
+            parts.append(f"已搬移 {n_moved} 張圖片。")
+        if n_conflict:
+            parts.append(f"其中 {n_conflict} 張因重複被移至 {_CONFLICT_SUBDIR}/。")
+        if not parts:
+            parts.append("所有圖片已在正確位置，無重複。")
+        messagebox.showinfo("全部整理", "\n".join(parts))
+        self._refresh()
 
     def _on_filter_toggle(self) -> None:
         self._apply_filters()
@@ -1147,7 +1385,7 @@ def main() -> None:
     if not IMAGE_DIR.exists():
         messagebox.showerror("Error", f"找不到資料夾: {IMAGE_DIR}")
         return
-    paths = [Path(p) for p in glob.glob(str(IMAGE_DIR / "*"))]
+    paths = [Path(p) for p in glob.glob(str(IMAGE_DIR / "**" / "*"), recursive=True)]
     paths = [
         p
         for p in paths

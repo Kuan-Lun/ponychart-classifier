@@ -55,14 +55,23 @@ def load_samples() -> list[tuple[str, list[int]]]:
     """Load labeled samples from labels.json.
 
     Returns list of (image_path, [1-indexed labels]).
+    Supports both flat (rawimage/xxx.png) and organized
+    (rawimage/1/twilight/xxx.png) key formats.
     """
     raw = load_labels()
+    repo_dir = RAWIMAGE_DIR.parent
     samples = []
     for key, label_list in raw.items():
-        filename = key.split("/")[-1]
-        filepath = str(RAWIMAGE_DIR / filename)
-        if os.path.isfile(filepath):
-            samples.append((filepath, label_list))
+        # 嘗試以 key 的相對路徑定位檔案（支援子資料夾結構）
+        filepath_from_key = str(repo_dir / key)
+        if os.path.isfile(filepath_from_key):
+            samples.append((filepath_from_key, label_list))
+        else:
+            # Fallback: 僅用檔名在 RAWIMAGE_DIR 根目錄尋找（舊格式相容）
+            filename = key.split("/")[-1]
+            filepath = str(RAWIMAGE_DIR / filename)
+            if os.path.isfile(filepath):
+                samples.append((filepath, label_list))
     logger.info(
         "Loaded %s samples (of %s labels.json entries)",
         f"{len(samples):,}",
