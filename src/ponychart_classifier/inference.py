@@ -116,6 +116,8 @@ class PonyChartClassifier:
         ]:
             remote = self._remote_etag(filename)
             if remote is None:
+                if not Path(path).exists():
+                    self._download(path, filename)
                 _logger.warning(
                     "Could not check for updates: %s is unreachable.",
                     filename,
