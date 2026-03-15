@@ -154,7 +154,7 @@ def _cleanup_empty_dirs(base: Path) -> None:
             dirpath.rmdir()
 
 
-CHECKPOINT_FILE = _REPO_DIR / "checkpoint.pt"
+MODEL_FILE = _PKG_DIR / "model.onnx"
 THRESHOLDS_FILE = _PKG_DIR / "thresholds.json"
 
 # Suspicious sample threshold
@@ -1189,8 +1189,8 @@ class LabelApp:
         """Start model analysis in a background thread."""
         if self._analysis_thread is not None and self._analysis_thread.is_alive():
             return
-        if not CHECKPOINT_FILE.exists():
-            messagebox.showerror("Error", f"Checkpoint not found: {CHECKPOINT_FILE}")
+        if not MODEL_FILE.exists():
+            messagebox.showerror("Error", f"Model not found: {MODEL_FILE}")
             return
         if not THRESHOLDS_FILE.exists():
             messagebox.showerror("Error", f"Thresholds not found: {THRESHOLDS_FILE}")
@@ -1224,50 +1224,21 @@ class LabelApp:
     ) -> None:
         """Background thread: run model inference on all labeled images."""
         try:
-            import numpy as np
-            import torch
-
-            from ponychart_classifier.training import (
-                BACKBONE,
-                BATCH_SIZE,
-                build_model,
-                get_device,
-                get_transforms,
-                make_dataloader,
-            )
-            from ponychart_classifier.training.dataset import PonyChartDataset
-
-            device = get_device()
-            model = build_model(backbone=BACKBONE, pretrained=False).to(device)
-            ckpt = torch.load(CHECKPOINT_FILE, map_location=device, weights_only=True)
-            model.load_state_dict(ckpt["state_dict"])
-            model.eval()
-
             with open(THRESHOLDS_FILE, encoding="utf-8") as f:
                 thr_data: dict[str, float] = json.load(f)
             thresholds = [thr_data[name] for name in CLASS_NAMES_LIST]
 
-            transform = get_transforms(is_train=False)
-            dataset = PonyChartDataset(samples, transform)
-            loader = make_dataloader(
-                dataset,
-                BATCH_SIZE,
-                shuffle=False,
-                num_workers=0,
-                device=device,
-            )
-
-            all_probs_list: list[np.ndarray] = []
-            with torch.no_grad():
-                for images, _ in loader:
-                    logits = model(images.to(device))
-                    probs = torch.sigmoid(logits).cpu().numpy()
-                    all_probs_list.append(probs)
-
-            all_probs = np.concatenate(all_probs_list)
             result: dict[str, list[float]] = {}
-            for i, key in enumerate(keys):
-                result[key] = all_probs[i].tolist()
+            for (img_path, _labels), key in zip(samples, keys):
+                pred = _pkg.predict(img_path)
+                result[key] = [
+                    pred.twilight_sparkle,
+                    pred.rarity,
+                    pred.fluttershy,
+                    pred.rainbow_dash,
+                    pred.pinkie_pie,
+                    pred.applejack,
+                ]
 
             self._analysis_result = (result, thresholds)
         except Exception as e:
