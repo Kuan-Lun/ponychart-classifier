@@ -13,6 +13,7 @@ _classifier = PonyChartClassifier(
 )
 
 predict = _classifier.predict
+update = _classifier.update
 
 
 def preload() -> None:
@@ -36,4 +37,5 @@ __all__ = [
     "PredictionResult",
     "predict",
     "preload",
+    "update",
 ]

@@ -17,4 +17,6 @@ uv.lock
 
 rawimage/
 src/ponychart_classifier/model.onnx
+src/ponychart_classifier/model.onnx.etag
 src/ponychart_classifier/thresholds.json
+src/ponychart_classifier/thresholds.json.etag

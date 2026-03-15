@@ -42,11 +42,9 @@ class PonyChartClassifier:
         self._thresholds: dict[str, float] = {}
 
     @staticmethod
-    def _ensure_file(path: str, filename: str) -> None:
-        """Download *filename* from the remote host if it does not exist locally."""
+    def _download(path: str, filename: str) -> None:
+        """Download *filename* from the remote host."""
         p = Path(path)
-        if p.exists():
-            return
         p.parent.mkdir(parents=True, exist_ok=True)
         url = f"{_BASE_URL}/{filename}"
         _logger.info("Downloading %s -> %s", url, p)
@@ -62,6 +60,62 @@ class PonyChartClassifier:
                 e.headers,
                 e.fp,
             ) from None
+
+    @staticmethod
+    def _ensure_file(path: str, filename: str) -> None:
+        """Download *filename* from the remote host if it does not exist locally."""
+        if not Path(path).exists():
+            PonyChartClassifier._download(path, filename)
+            etag = PonyChartClassifier._remote_etag(filename)
+            if etag is not None:
+                PonyChartClassifier._save_etag(path, etag)
+
+    @staticmethod
+    def _remote_etag(filename: str) -> str | None:
+        """Return the ETag of *filename* on the remote host, or *None* on failure."""
+        url = f"{_BASE_URL}/{filename}"
+        req = urllib.request.Request(url, method="HEAD")
+        try:
+            with urllib.request.urlopen(req) as resp:  # noqa: S310
+                etag: str | None = resp.headers.get("ETag")
+                return etag
+        except (HTTPError, urllib.error.URLError):
+            return None
+
+    @staticmethod
+    def _local_etag(path: str) -> str | None:
+        """Read the locally stored ETag for *path*, or *None* if absent."""
+        etag_path = Path(path).with_suffix(Path(path).suffix + ".etag")
+        if etag_path.exists():
+            return etag_path.read_text(encoding="utf-8").strip()
+        return None
+
+    @staticmethod
+    def _save_etag(path: str, etag: str) -> None:
+        """Persist *etag* alongside *path*."""
+        etag_path = Path(path).with_suffix(Path(path).suffix + ".etag")
+        etag_path.write_text(etag, encoding="utf-8")
+
+    def update(self) -> bool:
+        """Check for a newer model and download it if available.
+
+        Returns *True* if the model was updated, *False* otherwise.
+        """
+        updated = False
+        for path, filename in [
+            (self._model_path, "model.onnx"),
+            (self._thresholds_path, "thresholds.json"),
+        ]:
+            remote = self._remote_etag(filename)
+            if remote is None:
+                continue
+            if remote != self._local_etag(path):
+                self._download(path, filename)
+                self._save_etag(path, remote)
+                updated = True
+        if updated:
+            self._loaded = False
+        return updated
 
     def load(self) -> None:
         """Load the ONNX model and thresholds. Safe to call multiple times."""
