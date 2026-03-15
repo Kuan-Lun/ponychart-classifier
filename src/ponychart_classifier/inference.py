@@ -48,8 +48,10 @@ class PonyChartClassifier:
         p.parent.mkdir(parents=True, exist_ok=True)
         url = f"{_BASE_URL}/{filename}"
         _logger.info("Downloading %s -> %s", url, p)
+        req = urllib.request.Request(url)
         try:
-            urllib.request.urlretrieve(url, p)  # noqa: S310
+            with urllib.request.urlopen(req) as resp:  # noqa: S310
+                p.write_bytes(resp.read())
         except HTTPError as e:
             raise HTTPError(
                 url,
@@ -59,6 +61,12 @@ class PonyChartClassifier:
                 f"If the file no longer exists, please contact the author.",
                 e.headers,
                 e.fp,
+            ) from None
+        except urllib.error.URLError as e:
+            raise RuntimeError(
+                f"Failed to download {filename}: {e.reason}\n"
+                f"You can download it manually:\n  {url} -> {p}\n"
+                f"If this is an SSL error, try: pip install certifi",
             ) from None
 
     @staticmethod
