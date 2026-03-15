@@ -14,6 +14,7 @@ dependencies = [
     "numpy>=2.4.3",
     "opencv-python>=4.13.0.92",
     "onnxruntime>=1.24.3",
+    "certifi>=2026.2.25; sys_platform == 'darwin'",
 ]
 
 classifiers = [
