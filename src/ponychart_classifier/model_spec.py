@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 from collections.abc import Sequence
 
 NUM_CLASSES = 6
@@ -20,6 +21,19 @@ INPUT_SIZE = 320
 PRE_RESIZE = 384
 
 MAX_K = 3
+
+
+@dataclasses.dataclass(frozen=True)
+class PredictionResult:
+    """Inference result with per-character scores and selected labels."""
+
+    twilight_sparkle: float
+    rarity: float
+    fluttershy: float
+    rainbow_dash: float
+    pinkie_pie: float
+    applejack: float
+    labels: frozenset[str]
 
 
 def select_predictions(

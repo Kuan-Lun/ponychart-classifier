@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
-import sys
 from typing import Any
 
 import cv2 as cv
@@ -17,6 +15,7 @@ from .model_spec import (
     IMAGENET_STD,
     INPUT_SIZE,
     PRE_RESIZE,
+    PredictionResult,
     select_predictions,
 )
 
@@ -27,7 +26,9 @@ _IMAGENET_STD = np.array(IMAGENET_STD, dtype=np.float32)
 class PonyChartClassifier:
     """Lazy-loading ONNX classifier for PonyChart images."""
 
-    def __init__(self) -> None:
+    def __init__(self, model_path: str, thresholds_path: str) -> None:
+        self._model_path = model_path
+        self._thresholds_path = thresholds_path
         self._loaded = False
         self._session: Any = None
         self._classes: list[str] = list(CLASS_NAMES)
@@ -35,18 +36,13 @@ class PonyChartClassifier:
 
     def load(self) -> None:
         """Load the ONNX model and thresholds. Safe to call multiple times."""
-        if self._loaded:
-            return
-
-        pkg_dir = os.path.dirname(__file__)
-        model_path = os.path.join(pkg_dir, "model.onnx")
-        th_path = os.path.join(pkg_dir, "thresholds.json")
-        self._session = ort.InferenceSession(
-            model_path, providers=["CPUExecutionProvider"]
-        )
-        with open(th_path, encoding="utf-8") as f:
-            self._thresholds = json.load(f)
-        self._loaded = True
+        if not self._loaded:
+            self._session = ort.InferenceSession(
+                self._model_path, providers=["CPUExecutionProvider"]
+            )
+            with open(self._thresholds_path, encoding="utf-8") as f:
+                self._thresholds = json.load(f)
+            self._loaded = True
 
     def _preprocess(self, bgr: np.ndarray[Any, Any]) -> np.ndarray[Any, Any]:
         """BGR image -> NCHW float32 tensor (matching training transforms)."""
@@ -60,13 +56,8 @@ class PonyChartClassifier:
 
     def predict(
         self, img_path: str, min_k: int = 1, max_k: int = 3
-    ) -> tuple[list[str], dict[str, float]]:
-        """Predict characters in a PonyChart image.
-
-        Returns ``(picked_names, scores)`` where *picked_names* is a list of
-        selected character names and *scores* maps every class name to its
-        sigmoid probability.
-        """
+    ) -> PredictionResult:
+        """Predict characters in a PonyChart image."""
         self.load()
         img = cv.imread(img_path, cv.IMREAD_COLOR)
         if img is None:
@@ -81,30 +72,12 @@ class PonyChartClassifier:
         thresholds = [self._thresholds.get(c, 0.5) for c in self._classes]
         indices = select_predictions(list(probs), thresholds, min_k=min_k, max_k=max_k)
         picked = [self._classes[i] for i in indices]
-        return picked, scores
-
-
-_default_classifier = PonyChartClassifier()
-
-
-def predict(
-    img_path: str, min_k: int = 1, max_k: int = 3
-) -> tuple[list[str], dict[str, float]]:
-    """Predict characters using the default classifier instance."""
-    return _default_classifier.predict(img_path, min_k=min_k, max_k=max_k)
-
-
-def preload() -> None:
-    """Pre-load the ONNX model to catch dependency issues early."""
-    try:
-        _default_classifier.load()
-    except ImportError as e:
-        msg = "onnxruntime failed to load."
-        if sys.platform == "win32" and "DLL load failed" in str(e):
-            msg += (
-                "\nPossible cause: missing Microsoft Visual C++ Redistributable."
-                "\nDownload from https://aka.ms/vs/17/release/vc_redist.x64.exe"
-            )
-        else:
-            msg += "\nPlease install: pip install onnxruntime"
-        raise RuntimeError(msg) from e
+        return PredictionResult(
+            twilight_sparkle=scores["Twilight Sparkle"],
+            rarity=scores["Rarity"],
+            fluttershy=scores["Fluttershy"],
+            rainbow_dash=scores["Rainbow Dash"],
+            pinkie_pie=scores["Pinkie Pie"],
+            applejack=scores["Applejack"],
+            labels=frozenset(picked),
+        )
