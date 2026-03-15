@@ -7,6 +7,7 @@ import logging
 import urllib.request
 from pathlib import Path
 from typing import Any
+from urllib.error import HTTPError
 
 import cv2 as cv
 import numpy as np
@@ -49,7 +50,18 @@ class PonyChartClassifier:
         p.parent.mkdir(parents=True, exist_ok=True)
         url = f"{_BASE_URL}/{filename}"
         _logger.info("Downloading %s -> %s", url, p)
-        urllib.request.urlretrieve(url, p)  # noqa: S310
+        try:
+            urllib.request.urlretrieve(url, p)  # noqa: S310
+        except HTTPError as e:
+            raise HTTPError(
+                url,
+                e.code,
+                f"Failed to download {filename} (HTTP {e.code}).\n"
+                f"You can download it manually:\n  {url} -> {p}\n"
+                f"If the file no longer exists, please contact the author.",
+                e.headers,
+                e.fp,
+            ) from None
 
     def load(self) -> None:
         """Load the ONNX model and thresholds. Safe to call multiple times."""
