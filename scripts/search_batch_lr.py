@@ -180,7 +180,7 @@ def main() -> None:
     # Load data (same split for all experiments)
     samples = load_samples()
     if not samples:
-        logger.error("No samples found. Check rawimage/ and labels.json.")
+        logger.error("No samples found. Check rawimage/ and rawimage/labels.json.")
         return
     train_idx, val_idx = group_hash_split(samples, test_size=VAL_SIZE)
     train_samples = [samples[i] for i in train_idx]

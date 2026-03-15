@@ -73,7 +73,7 @@ def main() -> None:
     # ── Load all samples ──
     all_samples = load_samples()
     if not all_samples:
-        logger.error("No samples found. Check rawimage/ and labels.json.")
+        logger.error("No samples found. Check rawimage/ and rawimage/labels.json.")
         return
     logger.info("Total samples loaded: %d", len(all_samples))
 

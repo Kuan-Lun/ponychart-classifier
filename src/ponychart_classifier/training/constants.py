@@ -26,8 +26,8 @@ PACKAGE_DIR = Path(__file__).resolve().parent.parent  # src/ponychart_classifier
 REPO_DIR = PACKAGE_DIR.parent.parent  # repo root
 
 RAWIMAGE_DIR = REPO_DIR / "rawimage"
-LABELS_FILE = REPO_DIR / "labels.json"
-OUTPUT_CHECKPOINT = REPO_DIR / "checkpoint.pt"
+LABELS_FILE = RAWIMAGE_DIR / "labels.json"
+OUTPUT_CHECKPOINT = RAWIMAGE_DIR / "checkpoint.pt"
 
 # These are shipped as package-data inside ponychart_classifier/
 OUTPUT_ONNX = PACKAGE_DIR / "model.onnx"

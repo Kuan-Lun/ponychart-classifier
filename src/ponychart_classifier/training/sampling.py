@@ -59,15 +59,14 @@ def load_samples() -> list[tuple[str, list[int]]]:
     (rawimage/1/twilight/xxx.png) key formats.
     """
     raw = load_labels()
-    repo_dir = RAWIMAGE_DIR.parent
     samples = []
     for key, label_list in raw.items():
-        # 嘗試以 key 的相對路徑定位檔案（支援子資料夾結構）
-        filepath_from_key = str(repo_dir / key)
+        # key 相對於 RAWIMAGE_DIR（例如 3/twilight/xxx.png）
+        filepath_from_key = str(RAWIMAGE_DIR / key)
         if os.path.isfile(filepath_from_key):
             samples.append((filepath_from_key, label_list))
         else:
-            # Fallback: 僅用檔名在 RAWIMAGE_DIR 根目錄尋找（舊格式相容）
+            # Fallback: 僅用檔名在 RAWIMAGE_DIR 根目錄尋找
             filename = key.split("/")[-1]
             filepath = str(RAWIMAGE_DIR / filename)
             if os.path.isfile(filepath):

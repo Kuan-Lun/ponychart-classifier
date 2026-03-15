@@ -2,7 +2,7 @@
 簡易圖片標註工具：
 - 掃描 rawimage/ 下的圖片
 - 支援 1..6 六個標籤（對應你的主題/角色等），可多選
-- 標註結果存為 labels.json ：{"rawimage/filename.png": [1,3]}
+- 標註結果存為 rawimage/labels.json ：{"1/twilight/filename.png": [1,3]}
 - 支援裁切功能：按 C 進入裁切模式，拖曳選取區域，Enter 確認存檔
 - 支援跳轉功能：按 G 或點擊計數器跳到指定圖片
 使用：
@@ -31,9 +31,9 @@ from ponychart_classifier.training.splitting import group_hash_split
 # 所有路徑以 repo root 為基準 (scripts/ 的上層)
 _REPO_DIR = Path(__file__).resolve().parent.parent
 _PKG_DIR = Path(_pkg.__file__).resolve().parent
-IMAGE_SUBDIR = "rawimage"  # labels.json 中 key 的前綴
+IMAGE_SUBDIR = "rawimage"
 IMAGE_DIR = _REPO_DIR / "rawimage"
-LABEL_FILE = _REPO_DIR / "labels.json"
+LABEL_FILE = IMAGE_DIR / "labels.json"
 MAX_SIZE = 800
 LABEL_MAP = {
     1: "Twilight Sparkle",
@@ -182,22 +182,22 @@ class LabelStore:
             self._data = {}
 
     def _normalize(self, raw: dict[str, list[int]]) -> dict[str, list[int]]:
-        """正規化舊的 key 格式（去掉 data/ 前綴、處理絕對路徑等）。
+        """正規化舊的 key 格式。
 
-        接受 rawimage/xxx.png 和 rawimage/1/twilight/xxx.png 兩種格式。
+        新格式 key 相對於 IMAGE_DIR（例如 1/twilight/xxx.png）。
+        舊格式 rawimage/... 會自動去掉前綴。
         """
         norm: dict[str, list[int]] = {}
         for k, v in raw.items():
             if not isinstance(k, str):
                 continue
             kk = k.replace("\\", "/")
+            # Strip legacy prefixes
             if kk.startswith("data/"):
                 kk = kk[len("data/") :]
-            if self._subdir + "/" not in kk and not kk.startswith(self._subdir + "/"):
-                pos = kk.find("/" + self._subdir + "/")
-                if pos != -1:
-                    kk = kk[pos + 1 :]
             if kk.startswith(self._subdir + "/"):
+                kk = kk[len(self._subdir) + 1 :]
+            if kk:
                 norm[kk] = v
         return norm
 
@@ -240,14 +240,14 @@ class LabelStore:
         )
 
     def path_to_key(self, p: Path) -> str:
-        """將絕對路徑轉為 labels.json 的 key（相對於 repo root）。
+        """將絕對路徑轉為 labels.json 的 key（相對於 IMAGE_DIR）。
 
-        支援子資料夾結構，例如 rawimage/1/twilight/xxx.png。
+        支援子資料夾結構，例如 1/twilight/xxx.png。
         """
         try:
-            return str(p.relative_to(IMAGE_DIR.parent))
+            return str(p.relative_to(IMAGE_DIR))
         except ValueError:
-            return self._subdir + "/" + p.name
+            return p.name
 
 
 def is_raw_image(p: Path) -> bool:
@@ -807,7 +807,7 @@ class LabelApp:
 
     def _purge_orphans(self) -> None:
         """清理 labels.json 中檔案不存在的孤兒 entries。"""
-        orphans = self.store.purge_orphans(_REPO_DIR)
+        orphans = self.store.purge_orphans(IMAGE_DIR)
         if not orphans:
             messagebox.showinfo("清理孤兒標籤", "沒有孤兒標籤。")
             return

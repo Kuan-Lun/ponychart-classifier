@@ -45,6 +45,7 @@ from ponychart_classifier.training import (
     VAL_SIZE,
     WEIGHT_DECAY,
     balance_crop_samples,
+    build_model,
     compute_class_rates,
     export_onnx,
     get_base_timestamp,
@@ -59,15 +60,13 @@ from ponychart_classifier.training import (
 
 logger = logging.getLogger(__name__)
 
-_REPO_DIR = RAWIMAGE_DIR.parent
-
 
 def _sample_path_to_key(filepath: str) -> str:
-    """將 sample 的絕對路徑轉為 labels.json 的 key。"""
+    """將 sample 的絕對路徑轉為 labels.json 的 key（相對於 rawimage/）。"""
     try:
-        return str(Path(filepath).relative_to(_REPO_DIR))
+        return str(Path(filepath).relative_to(RAWIMAGE_DIR))
     except ValueError:
-        return f"rawimage/{os.path.basename(filepath)}"
+        return os.path.basename(filepath)
 
 
 def main() -> None:
@@ -94,7 +93,7 @@ def main() -> None:
     # Data
     samples = load_samples()
     if not samples:
-        logger.error("No samples found. Check rawimage/ and labels.json.")
+        logger.error("No samples found. Check rawimage/ and rawimage/labels.json.")
         sys.exit(1)
 
     # Separate originals and crops, then balance crops to match original distribution
@@ -219,14 +218,27 @@ def main() -> None:
         ckpt = torch.load(resume_from, map_location=device, weights_only=True)
         prev_f1 = ckpt.get("val_f1")
         if prev_f1 is not None and best_f1 < prev_f1:
+            artifacts_exist = OUTPUT_ONNX.exists() and OUTPUT_THRESHOLDS.exists()
+            if artifacts_exist:
+                logger.warning(
+                    "Resume training val_F1 (%.4f) < previous val_F1 (%.4f). "
+                    "Skipping checkpoint/ONNX/thresholds overwrite.",
+                    best_f1,
+                    prev_f1,
+                )
+                logger.info("Done! (no files updated)")
+                return
+            # Artifacts missing — restore from checkpoint's better weights
             logger.warning(
-                "Resume training val_F1 (%.4f) < previous val_F1 (%.4f). "
-                "Skipping checkpoint/ONNX/thresholds overwrite.",
+                "Resume training val_F1 (%.4f) < previous val_F1 (%.4f), "
+                "but artifacts missing. Restoring from checkpoint.",
                 best_f1,
                 prev_f1,
             )
-            logger.info("Done! (no files updated)")
-            return
+            model = build_model(BACKBONE, pretrained=False)
+            model.load_state_dict(ckpt["state_dict"])
+            thresholds = ckpt["thresholds"]
+            best_f1 = prev_f1
 
     # Save thresholds
     thresholds_dict = dict(zip(CLASS_NAMES, thresholds))
@@ -257,6 +269,7 @@ def main() -> None:
     torch.save(
         {
             "state_dict": model.state_dict(),
+            "thresholds": thresholds,
             "val_f1": best_f1,
             "n_orig": n_orig_current,
             "n_crop": n_crop_current,

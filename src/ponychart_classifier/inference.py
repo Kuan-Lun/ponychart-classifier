@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import json
+import logging
+import urllib.request
+from pathlib import Path
 from typing import Any
 
 import cv2 as cv
@@ -19,6 +22,9 @@ from .model_spec import (
     select_predictions,
 )
 
+_BASE_URL = "https://www.csie.ntu.edu.tw/~d06922002/ponychart_classifier"
+_logger = logging.getLogger(__name__)
+
 _IMAGENET_MEAN = np.array(IMAGENET_MEAN, dtype=np.float32)
 _IMAGENET_STD = np.array(IMAGENET_STD, dtype=np.float32)
 
@@ -34,9 +40,22 @@ class PonyChartClassifier:
         self._classes: list[str] = list(CLASS_NAMES)
         self._thresholds: dict[str, float] = {}
 
+    @staticmethod
+    def _ensure_file(path: str, filename: str) -> None:
+        """Download *filename* from the remote host if it does not exist locally."""
+        p = Path(path)
+        if p.exists():
+            return
+        p.parent.mkdir(parents=True, exist_ok=True)
+        url = f"{_BASE_URL}/{filename}"
+        _logger.info("Downloading %s -> %s", url, p)
+        urllib.request.urlretrieve(url, p)  # noqa: S310
+
     def load(self) -> None:
         """Load the ONNX model and thresholds. Safe to call multiple times."""
         if not self._loaded:
+            self._ensure_file(self._model_path, "model.onnx")
+            self._ensure_file(self._thresholds_path, "thresholds.json")
             self._session = ort.InferenceSession(
                 self._model_path, providers=["CPUExecutionProvider"]
             )

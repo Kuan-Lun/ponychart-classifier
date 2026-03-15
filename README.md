@@ -39,8 +39,8 @@ ponychart-classifier/
 │   ├── search_batch_lr.py             # LR 超參數搜尋
 │   └── profile_dataloader.py          # DataLoader 效能分析
 ├── rawimage/                          # 訓練用原始圖片 (PNG)
-├── labels.json                        # 標註資料 {"rawimage/filename.png": [1,3]}
-├── checkpoint.pt                      # PyTorch checkpoint (resume 訓練用)
+│   ├── labels.json                    # 標註資料 {"1/twilight/filename.png": [1,3]}
+│   └── checkpoint.pt                  # PyTorch checkpoint (resume 訓練用)
 ├── pyproject.toml
 └── README.md
 ```
@@ -94,7 +94,7 @@ uv run python scripts/label_images.py
 - `A` / `D`: 上一張 / 下一張
 - `S`: 儲存目前標籤
 
-標註結果會即時更新到 `labels.json`。
+標註結果會即時更新到 `rawimage/labels.json`。
 
 ### 3. 訓練模型
 
