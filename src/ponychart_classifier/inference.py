@@ -24,10 +24,6 @@ _IMAGENET_MEAN = np.array(IMAGENET_MEAN, dtype=np.float32)
 _IMAGENET_STD = np.array(IMAGENET_STD, dtype=np.float32)
 
 
-def _package_dir() -> str:
-    return os.path.dirname(__file__)
-
-
 class PonyChartClassifier:
     """Lazy-loading ONNX classifier for PonyChart images."""
 
@@ -42,9 +38,9 @@ class PonyChartClassifier:
         if self._loaded:
             return
 
-        d = _package_dir()
-        model_path = os.path.join(d, "model.onnx")
-        th_path = os.path.join(d, "thresholds.json")
+        pkg_dir = os.path.dirname(__file__)
+        model_path = os.path.join(pkg_dir, "model.onnx")
+        th_path = os.path.join(pkg_dir, "thresholds.json")
         self._session = ort.InferenceSession(
             model_path, providers=["CPUExecutionProvider"]
         )
