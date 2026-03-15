@@ -66,6 +66,17 @@ pip install ponychart-classifier
 pip install -e ".[train]"
 ```
 
+## 使用方式
+
+```python
+from ponychart_classifier import predict
+
+result = predict("path/to/image.png")
+print(result.labels)            # frozenset({'Rarity', 'Fluttershy'})
+print(result.rarity)            # 0.95
+print(result.twilight_sparkle)  # 0.02
+```
+
 ## 工作流程
 
 ### 1. 收集圖片
