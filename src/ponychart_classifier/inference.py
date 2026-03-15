@@ -38,7 +38,29 @@ def _make_ssl_context() -> ssl.SSLContext:
         return ssl.create_default_context()
 
 
-_ssl_context = _make_ssl_context()
+def _make_unverified_ssl_context() -> ssl.SSLContext:
+    """Create an SSL context that skips certificate verification."""
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    return ctx
+
+
+def _urlopen(req: urllib.request.Request) -> Any:
+    """Open *req*, falling back to unverified SSL on certificate errors."""
+    try:
+        return urllib.request.urlopen(req, context=_make_ssl_context())  # noqa: S310
+    except urllib.error.URLError as first:
+        if not isinstance(first.reason, ssl.SSLError):
+            raise
+        _logger.warning(
+            "SSL verification failed (%s); retrying without verification.",
+            first.reason,
+        )
+        return urllib.request.urlopen(  # noqa: S310
+            req, context=_make_unverified_ssl_context()
+        )
+
 
 _IMAGENET_MEAN = np.array(IMAGENET_MEAN, dtype=np.float32)
 _IMAGENET_STD = np.array(IMAGENET_STD, dtype=np.float32)
@@ -64,9 +86,7 @@ class PonyChartClassifier:
         _logger.info("Downloading %s -> %s", url, p)
         req = urllib.request.Request(url)
         try:
-            with urllib.request.urlopen(
-                req, context=_ssl_context
-            ) as resp:  # noqa: S310
+            with _urlopen(req) as resp:
                 p.write_bytes(resp.read())
         except HTTPError as e:
             raise HTTPError(
@@ -100,9 +120,7 @@ class PonyChartClassifier:
         url = f"{_BASE_URL}/{filename}"
         req = urllib.request.Request(url, method="HEAD")
         try:
-            with urllib.request.urlopen(
-                req, context=_ssl_context
-            ) as resp:  # noqa: S310
+            with _urlopen(req) as resp:
                 etag: str | None = resp.headers.get("ETag")
                 return etag
         except (HTTPError, urllib.error.URLError):
