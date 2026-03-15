@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ponychart-classifier"
-version = "0.1.1"
+version = "0.2.0"
 description = "Multi-label image classifier for PonyChart character identification."
 readme = "README.md"
 authors = [{ name = "Kuan-Lun Wang" }]
