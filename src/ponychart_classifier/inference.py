@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import ssl
 import urllib.request
 from pathlib import Path
 from typing import Any
@@ -25,6 +26,19 @@ from .model_spec import (
 
 _BASE_URL = "https://www.csie.ntu.edu.tw/~d06922002/ponychart_classifier"
 _logger = logging.getLogger(__name__)
+
+
+def _make_ssl_context() -> ssl.SSLContext:
+    """Create an SSL context, preferring *certifi*'s CA bundle if available."""
+    try:
+        import certifi  # type: ignore[import-not-found]
+
+        return ssl.create_default_context(cafile=certifi.where())
+    except ImportError:
+        return ssl.create_default_context()
+
+
+_ssl_context = _make_ssl_context()
 
 _IMAGENET_MEAN = np.array(IMAGENET_MEAN, dtype=np.float32)
 _IMAGENET_STD = np.array(IMAGENET_STD, dtype=np.float32)
@@ -50,7 +64,9 @@ class PonyChartClassifier:
         _logger.info("Downloading %s -> %s", url, p)
         req = urllib.request.Request(url)
         try:
-            with urllib.request.urlopen(req) as resp:  # noqa: S310
+            with urllib.request.urlopen(
+                req, context=_ssl_context
+            ) as resp:  # noqa: S310
                 p.write_bytes(resp.read())
         except HTTPError as e:
             raise HTTPError(
@@ -84,7 +100,9 @@ class PonyChartClassifier:
         url = f"{_BASE_URL}/{filename}"
         req = urllib.request.Request(url, method="HEAD")
         try:
-            with urllib.request.urlopen(req) as resp:  # noqa: S310
+            with urllib.request.urlopen(
+                req, context=_ssl_context
+            ) as resp:  # noqa: S310
                 etag: str | None = resp.headers.get("ETag")
                 return etag
         except (HTTPError, urllib.error.URLError):
