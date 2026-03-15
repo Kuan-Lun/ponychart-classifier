@@ -10,8 +10,6 @@ ponychart-classifier/
 │   └── ponychart_classifier/          # PyPI 套件
 │       ├── __init__.py                # 公開 API (re-export model_spec)
 │       ├── model_spec.py              # 推論常數 + select_predictions()
-│       ├── model.onnx                 # ONNX 模型 (推論用)
-│       ├── thresholds.json            # 各角色的分類閾值 (推論用)
 │       └── training/                  # 訓練函式庫
 │           ├── __init__.py            # Re-export 所有 symbol
 │           ├── constants.py           # 常數與訓練超參數 (single source of truth)
@@ -69,8 +67,15 @@ pip install -e ".[train]"
 ## 使用方式
 
 ```python
-from ponychart_classifier import predict
+from ponychart_classifier import predict, preload, update
 
+# 預先載入模型（首次呼叫時會自動從遠端下載）
+preload()
+
+# 檢查並更新模型至最新版本（比對 ETag，有新版才下載）
+update()
+
+# 預測圖片中的角色
 result = predict("path/to/image.png")
 print(result.labels)            # frozenset({'Rarity', 'Fluttershy'})
 print(result.rarity)            # 0.95
