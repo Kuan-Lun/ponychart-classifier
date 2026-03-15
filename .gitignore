@@ -8,13 +8,13 @@ dist
 .DS_Store
 
 !/.gitignore
+!/.github/
+!.github/**
 !/.vscode/
 !.vscode/**
 
 uv.lock
 
 rawimage/
-labels.json
-checkpoint.pt
 src/ponychart_classifier/model.onnx
 src/ponychart_classifier/thresholds.json
