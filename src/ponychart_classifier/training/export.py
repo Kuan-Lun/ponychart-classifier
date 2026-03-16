@@ -22,10 +22,11 @@ def export_onnx(model: nn.Module, output_path: Path) -> None:
     model.eval()
     model_cpu = model.cpu()
     dummy = torch.randn(1, 3, INPUT_SIZE, INPUT_SIZE)
-    logging.getLogger("onnxruntime").setLevel(logging.WARNING)
-    logging.getLogger("onnx").setLevel(logging.WARNING)
+    for name in ("onnxruntime", "onnx", "torch.onnx", "onnxscript"):
+        logging.getLogger(name).setLevel(logging.WARNING)
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore", message="Missing annotation for parameter")
+        warnings.filterwarnings("ignore", category=FutureWarning)
         torch.onnx.export(
             model_cpu,
             (dummy,),
