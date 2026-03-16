@@ -30,7 +30,6 @@ from ponychart_classifier.training.splitting import group_hash_split
 
 # 所有路徑以 repo root 為基準 (scripts/ 的上層)
 _REPO_DIR = Path(__file__).resolve().parent.parent
-_PKG_DIR = Path(_pkg.__file__).resolve().parent
 IMAGE_SUBDIR = "rawimage"
 IMAGE_DIR = _REPO_DIR / "rawimage"
 LABEL_FILE = IMAGE_DIR / "labels.json"
@@ -153,9 +152,6 @@ def _cleanup_empty_dirs(base: Path) -> None:
         if dirpath.is_dir() and not any(dirpath.iterdir()):
             dirpath.rmdir()
 
-
-MODEL_FILE = _PKG_DIR / "model.onnx"
-THRESHOLDS_FILE = _PKG_DIR / "thresholds.json"
 
 # Suspicious sample threshold
 SUSPICIOUS_MARGIN = 0.15  # |prob - threshold| below this → ambiguous
@@ -1189,12 +1185,6 @@ class LabelApp:
         """Start model analysis in a background thread."""
         if self._analysis_thread is not None and self._analysis_thread.is_alive():
             return
-        if not MODEL_FILE.exists():
-            messagebox.showerror("Error", f"Model not found: {MODEL_FILE}")
-            return
-        if not THRESHOLDS_FILE.exists():
-            messagebox.showerror("Error", f"Thresholds not found: {THRESHOLDS_FILE}")
-            return
 
         self._analyze_btn.configure(state="disabled")
 
@@ -1224,9 +1214,8 @@ class LabelApp:
     ) -> None:
         """Background thread: run model inference on all labeled images."""
         try:
-            with open(THRESHOLDS_FILE, encoding="utf-8") as f:
-                thr_data: dict[str, float] = json.load(f)
-            thresholds = [thr_data[name] for name in CLASS_NAMES_LIST]
+            _pkg.update()
+            thresholds = _pkg.get_thresholds().as_list()
 
             result: dict[str, list[float]] = {}
             for (img_path, _labels), key in zip(samples, keys):

@@ -4,7 +4,7 @@ import os
 import sys
 
 from .inference import PonyChartClassifier
-from .model_spec import PredictionResult
+from .model_spec import ClassThresholds, PredictionResult
 
 _pkg_dir = os.path.dirname(__file__)
 _classifier = PonyChartClassifier(
@@ -14,6 +14,11 @@ _classifier = PonyChartClassifier(
 
 predict = _classifier.predict
 update = _classifier.update
+
+
+def get_thresholds() -> ClassThresholds:
+    """Return per-class thresholds, loading/downloading the model if needed."""
+    return _classifier.thresholds
 
 
 def preload() -> None:
@@ -33,8 +38,10 @@ def preload() -> None:
 
 
 __all__ = [
+    "ClassThresholds",
     "PonyChartClassifier",
     "PredictionResult",
+    "get_thresholds",
     "predict",
     "preload",
     "update",

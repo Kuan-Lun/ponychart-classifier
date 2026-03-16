@@ -20,6 +20,7 @@ from .model_spec import (
     IMAGENET_STD,
     INPUT_SIZE,
     PRE_RESIZE,
+    ClassThresholds,
     PredictionResult,
     select_predictions,
 )
@@ -166,6 +167,17 @@ class PonyChartClassifier:
         if updated:
             self._loaded = False
         return updated
+
+    @property
+    def thresholds(self) -> ClassThresholds:
+        """Per-class thresholds. Triggers model loading (and download) if needed."""
+        self.load()
+        return ClassThresholds(
+            **{
+                k: self._thresholds.get(name, 0.5)
+                for k, name in zip(ClassThresholds.__dataclass_fields__, self._classes)
+            }
+        )
 
     def load(self) -> None:
         """Load the ONNX model and thresholds. Safe to call multiple times."""

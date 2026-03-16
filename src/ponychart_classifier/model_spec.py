@@ -24,6 +24,29 @@ MAX_K = 3
 
 
 @dataclasses.dataclass(frozen=True)
+class ClassThresholds:
+    """Per-class sigmoid thresholds for multi-label prediction."""
+
+    twilight_sparkle: float
+    rarity: float
+    fluttershy: float
+    rainbow_dash: float
+    pinkie_pie: float
+    applejack: float
+
+    def as_list(self) -> list[float]:
+        """Return thresholds as a list ordered by :data:`CLASS_NAMES`."""
+        return [
+            self.twilight_sparkle,
+            self.rarity,
+            self.fluttershy,
+            self.rainbow_dash,
+            self.pinkie_pie,
+            self.applejack,
+        ]
+
+
+@dataclasses.dataclass(frozen=True)
 class PredictionResult:
     """Inference result with per-character scores and selected labels."""
 
