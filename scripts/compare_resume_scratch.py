@@ -20,11 +20,9 @@ from __future__ import annotations
 
 import copy
 import logging
-import os
 from dataclasses import dataclass
 
 import numpy as np
-import torch
 import torch.nn as nn
 
 from ponychart_classifier.training import (
@@ -36,18 +34,16 @@ from ponychart_classifier.training import (
     VAL_SIZE,
     build_groups,
     evaluate,
-    get_device,
-    get_performance_cpu_count,
-    get_transforms,
-    is_original,
-    load_samples,
+    extract_original_test_samples,
+    load_samples_or_exit,
     log_section,
-    make_dataloader,
+    make_test_loader,
     prepare_balanced_samples,
+    seed_all,
+    setup_device_and_workers,
     split_by_groups,
-    train_model,
+    train_with_seed_reset,
 )
-from ponychart_classifier.training.dataset import PonyChartDataset
 
 logging.basicConfig(
     level=logging.INFO,
@@ -121,16 +117,9 @@ def find_crossover(
 # Main
 # ---------------------------------------------------------------------------
 def main() -> None:
-    torch.manual_seed(SEED)
-    np.random.seed(SEED)
-
-    device = get_device()
-    num_workers = get_performance_cpu_count()
-    logger.info("Device: %s  Workers: %d", device, num_workers)
-
-    # ── Load all samples ──
-    all_samples = load_samples()
-    logger.info("Total samples loaded: %d", len(all_samples))
+    seed_all(SEED)
+    device, num_workers = setup_device_and_workers(logger)
+    all_samples = load_samples_or_exit(logger)
 
     # ── Build group index ──
     groups = build_groups(all_samples)
@@ -139,20 +128,11 @@ def main() -> None:
     gsp = split_by_groups(all_samples, test_size=HOLDOUT_TEST_SIZE, val_size=VAL_SIZE)
     val_gk_set = set(gsp.val)
 
-    test_indices = []
-    for gk in gsp.test:
-        for idx in groups[gk]:
-            fname = os.path.basename(all_samples[idx][0])
-            if is_original(fname):
-                test_indices.append(idx)
-    test_samples = [all_samples[i] for i in test_indices]
+    test_samples = extract_original_test_samples(all_samples, gsp.test, groups)
     logger.info("Test set (originals only): %d images", len(test_samples))
 
     # Prepare shared test loader
-    test_ds = PonyChartDataset(test_samples, get_transforms(is_train=False))
-    test_loader = make_dataloader(
-        test_ds, BATCH_SIZE, shuffle=False, num_workers=num_workers, device=device
-    )
+    test_loader = make_test_loader(test_samples, BATCH_SIZE, num_workers, device)
     criterion = nn.BCEWithLogitsLoss()
 
     # ── Collect pool samples ──
@@ -171,9 +151,7 @@ def main() -> None:
     # ── Baseline: 100% from scratch ──
     log_section(logger, "BASELINE: %d%% data from scratch", 100, width=70)
 
-    torch.manual_seed(SEED)
-    np.random.seed(SEED)
-    scratch_train_result = train_model(
+    scratch_train_result = train_with_seed_reset(
         full_train,
         full_val,
         device,
@@ -218,12 +196,11 @@ def main() -> None:
             width=70,
         )
 
-        torch.manual_seed(SEED)
-        np.random.seed(SEED)
+        seed_all(SEED)
         base_train, base_val = prepare_train_val(base_samples, SEED, val_gk_set)
         logger.info("  Base train=%d  val=%d", len(base_train), len(base_val))
 
-        base_train_result = train_model(
+        base_train_result = train_with_seed_reset(
             base_train,
             base_val,
             device,
@@ -234,9 +211,7 @@ def main() -> None:
         base_state_dict = copy.deepcopy(base_train_result.model.state_dict())
 
         # Step 2: Resume from base checkpoint with 100% data
-        torch.manual_seed(SEED)
-        np.random.seed(SEED)
-        resume_train_result = train_model(
+        resume_train_result = train_with_seed_reset(
             full_train,
             full_val,
             device,

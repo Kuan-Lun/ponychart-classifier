@@ -18,8 +18,6 @@ import logging
 import time
 from dataclasses import dataclass
 
-import numpy as np
-import torch
 import torch.nn as nn
 
 from ponychart_classifier.training import (
@@ -31,14 +29,14 @@ from ponychart_classifier.training import (
     VAL_SIZE,
     EvalResult,
     evaluate,
-    get_device,
-    get_performance_cpu_count,
     get_transforms,
-    load_samples,
+    load_samples_or_exit,
     log_section,
     make_dataloader,
-    prepare_holdout_split,
-    train_model,
+    prepare_holdout_split_logged,
+    seed_all,
+    setup_device_and_workers,
+    train_with_seed_reset,
 )
 from ponychart_classifier.training.dataset import PonyChartDataset
 
@@ -65,32 +63,15 @@ class ResolutionResult:
 
 
 def main() -> None:
-    torch.manual_seed(SEED)
-    np.random.seed(SEED)
-    rng = np.random.RandomState(SEED)
-
-    device = get_device()
-    num_workers = get_performance_cpu_count()
-    logger.info("Device: %s  Workers: %d", device, num_workers)
-
-    # ── Load all samples ──
-    all_samples = load_samples()
-    if not all_samples:
-        logger.error("No samples found. Check rawimage/ and rawimage/labels.json.")
-        return
-    logger.info("Total samples loaded: %d", len(all_samples))
+    rng = seed_all(SEED)
+    device, num_workers = setup_device_and_workers(logger)
+    all_samples = load_samples_or_exit(logger)
 
     # ── Split groups: test / val / train ──
-    split = prepare_holdout_split(
-        all_samples, rng, test_size=HOLDOUT_TEST_SIZE, val_size=VAL_SIZE
+    split = prepare_holdout_split_logged(
+        all_samples, rng, logger, test_size=HOLDOUT_TEST_SIZE, val_size=VAL_SIZE
     )
-    train_samples = split.train
-    val_samples = split.val
-    test_samples = split.test
-    logger.info("Test set (originals only): %d images", len(test_samples))
-    logger.info(
-        "Train: %s  Val: %s", f"{len(train_samples):,}", f"{len(val_samples):,}"
-    )
+    train_samples, val_samples, test_samples = split.train, split.val, split.test
 
     criterion = nn.BCEWithLogitsLoss()
 
@@ -99,8 +80,6 @@ def main() -> None:
 
     for pre_resize, input_size in RESOLUTIONS:
         label = f"{input_size}px"
-        torch.manual_seed(SEED)
-        np.random.seed(SEED)
 
         log_section(
             logger,
@@ -111,7 +90,7 @@ def main() -> None:
         )
 
         t0 = time.monotonic()
-        result = train_model(
+        result = train_with_seed_reset(
             train_samples,
             val_samples,
             device,

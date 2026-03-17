@@ -15,13 +15,10 @@ from __future__ import annotations
 
 import logging
 
-import numpy as np
-import torch
 import torch.nn as nn
 
 from ponychart_classifier.training import (
     BACKBONE,
-    BATCH_SIZE,
     CLASS_NAMES,
     HOLDOUT_TEST_SIZE,
     NUM_CLASSES,
@@ -29,16 +26,14 @@ from ponychart_classifier.training import (
     VAL_SIZE,
     compute_pos_weight,
     evaluate,
-    get_device,
-    get_performance_cpu_count,
-    get_transforms,
-    load_samples,
+    load_samples_or_exit,
     log_section,
-    make_dataloader,
-    prepare_holdout_split,
-    train_model,
+    make_test_loader,
+    prepare_holdout_split_logged,
+    seed_all,
+    setup_device_and_workers,
+    train_with_seed_reset,
 )
-from ponychart_classifier.training.dataset import PonyChartDataset
 
 logging.basicConfig(
     level=logging.INFO,
@@ -48,39 +43,22 @@ logger = logging.getLogger(__name__)
 
 
 def main() -> None:
-    torch.manual_seed(SEED)
-    np.random.seed(SEED)
-    rng = np.random.RandomState(SEED)
-
-    device = get_device()
-    num_workers = get_performance_cpu_count()
-    logger.info("Device: %s  Workers: %d", device, num_workers)
-
-    # ── Load all samples ──
-    all_samples = load_samples()
-    if not all_samples:
-        logger.error("No samples found. Check rawimage/ and rawimage/labels.json.")
-        return
-    logger.info("Total samples loaded: %d", len(all_samples))
+    rng = seed_all(SEED)
+    device, num_workers = setup_device_and_workers(logger)
+    all_samples = load_samples_or_exit(logger)
 
     # ── Split into train / val / test ──
-    split = prepare_holdout_split(
-        all_samples, rng, test_size=HOLDOUT_TEST_SIZE, val_size=VAL_SIZE
+    split = prepare_holdout_split_logged(
+        all_samples, rng, logger, test_size=HOLDOUT_TEST_SIZE, val_size=VAL_SIZE
     )
     train_samples, val_samples, test_samples = split.train, split.val, split.test
-    logger.info("Test set (originals only): %d images", len(test_samples))
-    logger.info(
-        "Train: %s  Val: %s", f"{len(train_samples):,}", f"{len(val_samples):,}"
-    )
 
     # ── Compute pos_weight from training data ──
     pw = compute_pos_weight(train_samples)
     logger.info("pos_weight: %s", dict(zip(CLASS_NAMES, pw.tolist())))
 
     # ── Experiment A: Baseline (no pos_weight) ──
-    torch.manual_seed(SEED)
-    np.random.seed(SEED)
-    result_a = train_model(
+    result_a = train_with_seed_reset(
         train_samples,
         val_samples,
         device,
@@ -92,9 +70,7 @@ def main() -> None:
     model_a, thresholds_a = result_a.model, result_a.thresholds
 
     # ── Experiment B: With pos_weight ──
-    torch.manual_seed(SEED)
-    np.random.seed(SEED)
-    train_result_b = train_model(
+    train_result_b = train_with_seed_reset(
         train_samples,
         val_samples,
         device,
@@ -108,14 +84,7 @@ def main() -> None:
 
     # ── Evaluate both on holdout test set ──
     criterion = nn.BCEWithLogitsLoss()
-    test_ds = PonyChartDataset(test_samples, get_transforms(is_train=False))
-    test_loader = make_dataloader(
-        test_ds,
-        BATCH_SIZE,
-        shuffle=False,
-        num_workers=num_workers,
-        device=device,
-    )
+    test_loader = make_test_loader(test_samples, num_workers=num_workers, device=device)
 
     result_a = evaluate(model_a, test_loader, criterion, device, thresholds_a)
     result_b = evaluate(model_b, test_loader, criterion, device, thresholds_b)

@@ -24,7 +24,6 @@ import os
 from dataclasses import dataclass
 
 import numpy as np
-import torch
 import torch.nn as nn
 
 from ponychart_classifier.training import (
@@ -38,18 +37,18 @@ from ponychart_classifier.training import (
     build_groups,
     compute_class_rates,
     evaluate,
+    extract_original_test_samples,
     get_base_timestamp,
-    get_device,
-    get_performance_cpu_count,
-    get_transforms,
     is_original,
-    load_samples,
+    load_samples_or_exit,
     log_section,
-    make_dataloader,
+    make_test_loader,
+    seed_all,
+    setup_device_and_workers,
     split_by_groups,
     train_model,
+    train_with_seed_reset,
 )
-from ponychart_classifier.training.dataset import PonyChartDataset
 
 
 @dataclass(frozen=True)
@@ -103,17 +102,9 @@ def _pearson_r(x: list[float], y: list[float]) -> float:
 # Main
 # ---------------------------------------------------------------------------
 def main() -> None:
-    torch.manual_seed(SEED)
-    np.random.seed(SEED)
-    rng = np.random.RandomState(SEED)
-
-    device = get_device()
-    num_workers = get_performance_cpu_count()
-    logger.info("Device: %s  Workers: %d", device, num_workers)
-
-    # Load all samples
-    all_samples = load_samples()
-    logger.info("Total samples loaded: %d", len(all_samples))
+    rng = seed_all(SEED)
+    device, num_workers = setup_device_and_workers(logger)
+    all_samples = load_samples_or_exit(logger)
 
     # Split groups: test / val / train
     gsp = split_by_groups(all_samples, test_size=0.10, val_size=VAL_SIZE)
@@ -123,13 +114,7 @@ def main() -> None:
     groups = build_groups(all_samples)
 
     # Test set: only original images from test groups
-    test_indices = []
-    for gk in gsp.test:
-        for idx in groups[gk]:
-            fname = os.path.basename(all_samples[idx][0])
-            if is_original(fname):
-                test_indices.append(idx)
-    test_samples = [all_samples[i] for i in test_indices]
+    test_samples = extract_original_test_samples(all_samples, gsp.test, groups)
 
     # Collect train+val indices, separate originals and crops
     train_val_indices_orig = []
@@ -193,9 +178,7 @@ def main() -> None:
     )
     model_a, thresholds_a = result_a.model, result_a.thresholds
 
-    torch.manual_seed(SEED)
-    np.random.seed(SEED)
-    result_b = train_model(
+    result_b = train_with_seed_reset(
         train_b,
         val_b,
         device,
@@ -205,9 +188,7 @@ def main() -> None:
     )
     model_b, thresholds_b = result_b.model, result_b.thresholds
 
-    torch.manual_seed(SEED)
-    np.random.seed(SEED)
-    result_c = train_model(
+    result_c = train_with_seed_reset(
         train_c,
         val_c,
         device,
@@ -218,14 +199,7 @@ def main() -> None:
     model_c, thresholds_c = result_c.model, result_c.thresholds
 
     # ---- Evaluate all on test set ----
-    test_ds = PonyChartDataset(test_samples, get_transforms(is_train=False))
-    test_loader = make_dataloader(
-        test_ds,
-        BATCH_SIZE,
-        shuffle=False,
-        num_workers=num_workers,
-        device=device,
-    )
+    test_loader = make_test_loader(test_samples, BATCH_SIZE, num_workers, device)
 
     result_a = evaluate(model_a, test_loader, criterion, device, thresholds_a)
     result_b = evaluate(model_b, test_loader, criterion, device, thresholds_b)

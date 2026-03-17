@@ -22,14 +22,11 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-import numpy as np
-import torch
 import torch.nn as nn
 from torchvision import transforms
 
 from ponychart_classifier.training import (
     BACKBONE,
-    BATCH_SIZE,
     CLASS_NAMES,
     HOLDOUT_TEST_SIZE,
     IMAGENET_MEAN,
@@ -39,16 +36,14 @@ from ponychart_classifier.training import (
     VAL_SIZE,
     EvalResult,
     evaluate,
-    get_device,
-    get_performance_cpu_count,
-    get_transforms,
-    load_samples,
+    load_samples_or_exit,
     log_section,
-    make_dataloader,
+    make_test_loader,
     prepare_holdout_split,
-    train_model,
+    seed_all,
+    setup_device_and_workers,
+    train_with_seed_reset,
 )
-from ponychart_classifier.training.dataset import PonyChartDataset
 
 logging.basicConfig(
     level=logging.INFO,
@@ -134,17 +129,9 @@ def build_train_transform(cfg: AugConfig) -> transforms.Compose:
 # Main
 # ---------------------------------------------------------------------------
 def main() -> None:
-    torch.manual_seed(SEED)
-    np.random.seed(SEED)
-    rng = np.random.RandomState(SEED)
-
-    device = get_device()
-    num_workers = get_performance_cpu_count()
-    logger.info("Device: %s  Workers: %d", device, num_workers)
-
-    # ── Load all samples ──
-    all_samples = load_samples()
-    logger.info("Total samples loaded: %d", len(all_samples))
+    rng = seed_all(SEED)
+    device, num_workers = setup_device_and_workers(logger)
+    all_samples = load_samples_or_exit(logger)
 
     # ── Split into train / val / test ──
     split = prepare_holdout_split(
@@ -161,25 +148,15 @@ def main() -> None:
     )
 
     # Test set (shared)
-    test_ds = PonyChartDataset(test_samples, get_transforms(is_train=False))
-    test_loader = make_dataloader(
-        test_ds,
-        BATCH_SIZE,
-        shuffle=False,
-        num_workers=num_workers,
-        device=device,
-    )
+    test_loader = make_test_loader(test_samples, num_workers=num_workers, device=device)
 
     criterion = nn.BCEWithLogitsLoss()
 
     # ── Run all experiments ──
     results: dict[str, EvalResult] = {}
     for cfg in EXPERIMENTS:
-        torch.manual_seed(SEED)
-        np.random.seed(SEED)
-
         train_tf = build_train_transform(cfg)
-        train_result = train_model(
+        train_result = train_with_seed_reset(
             sub_train_samples,
             val_samples,
             device,

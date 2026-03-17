@@ -65,6 +65,16 @@ from .sampling import (
     prepare_balanced_samples,
     separate_orig_crop,
 )
+from .script_utils import (  # noqa: F401
+    extract_original_test_samples,
+    load_samples_or_exit,
+    log_per_class_table,
+    make_test_loader,
+    prepare_holdout_split_logged,
+    seed_all,
+    setup_device_and_workers,
+    train_with_seed_reset,
+)
 from .splitting import (
     GroupSplit,
     HoldoutSplit,
@@ -154,4 +164,12 @@ __all__ = [
     "split_by_groups",
     "train_model",
     "train_one_epoch",
+    "extract_original_test_samples",
+    "load_samples_or_exit",
+    "log_per_class_table",
+    "make_test_loader",
+    "prepare_holdout_split_logged",
+    "seed_all",
+    "setup_device_and_workers",
+    "train_with_seed_reset",
 ]

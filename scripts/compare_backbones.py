@@ -19,7 +19,6 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-import numpy as np
 import torch
 import torch.nn as nn
 
@@ -35,12 +34,12 @@ from ponychart_classifier.training import (
     build_cached_dataset,
     evaluate,
     export_onnx,
-    get_device,
-    get_performance_cpu_count,
-    load_samples,
+    load_samples_or_exit,
     log_section,
     make_dataloader,
     prepare_holdout_split,
+    seed_all,
+    setup_device_and_workers,
     train_model,
 )
 
@@ -103,13 +102,11 @@ def run_experiment(
     Heavy objects (model, dataset, DataLoader workers) are freed
     automatically when this function returns.
     """
-    torch.manual_seed(SEED)
-    np.random.seed(SEED)
-
     config = BACKBONE_REGISTRY[backbone_name]
     log_section(logger, "BACKBONE: %s", config.description, width=70)
 
     t0 = time.monotonic()
+    seed_all(SEED)
     result = train_model(
         train_samples,
         val_samples,
@@ -158,20 +155,9 @@ def run_experiment(
 
 
 def main() -> None:
-    torch.manual_seed(SEED)
-    np.random.seed(SEED)
-    rng = np.random.RandomState(SEED)
-
-    device = get_device()
-    num_workers = get_performance_cpu_count()
-    logger.info("Device: %s  Workers: %d", device, num_workers)
-
-    # ── Load all samples ──
-    all_samples = load_samples()
-    if not all_samples:
-        logger.error("No samples found. Check rawimage/ and rawimage/labels.json.")
-        return
-    logger.info("Total samples loaded: %d", len(all_samples))
+    rng = seed_all(SEED)
+    device, num_workers = setup_device_and_workers(logger)
+    all_samples = load_samples_or_exit(logger)
 
     # ── Split into train / val / test ──
     hs: HoldoutSplit = prepare_holdout_split(

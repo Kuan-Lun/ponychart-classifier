@@ -19,10 +19,8 @@ import argparse
 import json
 import logging
 import os
-import sys
 from pathlib import Path
 
-import numpy as np
 import torch
 
 from ponychart_classifier.training import (
@@ -49,12 +47,12 @@ from ponychart_classifier.training import (
     compute_class_rates,
     export_onnx,
     get_base_timestamp,
-    get_device,
-    get_performance_cpu_count,
     group_hash_split,
     is_original,
     load_samples,
+    seed_all,
     separate_orig_crop,
+    setup_device_and_workers,
     train_model,
 )
 
@@ -83,23 +81,19 @@ def main() -> None:
         format="%(asctime)s [%(levelname)s] %(message)s",
     )
 
-    device = get_device()
-    num_workers = get_performance_cpu_count()
-    logger.info("Device: %s  DataLoader workers: %d", device, num_workers)
-
-    torch.manual_seed(SEED)
-    np.random.seed(SEED)
+    device, num_workers = setup_device_and_workers(logger)
+    seed_all(SEED)
 
     # Data
     samples = load_samples()
     if not samples:
         logger.error("No samples found. Check rawimage/ and rawimage/labels.json.")
-        sys.exit(1)
+        raise SystemExit(1)
 
     # Separate originals and crops, then balance crops to match original distribution
     orig_samples, crop_samples = separate_orig_crop(samples)
     orig_rates = compute_class_rates(orig_samples)
-    rng = np.random.RandomState(SEED)
+    rng = seed_all(SEED)
     balanced_crops = balance_crop_samples(crop_samples, orig_rates, rng)
     samples = orig_samples + balanced_crops
     logger.info(

@@ -21,7 +21,6 @@ import logging
 import time
 from dataclasses import dataclass
 
-import numpy as np
 import torch
 import torch.nn as nn
 
@@ -49,10 +48,11 @@ from ponychart_classifier.training import (
     get_device,
     get_performance_cpu_count,
     group_hash_split,
-    load_samples,
+    load_samples_or_exit,
     log_section,
     make_dataloader,
     measure_training_memory,
+    seed_all,
     train_one_epoch,
 )
 from ponychart_classifier.training.dataset import (
@@ -196,18 +196,14 @@ def run_experiment(
 
 
 def main() -> None:
-    torch.manual_seed(SEED)
-    np.random.seed(SEED)
+    seed_all(SEED)
 
     device = get_device()
     num_workers = get_performance_cpu_count()
     logger.info("Device: %s  DataLoader workers: %d", device, num_workers)
 
     # Load data (same split for all experiments)
-    samples = load_samples()
-    if not samples:
-        logger.error("No samples found. Check rawimage/ and rawimage/labels.json.")
-        return
+    samples = load_samples_or_exit(logger)
     train_idx, val_idx = group_hash_split(samples, test_size=VAL_SIZE)
     train_samples = [samples[i] for i in train_idx]
     val_samples = [samples[i] for i in val_idx]
@@ -280,8 +276,7 @@ def main() -> None:
             lr_classifier,
         )
 
-        torch.manual_seed(SEED)
-        np.random.seed(SEED)
+        seed_all(SEED)
 
         result = run_experiment(
             train_ds,

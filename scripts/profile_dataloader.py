@@ -9,7 +9,6 @@ from __future__ import annotations
 import logging
 import time
 
-import numpy as np
 import torch
 import torch.nn as nn
 
@@ -24,8 +23,9 @@ from ponychart_classifier.training import (
     get_device,
     get_performance_cpu_count,
     group_hash_split,
-    load_samples,
+    load_samples_or_exit,
     make_dataloader,
+    seed_all,
 )
 
 logging.basicConfig(
@@ -127,17 +127,13 @@ def profile_training(
 
 
 def main() -> None:
-    torch.manual_seed(SEED)
-    np.random.seed(SEED)
+    seed_all(SEED)
 
     device = get_device()
     num_workers = get_performance_cpu_count()
     logger.info("Device: %s  Workers: %d  Batch: %d", device, num_workers, BATCH_SIZE)
 
-    samples = load_samples()
-    if not samples:
-        logger.error("No samples found.")
-        return
+    samples = load_samples_or_exit(logger)
     train_idx, val_idx = group_hash_split(samples, test_size=VAL_SIZE)
     train_samples = [samples[i] for i in train_idx]
     logger.info("Train samples: %d", len(train_samples))
