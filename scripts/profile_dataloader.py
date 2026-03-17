@@ -19,15 +19,14 @@ from ponychart_classifier.training import (
     SEED,
     VAL_SIZE,
     WEIGHT_DECAY,
+    build_cached_dataset,
     build_model,
     get_device,
     get_performance_cpu_count,
-    get_transforms,
     group_hash_split,
     load_samples,
     make_dataloader,
 )
-from ponychart_classifier.training.dataset import PonyChartDataset
 
 logging.basicConfig(
     level=logging.INFO,
@@ -143,7 +142,7 @@ def main() -> None:
     train_samples = [samples[i] for i in train_idx]
     logger.info("Train samples: %d", len(train_samples))
 
-    train_ds = PonyChartDataset(train_samples, get_transforms(is_train=True))
+    train_ds = build_cached_dataset(train_samples, is_train=True)
     train_loader = make_dataloader(
         train_ds,
         BATCH_SIZE,

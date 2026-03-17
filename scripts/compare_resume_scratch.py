@@ -21,7 +21,6 @@ from __future__ import annotations
 import copy
 import logging
 import os
-from collections import defaultdict
 from typing import Any
 
 import numpy as np
@@ -35,10 +34,8 @@ from ponychart_classifier.training import (
     HOLDOUT_TEST_SIZE,
     SEED,
     VAL_SIZE,
-    balance_crop_samples,
-    compute_class_rates,
+    build_groups,
     evaluate,
-    get_base_timestamp,
     get_device,
     get_performance_cpu_count,
     get_transforms,
@@ -46,7 +43,7 @@ from ponychart_classifier.training import (
     load_samples,
     log_section,
     make_dataloader,
-    separate_orig_crop,
+    prepare_balanced_samples,
     split_by_groups,
     train_model,
 )
@@ -71,16 +68,10 @@ def prepare_train_val(
     val_gk_set: set[str],
 ) -> tuple[list[tuple[str, list[int]]], list[tuple[str, list[int]]]]:
     """Apply orig/crop balance + train/val split (same pipeline as train.py)."""
-    orig, crop = separate_orig_crop(samples)
-    orig_rates = compute_class_rates(orig)
     rng = np.random.RandomState(seed)
-    balanced_crops = balance_crop_samples(crop, orig_rates, rng)
-    balanced = orig + balanced_crops
+    balanced = prepare_balanced_samples(samples, rng)
 
-    sub_groups: dict[str, list[int]] = defaultdict(list)
-    for idx, (path, _) in enumerate(balanced):
-        base = get_base_timestamp(os.path.basename(path))
-        sub_groups[base].append(idx)
+    sub_groups = build_groups(balanced)
 
     train_samples = [
         balanced[i]
@@ -130,11 +121,7 @@ def main() -> None:
     logger.info("Total samples loaded: %d", len(all_samples))
 
     # ── Build group index ──
-    groups: dict[str, list[int]] = defaultdict(list)
-    for idx, (path, _) in enumerate(all_samples):
-        fname = os.path.basename(path)
-        base = get_base_timestamp(fname)
-        groups[base].append(idx)
+    groups = build_groups(all_samples)
 
     # ── Split: test / val / train ──
     gsp = split_by_groups(all_samples, test_size=HOLDOUT_TEST_SIZE, val_size=VAL_SIZE)

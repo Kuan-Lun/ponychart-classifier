@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import logging
 import os
-from collections import defaultdict
 from typing import Any
 
 import numpy as np
@@ -36,6 +35,7 @@ from ponychart_classifier.training import (
     SEED,
     VAL_SIZE,
     balance_crop_samples,
+    build_groups,
     compute_class_rates,
     evaluate,
     get_base_timestamp,
@@ -104,11 +104,7 @@ def main() -> None:
     val_gk_set = set(gsp.val)
 
     # Build index from base timestamp to sample indices
-    groups: dict[str, list[int]] = defaultdict(list)
-    for idx, (path, _) in enumerate(all_samples):
-        fname = os.path.basename(path)
-        base = get_base_timestamp(fname)
-        groups[base].append(idx)
+    groups = build_groups(all_samples)
 
     # Test set: only original images from test groups
     test_indices = []
@@ -143,10 +139,7 @@ def main() -> None:
     def _train_val_split(
         samples: list[tuple[str, list[int]]],
     ) -> tuple[list[tuple[str, list[int]]], list[tuple[str, list[int]]]]:
-        idx_groups: dict[str, list[int]] = defaultdict(list)
-        for idx, (path, _) in enumerate(samples):
-            base = get_base_timestamp(os.path.basename(path))
-            idx_groups[base].append(idx)
+        idx_groups = build_groups(samples)
         train = [
             samples[i]
             for gk, indices in idx_groups.items()

@@ -145,6 +145,20 @@ def balance_crop_samples(
     return list(crop_samples) + extra_samples
 
 
+def prepare_balanced_samples(
+    samples: list[tuple[str, list[int]]],
+    rng: np.random.RandomState,
+) -> list[tuple[str, list[int]]]:
+    """Separate originals and crops, then balance crops to match original distribution.
+
+    Returns the combined list of originals + balanced crops.
+    """
+    orig, crop = separate_orig_crop(samples)
+    rates = compute_class_rates(orig)
+    balanced = balance_crop_samples(crop, rates, rng)
+    return orig + balanced
+
+
 def labels_to_binary(label_list: list[int]) -> torch.Tensor:
     """Convert 1-indexed label list to binary vector."""
     vec = torch.zeros(NUM_CLASSES, dtype=torch.float32)

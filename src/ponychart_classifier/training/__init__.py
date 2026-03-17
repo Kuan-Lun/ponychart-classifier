@@ -62,9 +62,10 @@ from .sampling import (
     labels_to_binary,
     load_labels,
     load_samples,
+    prepare_balanced_samples,
     separate_orig_crop,
 )
-from .splitting import GroupSplit, group_hash_split, split_by_groups
+from .splitting import GroupSplit, build_groups, group_hash_split, split_by_groups
 from .training import (
     TrainResult,
     evaluate,
@@ -116,6 +117,7 @@ __all__ = [
     "WEIGHT_DECAY",
     "balance_crop_samples",
     "build_cached_dataset",
+    "build_groups",
     "build_data_pipeline",
     "build_model",
     "compute_cache_budget",
@@ -136,6 +138,7 @@ __all__ = [
     "log_section",
     "make_dataloader",
     "optimize_thresholds",
+    "prepare_balanced_samples",
     "separate_orig_crop",
     "split_by_groups",
     "train_model",

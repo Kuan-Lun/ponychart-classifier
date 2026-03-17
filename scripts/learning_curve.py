@@ -13,7 +13,6 @@ from __future__ import annotations
 import copy
 import logging
 import os
-from collections import defaultdict
 from typing import Any
 
 import numpy as np
@@ -27,10 +26,8 @@ from ponychart_classifier.training import (
     HOLDOUT_TEST_SIZE,
     SEED,
     VAL_SIZE,
-    balance_crop_samples,
-    compute_class_rates,
+    build_groups,
     evaluate,
-    get_base_timestamp,
     get_device,
     get_performance_cpu_count,
     get_transforms,
@@ -38,6 +35,7 @@ from ponychart_classifier.training import (
     load_samples,
     log_section,
     make_dataloader,
+    prepare_balanced_samples,
     split_by_groups,
     train_model,
 )
@@ -134,11 +132,7 @@ def main() -> None:
     logger.info("Total samples loaded: %d", len(all_samples))
 
     # Build group index
-    groups: dict[str, list[int]] = defaultdict(list)
-    for idx, (path, _) in enumerate(all_samples):
-        fname = os.path.basename(path)
-        base = get_base_timestamp(fname)
-        groups[base].append(idx)
+    groups = build_groups(all_samples)
 
     # Split: test / val / train
     gsp = split_by_groups(all_samples, test_size=HOLDOUT_TEST_SIZE, val_size=VAL_SIZE)
@@ -189,10 +183,7 @@ def main() -> None:
         selected_samples = [all_samples[i] for i in selected_indices]
 
         # Split into train / val using pre-computed group assignments
-        sub_groups: dict[str, list[int]] = defaultdict(list)
-        for idx, (path, _) in enumerate(selected_samples):
-            base = get_base_timestamp(os.path.basename(path))
-            sub_groups[base].append(idx)
+        sub_groups = build_groups(selected_samples)
 
         raw_train_samples = [
             selected_samples[i]
@@ -208,17 +199,9 @@ def main() -> None:
         ]
 
         # Crop balancing (same as train.py)
-        orig_train = [
-            s for s in raw_train_samples if is_original(os.path.basename(s[0]))
-        ]
-        crop_train = [
-            s for s in raw_train_samples if not is_original(os.path.basename(s[0]))
-        ]
-        orig_rates = compute_class_rates(orig_train)
-        balanced_crops = balance_crop_samples(
-            crop_train, orig_rates, np.random.RandomState(SEED)
+        train_samples = prepare_balanced_samples(
+            raw_train_samples, np.random.RandomState(SEED)
         )
-        train_samples = orig_train + balanced_crops
 
         pct = int(frac * 100)
         name = f"{pct}% data ({len(selected_samples)} samples)"

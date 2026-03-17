@@ -15,7 +15,6 @@ from __future__ import annotations
 import argparse
 import logging
 import os
-from collections import defaultdict
 
 import numpy as np
 import torch
@@ -29,9 +28,9 @@ from ponychart_classifier.training import (
     SEED,
     VAL_SIZE,
     balance_crop_samples,
+    build_groups,
     compute_class_rates,
     evaluate,
-    get_base_timestamp,
     get_device,
     get_performance_cpu_count,
     get_transforms,
@@ -77,10 +76,7 @@ def main() -> None:
     gsp = split_by_groups(all_samples, test_size=HOLDOUT_TEST_SIZE, val_size=VAL_SIZE)
 
     # Build group index
-    groups: dict[str, list[int]] = defaultdict(list)
-    for idx, (path, _) in enumerate(all_samples):
-        base = get_base_timestamp(os.path.basename(path))
-        groups[base].append(idx)
+    groups = build_groups(all_samples)
 
     # ── Test set: only originals from test groups ──
     test_samples = [
@@ -109,10 +105,7 @@ def main() -> None:
 
     # ── Split train/val within balanced pool ──
     val_gk_set = set(gsp.val)
-    tv_groups_inner: dict[str, list[int]] = defaultdict(list)
-    for idx, (path, _) in enumerate(train_val_balanced):
-        base = get_base_timestamp(os.path.basename(path))
-        tv_groups_inner[base].append(idx)
+    tv_groups_inner = build_groups(train_val_balanced)
 
     train_samples = [
         train_val_balanced[idx]

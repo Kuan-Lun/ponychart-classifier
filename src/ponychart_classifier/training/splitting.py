@@ -70,7 +70,7 @@ def _split_n_way(
     return buckets
 
 
-def _build_groups(
+def build_groups(
     samples: list[tuple[str, list[int]]],
 ) -> dict[str, list[int]]:
     """Build a mapping from base timestamp group key to sample indices."""
@@ -92,7 +92,7 @@ def group_hash_split(
     Each group's assignment depends only on its own key, so adding or
     removing samples never changes existing assignments.
     """
-    groups = _build_groups(samples)
+    groups = build_groups(samples)
     train_idx: list[int] = []
     val_idx: list[int] = []
     for gk, indices in groups.items():
