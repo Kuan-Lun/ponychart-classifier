@@ -43,6 +43,17 @@ from .model import build_model, measure_training_memory
 logger = logging.getLogger(__name__)
 
 
+@dataclass(frozen=True)
+class EvalResult:
+    """Result of model evaluation."""
+
+    loss: float
+    macro_f1: float
+    per_class_f1: list[float]
+    per_class_precision: list[float]
+    per_class_recall: list[float]
+
+
 @dataclass
 class TrainResult:
     """Result of a training run."""
@@ -86,8 +97,8 @@ def evaluate(
     criterion: nn.Module,
     device: torch.device,
     thresholds: list[float] | None = None,
-) -> dict[str, Any]:
-    """Evaluate model, return dict with loss, F1, precision, recall."""
+) -> EvalResult:
+    """Evaluate model, return metrics (loss, F1, precision, recall)."""
     model.eval()
     total_loss = 0.0
     all_probs: list[np.ndarray[Any, Any]] = []
@@ -123,13 +134,13 @@ def evaluate(
         per_class_precision.append(float(prec))
         per_class_recall.append(float(rec))
 
-    return {
-        "loss": total_loss / len(loader.dataset),
-        "macro_f1": float(np.mean(per_class_f1)),
-        "per_class_f1": per_class_f1,
-        "per_class_precision": per_class_precision,
-        "per_class_recall": per_class_recall,
-    }
+    return EvalResult(
+        loss=total_loss / len(loader.dataset),
+        macro_f1=float(np.mean(per_class_f1)),
+        per_class_f1=per_class_f1,
+        per_class_precision=per_class_precision,
+        per_class_recall=per_class_recall,
+    )
 
 
 @torch.no_grad()  # type: ignore[untyped-decorator]
@@ -269,7 +280,7 @@ def train_model(
                 model, train_loader, criterion, optimizer, device, label_smoothing
             )
             val_result = evaluate(model, val_loader, criterion, device)
-            val_loss = val_result["loss"]
+            val_loss = val_result.loss
             p1_marker = ""
             if val_loss < best_p1_loss - MIN_DELTA_LOSS:
                 best_p1_loss = val_loss
@@ -283,7 +294,7 @@ def train_model(
                 phase1_epochs,
                 train_loss,
                 val_loss,
-                val_result["macro_f1"],
+                val_result.macro_f1,
                 p1_marker,
             )
             if p1_patience_counter >= PHASE1_PATIENCE:
@@ -323,7 +334,7 @@ def train_model(
             model, train_loader, criterion, optimizer, device, label_smoothing
         )
         val_result = evaluate(model, val_loader, criterion, device)
-        val_f1 = val_result["macro_f1"]
+        val_f1 = val_result.macro_f1
         scheduler.step(val_f1)
 
         marker = ""
@@ -338,7 +349,7 @@ def train_model(
         if verbose:
             per_class_str = "  ".join(
                 f"{name}={f1:.4f}"
-                for name, f1 in zip(CLASS_NAMES, val_result["per_class_f1"])
+                for name, f1 in zip(CLASS_NAMES, val_result.per_class_f1)
             )
             logger.info(
                 "  Epoch %d/%d  train_loss=%.4f  val_loss=%.4f"
@@ -346,7 +357,7 @@ def train_model(
                 epoch,
                 phase2_epochs,
                 train_loss,
-                val_result["loss"],
+                val_result.loss,
                 val_f1,
                 marker,
                 per_class_str,
@@ -357,7 +368,7 @@ def train_model(
                 epoch,
                 phase2_epochs,
                 train_loss,
-                val_result["loss"],
+                val_result.loss,
                 val_f1,
                 marker,
             )
@@ -369,9 +380,9 @@ def train_model(
 
     # Log best model performance
     final_result = evaluate(model, val_loader, criterion, device)
-    logger.info("Best val F1: %.4f", final_result["macro_f1"])
+    logger.info("Best val F1: %.4f", final_result.macro_f1)
     for i, name in enumerate(CLASS_NAMES):
-        logger.info("  %s: F1=%.4f", name, final_result["per_class_f1"][i])
+        logger.info("  %s: F1=%.4f", name, final_result.per_class_f1[i])
 
     # Optimize thresholds on validation set
     thresholds = optimize_thresholds(model, val_loader, device)

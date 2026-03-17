@@ -139,20 +139,20 @@ def main() -> None:
         "Delta",
     )
     logger.info("-" * 70)
-    delta_f1 = result_b["macro_f1"] - result_a["macro_f1"]
+    delta_f1 = result_b.macro_f1 - result_a.macro_f1
     logger.info(
         "%-20s  %-18.4f  %-18.4f  %+.4f",
         "Macro F1",
-        result_a["macro_f1"],
-        result_b["macro_f1"],
+        result_a.macro_f1,
+        result_b.macro_f1,
         delta_f1,
     )
-    delta_loss = result_b["loss"] - result_a["loss"]
+    delta_loss = result_b.loss - result_a.loss
     logger.info(
         "%-20s  %-18.4f  %-18.4f  %+.4f",
         "Loss",
-        result_a["loss"],
-        result_b["loss"],
+        result_a.loss,
+        result_b.loss,
         delta_loss,
     )
 
@@ -172,17 +172,17 @@ def main() -> None:
     logger.info("  " + "-" * 75)
     deltas = []
     for i, name in enumerate(CLASS_NAMES):
-        d = result_b["per_class_f1"][i] - result_a["per_class_f1"][i]
+        d = result_b.per_class_f1[i] - result_a.per_class_f1[i]
         deltas.append(d)
         logger.info(
             "  %-20s  %-7.4f %-7.4f %-7.4f | %-7.4f %-7.4f %-7.4f | %+.4f",
             name,
-            result_a["per_class_precision"][i],
-            result_a["per_class_recall"][i],
-            result_a["per_class_f1"][i],
-            result_b["per_class_precision"][i],
-            result_b["per_class_recall"][i],
-            result_b["per_class_f1"][i],
+            result_a.per_class_precision[i],
+            result_a.per_class_recall[i],
+            result_a.per_class_f1[i],
+            result_b.per_class_precision[i],
+            result_b.per_class_recall[i],
+            result_b.per_class_f1[i],
             d,
         )
 
@@ -190,8 +190,8 @@ def main() -> None:
     log_section(logger, "SUMMARY", width=80)
     logger.info(
         "  Macro F1:  A (Baseline)=%.4f  B (pos_weight)=%.4f  Delta=%+.4f",
-        result_a["macro_f1"],
-        result_b["macro_f1"],
+        result_a.macro_f1,
+        result_b.macro_f1,
         delta_f1,
     )
 

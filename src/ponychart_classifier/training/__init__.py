@@ -74,6 +74,7 @@ from .splitting import (
     split_by_groups,
 )
 from .training import (
+    EvalResult,
     TrainResult,
     evaluate,
     optimize_thresholds,
@@ -88,6 +89,7 @@ __all__ = [
     "BackboneConfig",
     "GroupSplit",
     "HoldoutSplit",
+    "EvalResult",
     "CLASS_NAMES",
     "HOLDOUT_TEST_SIZE",
     "IMAGENET_MEAN",

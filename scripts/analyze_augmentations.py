@@ -37,6 +37,7 @@ from ponychart_classifier.training import (
     INPUT_SIZE,
     SEED,
     VAL_SIZE,
+    EvalResult,
     evaluate,
     get_device,
     get_performance_cpu_count,
@@ -172,7 +173,7 @@ def main() -> None:
     criterion = nn.BCEWithLogitsLoss()
 
     # ── Run all experiments ──
-    results: dict[str, dict[str, Any]] = {}
+    results: dict[str, EvalResult] = {}
     for cfg in EXPERIMENTS:
         torch.manual_seed(SEED)
         np.random.seed(SEED)
@@ -193,13 +194,13 @@ def main() -> None:
         logger.info(
             "  >> %s test F1=%.4f  thresholds=%s",
             cfg.name,
-            result["macro_f1"],
+            result.macro_f1,
             dict(zip(CLASS_NAMES, thresholds)),
         )
 
     # ── Print comparison table ──
-    baseline_f1 = results["none"]["macro_f1"]
-    baseline_per_class = results["none"]["per_class_f1"]
+    baseline_f1 = results["none"].macro_f1
+    baseline_per_class = results["none"].per_class_f1
 
     log_section(
         logger,
@@ -219,7 +220,7 @@ def main() -> None:
     logger.info("-" * 75)
     for cfg in EXPERIMENTS:
         r = results[cfg.name]
-        delta = r["macro_f1"] - baseline_f1
+        delta = r.macro_f1 - baseline_f1
         delta_str = f"{delta:+.4f}" if cfg.name != "none" else "baseline"
         desc_parts = []
         if cfg.hflip:
@@ -232,7 +233,7 @@ def main() -> None:
         logger.info(
             "%-12s  %-10.4f  %-10s  %s",
             cfg.name,
-            r["macro_f1"],
+            r.macro_f1,
             delta_str,
             desc,
         )
@@ -246,7 +247,7 @@ def main() -> None:
     for i, name in enumerate(CLASS_NAMES):
         row_parts = [f"  {name:<20s}"]
         for cfg in EXPERIMENTS:
-            f1 = results[cfg.name]["per_class_f1"][i]
+            f1 = results[cfg.name].per_class_f1[i]
             delta = f1 - baseline_per_class[i]
             if cfg.name == "none":
                 row_parts.append(f"  {f1:<12.4f}")
@@ -257,8 +258,8 @@ def main() -> None:
     # ── Flip analysis ──
     log_section(logger, "FLIP ANALYSIS")
 
-    hflip_delta = results["hflip"]["macro_f1"] - baseline_f1
-    vflip_delta = results["vflip"]["macro_f1"] - baseline_f1
+    hflip_delta = results["hflip"].macro_f1 - baseline_f1
+    vflip_delta = results["vflip"].macro_f1 - baseline_f1
     logger.info("  HFlip effect:  %+.4f", hflip_delta)
     logger.info("  VFlip effect:  %+.4f", vflip_delta)
 
@@ -287,8 +288,8 @@ def main() -> None:
     logger.info("  Per-class flip impact (F1 delta vs baseline):")
     logger.info("  %-20s  %-12s  %-12s", "Class", "HFlip", "VFlip")
     for i, name in enumerate(CLASS_NAMES):
-        hd = results["hflip"]["per_class_f1"][i] - baseline_per_class[i]
-        vd = results["vflip"]["per_class_f1"][i] - baseline_per_class[i]
+        hd = results["hflip"].per_class_f1[i] - baseline_per_class[i]
+        vd = results["vflip"].per_class_f1[i] - baseline_per_class[i]
         logger.info("  %-20s  %+.4f       %+.4f", name, hd, vd)
 
     # ── Rotation analysis ──
@@ -298,11 +299,11 @@ def main() -> None:
     best_rot_name = "none"
     best_rot_f1 = baseline_f1
     for rname, deg in rot_configs:
-        delta = results[rname]["macro_f1"] - baseline_f1
-        rot_f1 = results[rname]["macro_f1"]
+        delta = results[rname].macro_f1 - baseline_f1
+        rot_f1 = results[rname].macro_f1
         logger.info("  Rotation %3d: %+.4f (F1=%.4f)", deg, delta, rot_f1)
-        if results[rname]["macro_f1"] > best_rot_f1:
-            best_rot_f1 = results[rname]["macro_f1"]
+        if results[rname].macro_f1 > best_rot_f1:
+            best_rot_f1 = results[rname].macro_f1
             best_rot_name = rname
 
     if best_rot_name == "none":
@@ -323,14 +324,14 @@ def main() -> None:
     for i, name in enumerate(CLASS_NAMES):
         deltas = []
         for rname, _ in rot_configs:
-            d = results[rname]["per_class_f1"][i] - baseline_per_class[i]
+            d = results[rname].per_class_f1[i] - baseline_per_class[i]
             deltas.append(d)
         logger.info("  %-20s  %+.4f     %+.4f     %+.4f", name, *deltas)
 
     # ── Combined vs individual ──
     log_section(logger, "COMBINED EFFECT ANALYSIS")
 
-    current_delta = results["current"]["macro_f1"] - baseline_f1
+    current_delta = results["current"].macro_f1 - baseline_f1
     sum_individual = hflip_delta + vflip_delta + (best_rot_f1 - baseline_f1)
     interaction = current_delta - sum_individual
 
@@ -347,12 +348,12 @@ def main() -> None:
     # ── Final recommendation ──
     log_section(logger, "RECOMMENDATION")
 
-    best_name = max(results, key=lambda k: results[k]["macro_f1"])
+    best_name = max(results, key=lambda k: results[k].macro_f1)
     best_result = results[best_name]
     logger.info(
         "  最佳實驗: %s (Macro F1=%.4f)",
         best_name,
-        best_result["macro_f1"],
+        best_result.macro_f1,
     )
     logger.info("")
 
@@ -378,7 +379,7 @@ def main() -> None:
 
     # 與目前設定比較
     logger.info("")
-    diff = best_result["macro_f1"] - results["current"]["macro_f1"]
+    diff = best_result.macro_f1 - results["current"].macro_f1
     if abs(diff) < 0.003:
         logger.info("  目前設定 (current) 已接近最佳，無需調整")
     elif diff > 0:

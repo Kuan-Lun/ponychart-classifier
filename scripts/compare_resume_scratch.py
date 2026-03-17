@@ -176,7 +176,7 @@ def main() -> None:
         device,
         scratch_train_result.thresholds,
     )
-    scratch_f1 = scratch_result["macro_f1"]
+    scratch_f1 = scratch_result.macro_f1
     logger.info(">> Baseline scratch F1: %.4f", scratch_f1)
 
     # ── Per-fraction experiments ──
@@ -241,22 +241,22 @@ def main() -> None:
             resume_train_result.thresholds,
         )
 
-        delta = scratch_f1 - resume_result["macro_f1"]
+        delta = scratch_f1 - resume_result.macro_f1
         experiment_results.append(
             {
                 "fraction": frac,
                 "base_n": len(base_samples),
                 "new_n": new_n,
                 "new_ratio": new_ratio,
-                "resume_f1": resume_result["macro_f1"],
-                "resume_per_class_f1": resume_result["per_class_f1"],
+                "resume_f1": resume_result.macro_f1,
+                "resume_per_class_f1": resume_result.per_class_f1,
                 "delta": delta,
             }
         )
         logger.info(
             ">> Base %d%%: resume_f1=%.4f  scratch_f1=%.4f  delta=%+.4f",
             pct,
-            resume_result["macro_f1"],
+            resume_result.macro_f1,
             scratch_f1,
             delta,
         )
@@ -311,7 +311,7 @@ def main() -> None:
         row = f"  {name:<20s}"
         for r in experiment_results:
             class_delta = (
-                scratch_result["per_class_f1"][i] - r["resume_per_class_f1"][i]
+                scratch_result.per_class_f1[i] - r["resume_per_class_f1"][i]
             )
             row += f"  {class_delta:+.4f}  "
         logger.info(row)
@@ -345,7 +345,7 @@ def main() -> None:
     warned = False
     for i, name in enumerate(CLASS_NAMES):
         class_delta = (
-            scratch_result["per_class_f1"][i] - worst_r["resume_per_class_f1"][i]
+            scratch_result.per_class_f1[i] - worst_r["resume_per_class_f1"][i]
         )
         if class_delta > 0.03:
             logger.info(

@@ -263,16 +263,16 @@ def main() -> None:
     logger.info(
         "%-20s  %-14.4f  %-14.4f  %-14.4f",
         "Macro F1",
-        result_a["macro_f1"],
-        result_b["macro_f1"],
-        result_c["macro_f1"],
+        result_a.macro_f1,
+        result_b.macro_f1,
+        result_c.macro_f1,
     )
     logger.info(
         "%-20s  %-14.4f  %-14.4f  %-14.4f",
         "Loss",
-        result_a["loss"],
-        result_b["loss"],
-        result_c["loss"],
+        result_a.loss,
+        result_b.loss,
+        result_c.loss,
     )
 
     logger.info("")
@@ -295,22 +295,22 @@ def main() -> None:
             "  %-20s  %-7.4f %-7.4f %-7.4f | %-7.4f %-7.4f %-7.4f"
             " | %-7.4f %-7.4f %-7.4f",
             name,
-            result_a["per_class_precision"][i],
-            result_a["per_class_recall"][i],
-            result_a["per_class_f1"][i],
-            result_b["per_class_precision"][i],
-            result_b["per_class_recall"][i],
-            result_b["per_class_f1"][i],
-            result_c["per_class_precision"][i],
-            result_c["per_class_recall"][i],
-            result_c["per_class_f1"][i],
+            result_a.per_class_precision[i],
+            result_a.per_class_recall[i],
+            result_a.per_class_f1[i],
+            result_b.per_class_precision[i],
+            result_b.per_class_recall[i],
+            result_b.per_class_f1[i],
+            result_c.per_class_precision[i],
+            result_c.per_class_recall[i],
+            result_c.per_class_f1[i],
         )
 
     # ── Effect decomposition ──
     log_section(logger, "EFFECT DECOMPOSITION", width=80)
-    total_effect = result_a["macro_f1"] - result_b["macro_f1"]
-    augment_effect = result_c["macro_f1"] - result_b["macro_f1"]
-    bias_effect = result_a["macro_f1"] - result_c["macro_f1"]
+    total_effect = result_a.macro_f1 - result_b.macro_f1
+    augment_effect = result_c.macro_f1 - result_b.macro_f1
+    bias_effect = result_a.macro_f1 - result_c.macro_f1
     logger.info(
         "  A vs B (total effect = augmentation + bias): %+.4f",
         total_effect,
@@ -333,9 +333,9 @@ def main() -> None:
     )
     f1_diff_ab = []
     for i, name in enumerate(CLASS_NAMES):
-        ab = result_a["per_class_f1"][i] - result_b["per_class_f1"][i]
-        cb = result_c["per_class_f1"][i] - result_b["per_class_f1"][i]
-        ac = result_a["per_class_f1"][i] - result_c["per_class_f1"][i]
+        ab = result_a.per_class_f1[i] - result_b.per_class_f1[i]
+        cb = result_c.per_class_f1[i] - result_b.per_class_f1[i]
+        ac = result_a.per_class_f1[i] - result_c.per_class_f1[i]
         f1_diff_ab.append(ab)
         logger.info(
             "  %-20s  %+.1f%%     %+.4f     %+.4f     %+.4f",
@@ -350,8 +350,7 @@ def main() -> None:
     log_section(logger, "CORRELATION ANALYSIS", width=80)
     r_ab = _pearson_r(bias_per_class, f1_diff_ab)
     f1_diff_ac = [
-        result_a["per_class_f1"][i] - result_c["per_class_f1"][i]
-        for i in range(NUM_CLASSES)
+        result_a.per_class_f1[i] - result_c.per_class_f1[i] for i in range(NUM_CLASSES)
     ]
     r_ac = _pearson_r(bias_per_class, f1_diff_ac)
     ab_hint = (
@@ -371,9 +370,9 @@ def main() -> None:
     log_section(logger, "SUMMARY", width=80)
     logger.info(
         "  Macro F1:  A=%.4f  B=%.4f  C=%.4f",
-        result_a["macro_f1"],
-        result_b["macro_f1"],
-        result_c["macro_f1"],
+        result_a.macro_f1,
+        result_b.macro_f1,
+        result_c.macro_f1,
     )
     logger.info("  Total effect   (A-B): %+.4f", total_effect)
     logger.info("  Augment effect (C-B): %+.4f", augment_effect)
@@ -419,9 +418,9 @@ def main() -> None:
     recommendations: list[dict[str, Any]] = []
     max_crop = max(crop_counts_per_class) if crop_counts_per_class else 1
     for i in range(NUM_CLASSES):
-        cb = result_c["per_class_f1"][i] - result_b["per_class_f1"][i]
-        ab = result_a["per_class_f1"][i] - result_b["per_class_f1"][i]
-        b_f1 = result_b["per_class_f1"][i]
+        cb = result_c.per_class_f1[i] - result_b.per_class_f1[i]
+        ab = result_a.per_class_f1[i] - result_b.per_class_f1[i]
+        b_f1 = result_b.per_class_f1[i]
         crop_n = crop_counts_per_class[i]
         target_n = target_per_class[i]
         deficit = max(target_n - crop_n, 0)

@@ -219,18 +219,22 @@ def main() -> None:
         prev_state_dict = copy.deepcopy(model.state_dict())
 
         # Evaluate on shared test set
-        result = evaluate(model, test_loader, criterion, device, thresholds)
-        result["fraction"] = frac
-        result["n_samples"] = len(selected_samples)
-        result["n_train"] = len(train_samples)
-        result["n_val"] = len(val_samples)
-        result["thresholds"] = thresholds
-        experiment_results.append(result)
+        eval_result = evaluate(model, test_loader, criterion, device, thresholds)
+        experiment_results.append(
+            {
+                "eval_result": eval_result,
+                "fraction": frac,
+                "n_samples": len(selected_samples),
+                "n_train": len(train_samples),
+                "n_val": len(val_samples),
+                "thresholds": thresholds,
+            }
+        )
 
         logger.info(
             ">> %s: test Macro F1=%.4f  thresholds=%s",
             name,
-            result["macro_f1"],
+            eval_result.macro_f1,
             dict(zip(CLASS_NAMES, thresholds)),
         )
 
@@ -255,7 +259,7 @@ def main() -> None:
     prev_f1 = 0.0
     for r in experiment_results:
         pct_str = f"{int(r['fraction'] * 100)}%"
-        delta = r["macro_f1"] - prev_f1 if prev_f1 > 0 else 0.0
+        delta = r["eval_result"].macro_f1 - prev_f1 if prev_f1 > 0 else 0.0
         delta_str = f"{delta:+.4f}" if prev_f1 > 0 else "---"
         logger.info(
             "%-8s  %-10d  %-8d  %-8d  %-10.4f  %-10s",
@@ -263,10 +267,10 @@ def main() -> None:
             r["n_samples"],
             r["n_train"],
             r["n_val"],
-            r["macro_f1"],
+            r["eval_result"].macro_f1,
             delta_str,
         )
-        prev_f1 = r["macro_f1"]
+        prev_f1 = r["eval_result"].macro_f1
 
     # Per-class F1 table
     logger.info("")
@@ -302,7 +306,7 @@ def main() -> None:
     log_section(logger, "POWER-LAW EXTRAPOLATION")
 
     ns = [r["n_samples"] for r in experiment_results]
-    macro_f1s = [r["macro_f1"] for r in experiment_results]
+    macro_f1s = [r["eval_result"].macro_f1 for r in experiment_results]
 
     # Macro F1 extrapolation
     params = fit_power_law(ns, macro_f1s)
@@ -375,13 +379,13 @@ def main() -> None:
     logger.info("  " + "-" * 80)
 
     for i, name in enumerate(CLASS_NAMES):
-        f1_first = experiment_results[0]["per_class_f1"][i]
-        f1_last = experiment_results[-1]["per_class_f1"][i]
+        f1_first = experiment_results[0]["eval_result"].per_class_f1[i]
+        f1_last = experiment_results[-1]["eval_result"].per_class_f1[i]
         gain = f1_last - f1_first
 
         # Slope between last two points (marginal gain)
         if len(experiment_results) >= 2:
-            f1_prev = experiment_results[-2]["per_class_f1"][i]
+            f1_prev = experiment_results[-2]["eval_result"].per_class_f1[i]
             n_prev = experiment_results[-2]["n_samples"]
             n_last = experiment_results[-1]["n_samples"]
             slope = (f1_last - f1_prev) / max(n_last - n_prev, 1) * 100
@@ -424,7 +428,7 @@ def main() -> None:
     logger.info("  " + "-" * (20 + 2 + 8 + (2 + 8) * len(extras) + 12))
 
     for i, name in enumerate(CLASS_NAMES):
-        class_f1s = [r["per_class_f1"][i] for r in experiment_results]
+        class_f1s = [r["eval_result"].per_class_f1[i] for r in experiment_results]
         class_params = fit_power_law(ns, class_f1s)
         if class_params is not None:
             asymptote = class_params[0]

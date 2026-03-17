@@ -18,7 +18,6 @@ import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 import numpy as np
 import torch
@@ -31,6 +30,7 @@ from ponychart_classifier.training import (
     HOLDOUT_TEST_SIZE,
     SEED,
     VAL_SIZE,
+    EvalResult,
     HoldoutSplit,
     build_cached_dataset,
     evaluate,
@@ -58,11 +58,11 @@ BACKBONES = [
 ]
 
 
-@dataclass
+@dataclass(frozen=True)
 class ExperimentResult:
     """Results from a single backbone experiment."""
 
-    test_result: dict[str, Any]
+    test_result: EvalResult
     thresholds: list[float]
     param_count: int
     onnx_size_mb: float
@@ -149,7 +149,7 @@ def run_experiment(
     logger.info(
         ">> %s: test Macro F1=%.4f  params=%dK  ONNX=%.1fMB  time=%.0fs",
         backbone_name,
-        test_result["macro_f1"],
+        test_result.macro_f1,
         param_count // 1000,
         onnx_size,
         train_time,
@@ -214,7 +214,7 @@ def main() -> None:
         logger.info(
             "  %-22s  %-10.4f  %-10s  %-10s  %-10s  %s",
             name,
-            tr["macro_f1"],
+            tr.macro_f1,
             f"{r.param_count / 1e6:.1f}M",
             f"{r.onnx_size_mb:.1f}MB",
             f"{r.train_time_s:.0f}s",
@@ -233,7 +233,7 @@ def main() -> None:
     for i, cls_name in enumerate(CLASS_NAMES):
         row = f"  {cls_name:<20s}"
         for name in BACKBONES:
-            f1 = results[name].test_result["per_class_f1"][i]
+            f1 = results[name].test_result.per_class_f1[i]
             row += f"  {f1:<22.4f}"
         logger.info(row)
 
@@ -247,9 +247,9 @@ def main() -> None:
             logger.info(
                 "    %-20s  P=%.4f  R=%.4f  F1=%.4f",
                 cls_name,
-                tr["per_class_precision"][i],
-                tr["per_class_recall"][i],
-                tr["per_class_f1"][i],
+                tr.per_class_precision[i],
+                tr.per_class_recall[i],
+                tr.per_class_f1[i],
             )
 
     # ── Recommendation ──
@@ -257,10 +257,10 @@ def main() -> None:
 
     best_name = max(
         BACKBONES,
-        key=lambda n: results[n].test_result["macro_f1"],
+        key=lambda n: results[n].test_result.macro_f1,
     )
     best_r = results[best_name]
-    best_f1 = best_r.test_result["macro_f1"]
+    best_f1 = best_r.test_result.macro_f1
 
     logger.info("  Best backbone: %s (Macro F1=%.4f)", best_name, best_f1)
     logger.info("")
@@ -268,7 +268,7 @@ def main() -> None:
     # Compare each to best
     for name in BACKBONES:
         r = results[name]
-        f1 = r.test_result["macro_f1"]
+        f1 = r.test_result.macro_f1
         diff = f1 - best_f1
         if name == best_name:
             logger.info("  * %s: F1=%.4f (BEST)", name, f1)
@@ -278,10 +278,10 @@ def main() -> None:
     # Efficiency analysis
     logger.info("")
     logger.info("  Efficiency analysis:")
-    small_f1 = results["mobilenet_v3_small"].test_result["macro_f1"]
+    small_f1 = results["mobilenet_v3_small"].test_result.macro_f1
     for name in BACKBONES:
         r = results[name]
-        f1 = r.test_result["macro_f1"]
+        f1 = r.test_result.macro_f1
         gain = f1 - small_f1
         size_ratio = r.onnx_size_mb / results["mobilenet_v3_small"].onnx_size_mb
         time_ratio = r.train_time_s / results["mobilenet_v3_small"].train_time_s

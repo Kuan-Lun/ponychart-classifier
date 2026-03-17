@@ -20,7 +20,7 @@ from .sampling import get_base_timestamp, is_original, prepare_balanced_samples
 _HASH_MODULUS = 1000
 
 
-@dataclass
+@dataclass(frozen=True)
 class GroupSplit:
     """Result of a hash-based group split."""
 
@@ -150,7 +150,7 @@ logger = logging.getLogger(__name__)
 _Sample = tuple[str, list[int]]
 
 
-@dataclass
+@dataclass(frozen=True)
 class HoldoutSplit:
     """Ready-to-use train / val / test sample lists for holdout evaluation."""
 

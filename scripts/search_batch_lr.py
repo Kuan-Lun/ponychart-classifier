@@ -148,12 +148,12 @@ def run_experiment(
     for epoch in range(1, SEARCH_PHASE2_EPOCHS + 1):
         train_one_epoch(model, train_loader, criterion, optimizer, device)
         val_result = evaluate(model, val_loader, criterion, device)
-        val_f1 = val_result["macro_f1"]
+        val_f1 = val_result.macro_f1
         scheduler.step(val_f1)
 
         if val_f1 > best_f1 + MIN_DELTA_F1:
             best_f1 = val_f1
-            best_per_class = list(val_result["per_class_f1"])
+            best_per_class = list(val_result.per_class_f1)
             patience_counter = 0
         else:
             patience_counter += 1

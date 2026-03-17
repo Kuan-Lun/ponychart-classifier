@@ -138,7 +138,7 @@ def main() -> None:
         logger.info(
             ">> %s: test Macro F1=%.4f  time=%.0fs",
             label,
-            test_result["macro_f1"],
+            test_result.macro_f1,
             train_time,
         )
 
@@ -148,7 +148,7 @@ def main() -> None:
     log_section(logger, "RESOLUTION COMPARISON RESULTS", width=80)
     logger.info("")
 
-    baseline_f1 = results[labels[0]]["test_result"]["macro_f1"]
+    baseline_f1 = results[labels[0]]["test_result"].macro_f1
     logger.info(
         "  %-10s  %-12s  %-12s  %-10s  %-10s",
         "Resolution",
@@ -160,7 +160,7 @@ def main() -> None:
     logger.info("  " + "-" * 58)
     for lbl in labels:
         r = results[lbl]
-        f1 = r["test_result"]["macro_f1"]
+        f1 = r["test_result"].macro_f1
         delta = f1 - baseline_f1
         marker = " (baseline)" if lbl == labels[0] else f"  {delta:+.4f}"
         logger.info(
@@ -183,7 +183,7 @@ def main() -> None:
     for i, cls_name in enumerate(CLASS_NAMES):
         row = f"  {cls_name:<20s}"
         for lbl in labels:
-            f1 = results[lbl]["test_result"]["per_class_f1"][i]
+            f1 = results[lbl]["test_result"].per_class_f1[i]
             row += f"  {f1:<12.4f}"
         logger.info(row)
 
@@ -200,8 +200,8 @@ def main() -> None:
 
     # ── Summary ──
     log_section(logger, "SUMMARY", width=80)
-    best_lbl = max(labels, key=lambda lbl: results[lbl]["test_result"]["macro_f1"])
-    best_f1 = results[best_lbl]["test_result"]["macro_f1"]
+    best_lbl = max(labels, key=lambda lbl: results[lbl]["test_result"].macro_f1)
+    best_f1 = results[best_lbl]["test_result"].macro_f1
     logger.info("  Best resolution: %s (Macro F1=%.4f)", best_lbl, best_f1)
     delta_vs_baseline = best_f1 - baseline_f1
     if best_lbl == labels[0]:

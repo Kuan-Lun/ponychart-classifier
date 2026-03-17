@@ -110,8 +110,8 @@ def main() -> None:
     )
     logger.info("Thresholds (from val set): %s", dict(zip(CLASS_NAMES, thresholds)))
     logger.info("")
-    logger.info("  Macro F1: %.4f", result["macro_f1"])
-    logger.info("  Loss:     %.4f", result["loss"])
+    logger.info("  Macro F1: %.4f", result.macro_f1)
+    logger.info("  Loss:     %.4f", result.loss)
     logger.info("")
     logger.info(
         "  %-20s  %-10s  %-10s  %-10s",
@@ -125,9 +125,9 @@ def main() -> None:
         logger.info(
             "  %-20s  %-10.4f  %-10.4f  %-10.4f",
             name,
-            result["per_class_precision"][i],
-            result["per_class_recall"][i],
-            result["per_class_f1"][i],
+            result.per_class_precision[i],
+            result.per_class_recall[i],
+            result.per_class_f1[i],
         )
     logger.info("=" * 70)
 
