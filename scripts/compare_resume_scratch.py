@@ -21,7 +21,7 @@ from __future__ import annotations
 import copy
 import logging
 import os
-from typing import Any
+from dataclasses import dataclass
 
 import numpy as np
 import torch
@@ -54,6 +54,18 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class ResumeExperiment:
+    fraction: float
+    base_n: int
+    new_n: int
+    new_ratio: float
+    resume_f1: float
+    resume_per_class_f1: list[float]
+    delta: float
+
 
 BASE_FRACTIONS = [0.50, 0.60, 0.70, 0.80, 0.90]
 SAFETY_MARGIN = 0.75
@@ -180,7 +192,7 @@ def main() -> None:
     logger.info(">> Baseline scratch F1: %.4f", scratch_f1)
 
     # ── Per-fraction experiments ──
-    experiment_results: list[dict[str, Any]] = []
+    experiment_results: list[ResumeExperiment] = []
 
     for frac in BASE_FRACTIONS:
         n_groups = max(1, int(np.ceil(frac * len(sorted_pool_groups))))
@@ -243,15 +255,15 @@ def main() -> None:
 
         delta = scratch_f1 - resume_result.macro_f1
         experiment_results.append(
-            {
-                "fraction": frac,
-                "base_n": len(base_samples),
-                "new_n": new_n,
-                "new_ratio": new_ratio,
-                "resume_f1": resume_result.macro_f1,
-                "resume_per_class_f1": resume_result.per_class_f1,
-                "delta": delta,
-            }
+            ResumeExperiment(
+                fraction=frac,
+                base_n=len(base_samples),
+                new_n=new_n,
+                new_ratio=new_ratio,
+                resume_f1=resume_result.macro_f1,
+                resume_per_class_f1=resume_result.per_class_f1,
+                delta=delta,
+            )
         )
         logger.info(
             ">> Base %d%%: resume_f1=%.4f  scratch_f1=%.4f  delta=%+.4f",
@@ -281,16 +293,16 @@ def main() -> None:
     logger.info("  " + "-" * 88)
 
     for r in experiment_results:
-        winner = "SCRATCH" if r["delta"] > 0 else "RESUME"
+        winner = "SCRATCH" if r.delta > 0 else "RESUME"
         logger.info(
             "  %-6d  %-8d  %-8d  %-12.1f%%  %-10.4f  %-10.4f  %+-10.4f  %-10s",
-            int(r["fraction"] * 100),
-            r["base_n"],
-            r["new_n"],
-            r["new_ratio"] * 100,
-            r["resume_f1"],
+            int(r.fraction * 100),
+            r.base_n,
+            r.new_n,
+            r.new_ratio * 100,
+            r.resume_f1,
             scratch_f1,
-            r["delta"],
+            r.delta,
             winner,
         )
 
@@ -303,24 +315,22 @@ def main() -> None:
 
     header = f"  {'Class':<20s}"
     for r in experiment_results:
-        header += f"  {int(r['fraction'] * 100)}%".ljust(10)
+        header += f"  {int(r.fraction * 100)}%".ljust(10)
     logger.info(header)
     logger.info("  " + "-" * (20 + 10 * len(experiment_results)))
 
     for i, name in enumerate(CLASS_NAMES):
         row = f"  {name:<20s}"
         for r in experiment_results:
-            class_delta = (
-                scratch_result.per_class_f1[i] - r["resume_per_class_f1"][i]
-            )
+            class_delta = scratch_result.per_class_f1[i] - r.resume_per_class_f1[i]
             row += f"  {class_delta:+.4f}  "
         logger.info(row)
 
     # ── Crossover analysis ──
     log_section(logger, "CROSSOVER ANALYSIS")
 
-    ratios = [r["new_ratio"] for r in experiment_results]
-    deltas = [r["delta"] for r in experiment_results]
+    ratios = [r.new_ratio for r in experiment_results]
+    deltas = [r.delta for r in experiment_results]
     crossover = find_crossover(ratios, deltas)
 
     if crossover is not None:
@@ -344,21 +354,19 @@ def main() -> None:
     worst_r = experiment_results[worst_idx]
     warned = False
     for i, name in enumerate(CLASS_NAMES):
-        class_delta = (
-            scratch_result.per_class_f1[i] - worst_r["resume_per_class_f1"][i]
-        )
+        class_delta = scratch_result.per_class_f1[i] - worst_r.resume_per_class_f1[i]
         if class_delta > 0.03:
             logger.info(
                 "  %s: 即使 base=%d%%, resume 仍比 scratch 差 %.4f F1",
                 name,
-                int(worst_r["fraction"] * 100),
+                int(worst_r.fraction * 100),
                 class_delta,
             )
             warned = True
     if not warned:
         logger.info(
             "  無異常。在 base=%d%% 下各 class 的 resume 表現均正常。",
-            int(worst_r["fraction"] * 100),
+            int(worst_r.fraction * 100),
         )
 
     # ══════════════════════════════════════════════════════════════════════

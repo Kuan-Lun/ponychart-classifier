@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any
+from dataclasses import dataclass
 
 import numpy as np
 import torch
@@ -29,6 +29,7 @@ from ponychart_classifier.training import (
     HOLDOUT_TEST_SIZE,
     SEED,
     VAL_SIZE,
+    EvalResult,
     evaluate,
     get_device,
     get_performance_cpu_count,
@@ -52,6 +53,15 @@ RESOLUTIONS: list[tuple[int, int]] = [
     (320, 288),
     (384, 320),
 ]
+
+
+@dataclass(frozen=True)
+class ResolutionResult:
+    pre_resize: int
+    input_size: int
+    test_result: EvalResult
+    thresholds: list[float]
+    train_time_s: float
 
 
 def main() -> None:
@@ -85,7 +95,7 @@ def main() -> None:
     criterion = nn.BCEWithLogitsLoss()
 
     # ── Run experiments ──
-    results: dict[str, dict[str, Any]] = {}
+    results: dict[str, ResolutionResult] = {}
 
     for pre_resize, input_size in RESOLUTIONS:
         label = f"{input_size}px"
@@ -127,13 +137,13 @@ def main() -> None:
 
         test_result = evaluate(model, test_loader, criterion, device, thresholds)
 
-        results[label] = {
-            "pre_resize": pre_resize,
-            "input_size": input_size,
-            "test_result": test_result,
-            "thresholds": thresholds,
-            "train_time_s": train_time,
-        }
+        results[label] = ResolutionResult(
+            pre_resize=pre_resize,
+            input_size=input_size,
+            test_result=test_result,
+            thresholds=thresholds,
+            train_time_s=train_time,
+        )
 
         logger.info(
             ">> %s: test Macro F1=%.4f  time=%.0fs",
@@ -148,7 +158,7 @@ def main() -> None:
     log_section(logger, "RESOLUTION COMPARISON RESULTS", width=80)
     logger.info("")
 
-    baseline_f1 = results[labels[0]]["test_result"].macro_f1
+    baseline_f1 = results[labels[0]].test_result.macro_f1
     logger.info(
         "  %-10s  %-12s  %-12s  %-10s  %-10s",
         "Resolution",
@@ -160,14 +170,14 @@ def main() -> None:
     logger.info("  " + "-" * 58)
     for lbl in labels:
         r = results[lbl]
-        f1 = r["test_result"].macro_f1
+        f1 = r.test_result.macro_f1
         delta = f1 - baseline_f1
         marker = " (baseline)" if lbl == labels[0] else f"  {delta:+.4f}"
         logger.info(
             "  %-10s  %-12d  %-12d  %-10.4f  %s",
             lbl,
-            r["pre_resize"],
-            r["input_size"],
+            r.pre_resize,
+            r.input_size,
             f1,
             marker,
         )
@@ -183,7 +193,7 @@ def main() -> None:
     for i, cls_name in enumerate(CLASS_NAMES):
         row = f"  {cls_name:<20s}"
         for lbl in labels:
-            f1 = results[lbl]["test_result"].per_class_f1[i]
+            f1 = results[lbl].test_result.per_class_f1[i]
             row += f"  {f1:<12.4f}"
         logger.info(row)
 
@@ -194,14 +204,14 @@ def main() -> None:
         logger.info(
             "  %s: %.0fs (%.1fx baseline)",
             lbl,
-            r["train_time_s"],
-            r["train_time_s"] / results[labels[0]]["train_time_s"],
+            r.train_time_s,
+            r.train_time_s / results[labels[0]].train_time_s,
         )
 
     # ── Summary ──
     log_section(logger, "SUMMARY", width=80)
-    best_lbl = max(labels, key=lambda lbl: results[lbl]["test_result"].macro_f1)
-    best_f1 = results[best_lbl]["test_result"].macro_f1
+    best_lbl = max(labels, key=lambda lbl: results[lbl].test_result.macro_f1)
+    best_f1 = results[best_lbl].test_result.macro_f1
     logger.info("  Best resolution: %s (Macro F1=%.4f)", best_lbl, best_f1)
     delta_vs_baseline = best_f1 - baseline_f1
     if best_lbl == labels[0]:

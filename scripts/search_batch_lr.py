@@ -19,7 +19,7 @@ from __future__ import annotations
 import gc
 import logging
 import time
-from typing import Any
+from dataclasses import dataclass
 
 import numpy as np
 import torch
@@ -83,6 +83,22 @@ BASE_LR_FEATURES = LR_FEATURES
 BASE_LR_CLASSIFIER = LR_CLASSIFIER
 
 
+@dataclass(frozen=True)
+class SearchResult:
+    """Result of a single hyperparameter search experiment."""
+
+    best_f1: float
+    per_class_f1: list[float]
+    stopped_epoch: int
+    batch_size: int
+    lr_scale: float
+    lr_head: float
+    lr_features: float
+    lr_classifier: float
+    time_s: float
+    run_idx: int
+
+
 def run_experiment(
     train_ds: PonyChartDataset,
     val_ds: PonyChartDataset,
@@ -93,8 +109,11 @@ def run_experiment(
     lr_features: float,
     lr_classifier: float,
     backbone: str,
-) -> dict[str, Any]:
-    """Run one training experiment, return results dict."""
+    lr_scale: float,
+    run_idx: int,
+) -> SearchResult:
+    """Run one training experiment, return results."""
+    t0 = time.monotonic()
     train_loader = make_dataloader(
         train_ds,
         batch_size,
@@ -162,11 +181,18 @@ def run_experiment(
             stopped_epoch = epoch
             break
 
-    return {
-        "best_f1": best_f1,
-        "per_class_f1": best_per_class,
-        "stopped_epoch": stopped_epoch,
-    }
+    return SearchResult(
+        best_f1=best_f1,
+        per_class_f1=best_per_class,
+        stopped_epoch=stopped_epoch,
+        batch_size=batch_size,
+        lr_scale=lr_scale,
+        lr_head=lr_head,
+        lr_features=lr_features,
+        lr_classifier=lr_classifier,
+        time_s=time.monotonic() - t0,
+        run_idx=run_idx,
+    )
 
 
 def main() -> None:
@@ -236,7 +262,7 @@ def main() -> None:
     )
 
     # Run experiments sequentially on device
-    results: list[dict[str, Any]] = []
+    results: list[SearchResult] = []
     for run_idx, (batch_size, lr_scale) in enumerate(SEARCH_GRID, 1):
         linear_factor = batch_size / BATCH_SIZE
         lr_head = BASE_LR_HEAD * linear_factor * lr_scale
@@ -257,7 +283,6 @@ def main() -> None:
         torch.manual_seed(SEED)
         np.random.seed(SEED)
 
-        t0 = time.monotonic()
         result = run_experiment(
             train_ds,
             val_ds,
@@ -268,8 +293,9 @@ def main() -> None:
             lr_features,
             lr_classifier,
             BACKBONE,
+            lr_scale=lr_scale,
+            run_idx=run_idx,
         )
-        elapsed = time.monotonic() - t0
 
         # Flush MPS allocator cache so experiment memory is returned to OS
         # before the next experiment allocates a new model.
@@ -277,29 +303,18 @@ def main() -> None:
         if device.type == "mps":
             torch.mps.empty_cache()
 
-        result.update(
-            {
-                "batch_size": batch_size,
-                "lr_scale": lr_scale,
-                "lr_head": lr_head,
-                "lr_features": lr_features,
-                "lr_classifier": lr_classifier,
-                "time_s": elapsed,
-                "run_idx": run_idx,
-            }
-        )
         results.append(result)
         logger.info(
             "    -> F1=%.4f  stopped_epoch=%d  time=%.1fs",
-            result["best_f1"],
-            result["stopped_epoch"],
-            result["time_s"],
+            result.best_f1,
+            result.stopped_epoch,
+            result.time_s,
         )
 
     logger.info("")
 
     # ── Results table sorted by F1 ──
-    results.sort(key=lambda r: r["best_f1"], reverse=True)
+    results.sort(key=lambda r: r.best_f1, reverse=True)
 
     logger.info("=" * 90)
     logger.info("RESULTS (sorted by best val Macro F1)")
@@ -321,14 +336,14 @@ def main() -> None:
         logger.info(
             "  #%-3d  %-6d  %-8s  %-10.1e  %-10.1e  %-10.1e" "  %-8.4f  %-6d  %-7.1fs",
             rank,
-            r["batch_size"],
-            f"{r['lr_scale']:.1f}x",
-            r["lr_head"],
-            r["lr_features"],
-            r["lr_classifier"],
-            r["best_f1"],
-            r["stopped_epoch"],
-            r["time_s"],
+            r.batch_size,
+            f"{r.lr_scale:.1f}x",
+            r.lr_head,
+            r.lr_features,
+            r.lr_classifier,
+            r.best_f1,
+            r.stopped_epoch,
+            r.time_s,
         )
 
     # ── Per-class detail for all ──
@@ -338,41 +353,39 @@ def main() -> None:
         logger.info(
             "  #%d (batch=%d, scale=%.1fx, F1=%.4f):",
             rank,
-            r["batch_size"],
-            r["lr_scale"],
-            r["best_f1"],
+            r.batch_size,
+            r.lr_scale,
+            r.best_f1,
         )
         for i, name in enumerate(CLASS_NAMES):
-            logger.info("    %-20s  %.4f", name, r["per_class_f1"][i])
+            logger.info("    %-20s  %.4f", name, r.per_class_f1[i])
 
     # ── Recommendation ──
     best = results[0]
     log_section(logger, "RECOMMENDATION")
     logger.info("  Best config:")
-    logger.info("    --batch-size %d", best["batch_size"])
-    logger.info(
-        "    Phase 1 lr: %.1e  (train.py default: %.1e)", best["lr_head"], LR_HEAD
-    )
+    logger.info("    --batch-size %d", best.batch_size)
+    logger.info("    Phase 1 lr: %.1e  (train.py default: %.1e)", best.lr_head, LR_HEAD)
     logger.info(
         "    Phase 2 lr_features: %.1e  (train.py default: %.1e)",
-        best["lr_features"],
+        best.lr_features,
         LR_FEATURES,
     )
     logger.info(
         "    Phase 2 lr_classifier: %.1e  (train.py default: %.1e)",
-        best["lr_classifier"],
+        best.lr_classifier,
         LR_CLASSIFIER,
     )
     logger.info("")
 
     # Compare with baseline (batch=BATCH_SIZE, scale=1.0)
     baseline = next(
-        (r for r in results if r["batch_size"] == BATCH_SIZE and r["lr_scale"] == 1.0),
+        (r for r in results if r.batch_size == BATCH_SIZE and r.lr_scale == 1.0),
         None,
     )
     if baseline and best is not baseline:
-        diff = best["best_f1"] - baseline["best_f1"]
-        speedup = baseline["time_s"] / best["time_s"] if best["time_s"] > 0 else 0
+        diff = best.best_f1 - baseline.best_f1
+        speedup = baseline.time_s / best.time_s if best.time_s > 0 else 0
         logger.info(
             "  vs baseline (batch=%d, 1.0x): F1 %+.4f, %.1fx speed",
             BATCH_SIZE,

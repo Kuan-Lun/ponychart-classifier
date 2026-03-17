@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any
+from dataclasses import dataclass
 
 import numpy as np
 import torch
@@ -50,6 +50,22 @@ from ponychart_classifier.training import (
     train_model,
 )
 from ponychart_classifier.training.dataset import PonyChartDataset
+
+
+@dataclass(frozen=True)
+class CropRecommendation:
+    idx: int
+    name: str
+    crop_n: int
+    target_n: int
+    deficit: int
+    suggested: int
+    b_f1: float
+    cb: float
+    ab: float
+    score: float
+    beneficial: bool
+
 
 logging.basicConfig(
     level=logging.INFO,
@@ -415,7 +431,7 @@ def main() -> None:
         for i in range(NUM_CLASSES)
     ]
 
-    recommendations: list[dict[str, Any]] = []
+    recommendations: list[CropRecommendation] = []
     max_crop = max(crop_counts_per_class) if crop_counts_per_class else 1
     for i in range(NUM_CLASSES):
         cb = result_c.per_class_f1[i] - result_b.per_class_f1[i]
@@ -432,21 +448,21 @@ def main() -> None:
         room = 1.0 - b_f1
         score = max(cb, ab) * 0.4 + room * 0.3 + scarcity * 0.3
         recommendations.append(
-            {
-                "idx": i,
-                "name": CLASS_NAMES[i],
-                "crop_n": crop_n,
-                "target_n": target_n,
-                "deficit": deficit,
-                "suggested": suggested,
-                "b_f1": b_f1,
-                "cb": cb,
-                "ab": ab,
-                "score": score,
-                "beneficial": is_beneficial,
-            }
+            CropRecommendation(
+                idx=i,
+                name=CLASS_NAMES[i],
+                crop_n=crop_n,
+                target_n=target_n,
+                deficit=deficit,
+                suggested=suggested,
+                b_f1=b_f1,
+                cb=cb,
+                ab=ab,
+                score=score,
+                beneficial=is_beneficial,
+            )
         )
-    recommendations.sort(key=lambda x: x["score"], reverse=True)
+    recommendations.sort(key=lambda x: x.score, reverse=True)
 
     log_section(logger, "CROP RECOMMENDATION", width=80)
     logger.info(
@@ -468,55 +484,55 @@ def main() -> None:
     )
     logger.info("  " + "-" * 74)
     for rank, r in enumerate(recommendations, 1):
-        if r["beneficial"]:
-            if r["suggested"] > 0:
-                advice = "<- 建議再裁 {} 張".format(r["suggested"])
+        if r.beneficial:
+            if r.suggested > 0:
+                advice = f"<- 建議再裁 {r.suggested} 張"
             else:
                 advice = "<- 已達標，可裁可不裁"
-        elif r["cb"] < -0.03 and r["ab"] < -0.03:
+        elif r.cb < -0.03 and r.ab < -0.03:
             advice = "  (crop 有害，暫不裁切)"
         else:
             advice = "  (效果有限)"
         logger.info(
             "  #%-3d %-18s  %-6d %-6d %-6d  %-8.4f" "  %+-9.4f %+-9.4f %s",
             rank,
-            r["name"],
-            r["crop_n"],
-            r["target_n"],
-            r["deficit"],
-            r["b_f1"],
-            r["cb"],
-            r["ab"],
+            r.name,
+            r.crop_n,
+            r.target_n,
+            r.deficit,
+            r.b_f1,
+            r.cb,
+            r.ab,
             advice,
         )
 
     # 摘要
     logger.info("")
-    to_crop = [r for r in recommendations if r["beneficial"] and r["suggested"] > 0]
+    to_crop = [r for r in recommendations if r.beneficial and r.suggested > 0]
     if to_crop:
         logger.info("  具體行動:")
         total_suggested = 0
         for r in to_crop:
             logger.info(
                 "    %s: 再裁切 ~%d 張 (目前 %d -> 目標 %d)",
-                r["name"],
-                r["suggested"],
-                r["crop_n"],
-                r["target_n"],
+                r.name,
+                r.suggested,
+                r.crop_n,
+                r.target_n,
             )
-            total_suggested += r["suggested"]
+            total_suggested += r.suggested
         logger.info("    共計約 %d 張新 crop", total_suggested)
     else:
         logger.info("  各 class crop 數量已足夠或 crop 無正面效果。")
 
-    saturated = [r for r in recommendations if r["beneficial"] and r["suggested"] == 0]
+    saturated = [r for r in recommendations if r.beneficial and r.suggested == 0]
     if saturated:
-        names = ", ".join(r["name"] for r in saturated)
+        names = ", ".join(r.name for r in saturated)
         logger.info("  已達標 (crop 有效但數量足夠): %s", names)
 
-    harmful = [r for r in recommendations if r["cb"] < -0.03 and r["ab"] < -0.03]
+    harmful = [r for r in recommendations if r.cb < -0.03 and r.ab < -0.03]
     if harmful:
-        names = ", ".join(r["name"] for r in harmful)
+        names = ", ".join(r.name for r in harmful)
         logger.info("  暫不裁切 (crop 反而有害): %s", names)
     logger.info("=" * 80)
 
