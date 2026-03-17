@@ -20,7 +20,6 @@
 from __future__ import annotations
 
 import logging
-import os
 from typing import Any
 
 import numpy as np
@@ -38,19 +37,14 @@ from ponychart_classifier.training import (
     INPUT_SIZE,
     SEED,
     VAL_SIZE,
-    balance_crop_samples,
-    build_groups,
-    compute_class_rates,
     evaluate,
     get_device,
     get_performance_cpu_count,
     get_transforms,
-    is_original,
     load_samples,
     log_section,
     make_dataloader,
-    separate_orig_crop,
-    split_by_groups,
+    prepare_holdout_split,
     train_model,
 )
 from ponychart_classifier.training.dataset import PonyChartDataset
@@ -151,53 +145,13 @@ def main() -> None:
     all_samples = load_samples()
     logger.info("Total samples loaded: %d", len(all_samples))
 
-    # ── Split groups: test / val / train ──
-    gsp = split_by_groups(all_samples, test_size=HOLDOUT_TEST_SIZE, val_size=VAL_SIZE)
-
-    # Build group index
-    groups = build_groups(all_samples)
-
-    # ── Test set: only originals from test groups ──
-    test_samples = [
-        all_samples[idx]
-        for gk in gsp.test
-        for idx in groups[gk]
-        if is_original(os.path.basename(all_samples[idx][0]))
-    ]
-    logger.info("Test set (originals only): %d images", len(test_samples))
-
-    # ── Train+val pool: originals + balanced crops ──
-    train_val_all = [
-        all_samples[idx] for gk in gsp.train + gsp.val for idx in groups[gk]
-    ]
-    train_val_orig, train_val_crop = separate_orig_crop(train_val_all)
-    orig_rates = compute_class_rates(train_val_orig)
-    balanced_crops = balance_crop_samples(train_val_crop, orig_rates, rng)
-    train_val_balanced = train_val_orig + balanced_crops
-    logger.info(
-        "Train+val pool: %d orig + %d crops (raw %d) = %d total",
-        len(train_val_orig),
-        len(balanced_crops),
-        len(train_val_crop),
-        len(train_val_balanced),
+    # ── Split into train / val / test ──
+    split = prepare_holdout_split(
+        all_samples, rng, test_size=HOLDOUT_TEST_SIZE, val_size=VAL_SIZE
     )
-
-    # ── Split train/val within balanced pool ──
-    val_gk_set = set(gsp.val)
-    tv_groups_inner = build_groups(train_val_balanced)
-
-    sub_train_samples = [
-        train_val_balanced[idx]
-        for gk, indices in tv_groups_inner.items()
-        if gk not in val_gk_set
-        for idx in indices
-    ]
-    val_samples = [
-        train_val_balanced[idx]
-        for gk, indices in tv_groups_inner.items()
-        if gk in val_gk_set
-        for idx in indices
-    ]
+    sub_train_samples = split.train
+    val_samples = split.val
+    test_samples = split.test
     logger.info(
         "Train: %d  Val: %d  Test: %d",
         len(sub_train_samples),

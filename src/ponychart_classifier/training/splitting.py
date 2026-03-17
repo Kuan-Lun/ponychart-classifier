@@ -8,11 +8,14 @@ removed.  This prevents data leakage when resuming training with new data.
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 from collections import defaultdict
 from dataclasses import dataclass
 
-from .sampling import get_base_timestamp
+import numpy as np
+
+from .sampling import get_base_timestamp, is_original, prepare_balanced_samples
 
 _HASH_MODULUS = 1000
 
@@ -140,3 +143,70 @@ def split_by_groups(
 
     buckets = _split_n_way(group_keys, [test_size])
     return GroupSplit(train=buckets[1], val=[], test=buckets[0])
+
+
+logger = logging.getLogger(__name__)
+
+_Sample = tuple[str, list[int]]
+
+
+@dataclass
+class HoldoutSplit:
+    """Ready-to-use train / val / test sample lists for holdout evaluation."""
+
+    train: list[_Sample]
+    val: list[_Sample]
+    test: list[_Sample]
+
+
+def prepare_holdout_split(
+    samples: list[_Sample],
+    rng: np.random.RandomState,
+    test_size: float,
+    val_size: float,
+) -> HoldoutSplit:
+    """Split samples into train / val / test with balanced crops.
+
+    1. Hash-based group split into test / val / train groups.
+    2. Test set contains only original images from test groups.
+    3. Train+val pool is balanced via :func:`prepare_balanced_samples`.
+    4. Balanced pool is split into train / val by group keys.
+    """
+    gsp = split_by_groups(samples, test_size=test_size, val_size=val_size)
+    groups = build_groups(samples)
+
+    # Test: originals only
+    test = [
+        samples[idx]
+        for gk in gsp.test
+        for idx in groups[gk]
+        if is_original(os.path.basename(samples[idx][0]))
+    ]
+
+    # Train+val: balanced crops
+    train_val_all = [samples[idx] for gk in gsp.train + gsp.val for idx in groups[gk]]
+    balanced = prepare_balanced_samples(train_val_all, rng)
+
+    # Split balanced pool by val group keys
+    val_gk_set = set(gsp.val)
+    tv_groups = build_groups(balanced)
+    train = [
+        balanced[idx]
+        for gk, indices in tv_groups.items()
+        if gk not in val_gk_set
+        for idx in indices
+    ]
+    val = [
+        balanced[idx]
+        for gk, indices in tv_groups.items()
+        if gk in val_gk_set
+        for idx in indices
+    ]
+
+    logger.info(
+        "Train: %d  Val: %d  Test: %d",
+        len(train),
+        len(val),
+        len(test),
+    )
+    return HoldoutSplit(train=train, val=val, test=test)

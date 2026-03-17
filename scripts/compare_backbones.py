@@ -14,7 +14,6 @@ EfficientNet-B2 四種 backbone，
 from __future__ import annotations
 
 import logging
-import os
 import tempfile
 import time
 from pathlib import Path
@@ -31,18 +30,16 @@ from ponychart_classifier.training import (
     HOLDOUT_TEST_SIZE,
     SEED,
     VAL_SIZE,
+    HoldoutSplit,
     build_cached_dataset,
-    build_groups,
     evaluate,
     export_onnx,
     get_device,
     get_performance_cpu_count,
-    is_original,
     load_samples,
     log_section,
     make_dataloader,
-    prepare_balanced_samples,
-    split_by_groups,
+    prepare_holdout_split,
     train_model,
 )
 
@@ -96,42 +93,11 @@ def main() -> None:
         return
     logger.info("Total samples loaded: %d", len(all_samples))
 
-    # ── Split groups: test / val / train ──
-    gsp = split_by_groups(all_samples, test_size=HOLDOUT_TEST_SIZE, val_size=VAL_SIZE)
-    groups = build_groups(all_samples)
-
-    # ── Test set: only originals from test groups ──
-    test_samples = [
-        all_samples[idx]
-        for gk in gsp.test
-        for idx in groups[gk]
-        if is_original(os.path.basename(all_samples[idx][0]))
-    ]
-    logger.info("Test set (originals only): %d images", len(test_samples))
-
-    # ── Train+val pool: originals + balanced crops ──
-    train_val_all = [
-        all_samples[idx] for gk in gsp.train + gsp.val for idx in groups[gk]
-    ]
-    train_val_balanced = prepare_balanced_samples(train_val_all, rng)
-    logger.info("Train+val pool: %d total (balanced)", len(train_val_balanced))
-
-    # ── Split train/val within balanced pool ──
-    val_gk_set = set(gsp.val)
-    tv_groups = build_groups(train_val_balanced)
-
-    train_samples = [
-        train_val_balanced[idx]
-        for gk, indices in tv_groups.items()
-        if gk not in val_gk_set
-        for idx in indices
-    ]
-    val_samples = [
-        train_val_balanced[idx]
-        for gk, indices in tv_groups.items()
-        if gk in val_gk_set
-        for idx in indices
-    ]
+    # ── Split into train / val / test ──
+    hs: HoldoutSplit = prepare_holdout_split(
+        all_samples, rng, test_size=HOLDOUT_TEST_SIZE, val_size=VAL_SIZE
+    )
+    train_samples, val_samples, test_samples = hs.train, hs.val, hs.test
     logger.info(
         "Train: %d  Val: %d  Test: %d",
         len(train_samples),

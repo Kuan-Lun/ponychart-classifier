@@ -65,7 +65,14 @@ from .sampling import (
     prepare_balanced_samples,
     separate_orig_crop,
 )
-from .splitting import GroupSplit, build_groups, group_hash_split, split_by_groups
+from .splitting import (
+    GroupSplit,
+    HoldoutSplit,
+    build_groups,
+    group_hash_split,
+    prepare_holdout_split,
+    split_by_groups,
+)
 from .training import (
     TrainResult,
     evaluate,
@@ -80,6 +87,7 @@ __all__ = [
     "BATCH_SIZE",
     "BackboneConfig",
     "GroupSplit",
+    "HoldoutSplit",
     "CLASS_NAMES",
     "HOLDOUT_TEST_SIZE",
     "IMAGENET_MEAN",
@@ -139,6 +147,7 @@ __all__ = [
     "make_dataloader",
     "optimize_thresholds",
     "prepare_balanced_samples",
+    "prepare_holdout_split",
     "separate_orig_crop",
     "split_by_groups",
     "train_model",
