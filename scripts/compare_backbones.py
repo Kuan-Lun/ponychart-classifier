@@ -16,6 +16,7 @@ from __future__ import annotations
 import logging
 import tempfile
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -57,6 +58,18 @@ BACKBONES = [
 ]
 
 
+@dataclass
+class ExperimentResult:
+    """Results from a single backbone experiment."""
+
+    test_result: dict[str, Any]
+    thresholds: list[float]
+    param_count: int
+    onnx_size_mb: float
+    train_time_s: float
+    description: str
+
+
 def get_onnx_size_mb(model: nn.Module) -> float:
     """Export model to a temp ONNX file and return its size in MB."""
     with tempfile.NamedTemporaryFile(suffix=".onnx", delete=False) as f:
@@ -75,6 +88,73 @@ def get_onnx_size_mb(model: nn.Module) -> float:
 def count_parameters(model: nn.Module) -> int:
     """Count total trainable parameters."""
     return sum(p.numel() for p in model.parameters())
+
+
+def run_experiment(
+    backbone_name: str,
+    train_samples: list[tuple[str, list[int]]],
+    val_samples: list[tuple[str, list[int]]],
+    test_samples: list[tuple[str, list[int]]],
+    device: torch.device,
+    num_workers: int,
+) -> ExperimentResult:
+    """Train one backbone and evaluate on the test set.
+
+    Heavy objects (model, dataset, DataLoader workers) are freed
+    automatically when this function returns.
+    """
+    torch.manual_seed(SEED)
+    np.random.seed(SEED)
+
+    config = BACKBONE_REGISTRY[backbone_name]
+    log_section(logger, "BACKBONE: %s", config.description, width=70)
+
+    t0 = time.monotonic()
+    result = train_model(
+        train_samples,
+        val_samples,
+        device,
+        num_workers,
+        backbone_name,
+        backbone=backbone_name,
+    )
+    train_time = time.monotonic() - t0
+
+    # Evaluate on test set
+    model, thresholds = result.model, result.thresholds
+    criterion = nn.BCEWithLogitsLoss()
+    test_ds = build_cached_dataset(test_samples, is_train=False)
+    test_loader = make_dataloader(
+        test_ds,
+        BATCH_SIZE,
+        shuffle=False,
+        num_workers=num_workers,
+        device=device,
+    )
+    test_result = evaluate(model, test_loader, criterion, device, thresholds)
+
+    # Model stats
+    param_count = count_parameters(model)
+    onnx_size = get_onnx_size_mb(model)
+
+    experiment = ExperimentResult(
+        test_result=test_result,
+        thresholds=thresholds,
+        param_count=param_count,
+        onnx_size_mb=onnx_size,
+        train_time_s=train_time,
+        description=config.description,
+    )
+
+    logger.info(
+        ">> %s: test Macro F1=%.4f  params=%dK  ONNX=%.1fMB  time=%.0fs",
+        backbone_name,
+        test_result["macro_f1"],
+        param_count // 1000,
+        onnx_size,
+        train_time,
+    )
+    return experiment
 
 
 def main() -> None:
@@ -98,68 +178,18 @@ def main() -> None:
         all_samples, rng, test_size=HOLDOUT_TEST_SIZE, val_size=VAL_SIZE
     )
     train_samples, val_samples, test_samples = hs.train, hs.val, hs.test
-    logger.info(
-        "Train: %d  Val: %d  Test: %d",
-        len(train_samples),
-        len(val_samples),
-        len(test_samples),
-    )
-
-    criterion = nn.BCEWithLogitsLoss()
 
     # ── Run experiments ──
-    results: dict[str, dict[str, Any]] = {}
+    results: dict[str, ExperimentResult] = {}
 
     for backbone_name in BACKBONES:
-        torch.manual_seed(SEED)
-        np.random.seed(SEED)
-
-        config = BACKBONE_REGISTRY[backbone_name]
-        log_section(logger, "BACKBONE: %s", config.description, width=70)
-
-        t0 = time.monotonic()
-        result = train_model(
+        results[backbone_name] = run_experiment(
+            backbone_name,
             train_samples,
             val_samples,
+            test_samples,
             device,
             num_workers,
-            backbone_name,
-            backbone=backbone_name,
-        )
-        train_time = time.monotonic() - t0
-
-        # Evaluate on test set (recreate loader each time to avoid stale workers)
-        model, thresholds = result.model, result.thresholds
-        test_ds = build_cached_dataset(test_samples, is_train=False)
-        test_loader = make_dataloader(
-            test_ds,
-            BATCH_SIZE,
-            shuffle=False,
-            num_workers=num_workers,
-            device=device,
-        )
-        test_result = evaluate(model, test_loader, criterion, device, thresholds)
-
-        # Model stats
-        param_count = count_parameters(model)
-        onnx_size = get_onnx_size_mb(model)
-
-        results[backbone_name] = {
-            "test_result": test_result,
-            "thresholds": thresholds,
-            "param_count": param_count,
-            "onnx_size_mb": onnx_size,
-            "train_time_s": train_time,
-            "description": config.description,
-        }
-
-        logger.info(
-            ">> %s: test Macro F1=%.4f  params=%dK  ONNX=%.1fMB" "  time=%.0fs",
-            backbone_name,
-            test_result["macro_f1"],
-            param_count // 1000,
-            onnx_size,
-            train_time,
         )
 
     # ── Comparison table ──
@@ -179,15 +209,15 @@ def main() -> None:
 
     for name in BACKBONES:
         r = results[name]
-        tr = r["test_result"]
-        thr_str = " ".join(f"{t:.2f}" for t in r["thresholds"])
+        tr = r.test_result
+        thr_str = " ".join(f"{t:.2f}" for t in r.thresholds)
         logger.info(
             "  %-22s  %-10.4f  %-10s  %-10s  %-10s  %s",
             name,
             tr["macro_f1"],
-            f"{r['param_count'] / 1e6:.1f}M",
-            f"{r['onnx_size_mb']:.1f}MB",
-            f"{r['train_time_s']:.0f}s",
+            f"{r.param_count / 1e6:.1f}M",
+            f"{r.onnx_size_mb:.1f}MB",
+            f"{r.train_time_s:.0f}s",
             thr_str,
         )
 
@@ -203,7 +233,7 @@ def main() -> None:
     for i, cls_name in enumerate(CLASS_NAMES):
         row = f"  {cls_name:<20s}"
         for name in BACKBONES:
-            f1 = results[name]["test_result"]["per_class_f1"][i]
+            f1 = results[name].test_result["per_class_f1"][i]
             row += f"  {f1:<22.4f}"
         logger.info(row)
 
@@ -212,7 +242,7 @@ def main() -> None:
     logger.info("Per-class Precision / Recall:")
     for name in BACKBONES:
         logger.info("  %s:", name)
-        tr = results[name]["test_result"]
+        tr = results[name].test_result
         for i, cls_name in enumerate(CLASS_NAMES):
             logger.info(
                 "    %-20s  P=%.4f  R=%.4f  F1=%.4f",
@@ -227,10 +257,10 @@ def main() -> None:
 
     best_name = max(
         BACKBONES,
-        key=lambda n: results[n]["test_result"]["macro_f1"],
+        key=lambda n: results[n].test_result["macro_f1"],
     )
     best_r = results[best_name]
-    best_f1 = best_r["test_result"]["macro_f1"]
+    best_f1 = best_r.test_result["macro_f1"]
 
     logger.info("  Best backbone: %s (Macro F1=%.4f)", best_name, best_f1)
     logger.info("")
@@ -238,7 +268,7 @@ def main() -> None:
     # Compare each to best
     for name in BACKBONES:
         r = results[name]
-        f1 = r["test_result"]["macro_f1"]
+        f1 = r.test_result["macro_f1"]
         diff = f1 - best_f1
         if name == best_name:
             logger.info("  * %s: F1=%.4f (BEST)", name, f1)
@@ -248,13 +278,13 @@ def main() -> None:
     # Efficiency analysis
     logger.info("")
     logger.info("  Efficiency analysis:")
-    small_f1 = results["mobilenet_v3_small"]["test_result"]["macro_f1"]
+    small_f1 = results["mobilenet_v3_small"].test_result["macro_f1"]
     for name in BACKBONES:
         r = results[name]
-        f1 = r["test_result"]["macro_f1"]
+        f1 = r.test_result["macro_f1"]
         gain = f1 - small_f1
-        size_ratio = r["onnx_size_mb"] / results["mobilenet_v3_small"]["onnx_size_mb"]
-        time_ratio = r["train_time_s"] / results["mobilenet_v3_small"]["train_time_s"]
+        size_ratio = r.onnx_size_mb / results["mobilenet_v3_small"].onnx_size_mb
+        time_ratio = r.train_time_s / results["mobilenet_v3_small"].train_time_s
         logger.info(
             "    %s: F1 %+.4f vs small, %.1fx size, %.1fx time",
             name,
