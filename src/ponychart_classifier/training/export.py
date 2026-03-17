@@ -54,6 +54,7 @@ def export_onnx(model: nn.Module, output_path: Path) -> None:
                 input_names=["input"],
                 output_names=["logits"],
                 opset_version=18,
+                dynamo=False,
             )
     finally:
         for name, level in saved_levels.items():
