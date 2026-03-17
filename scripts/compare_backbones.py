@@ -33,13 +33,13 @@ from ponychart_classifier.training import (
     SEED,
     VAL_SIZE,
     balance_crop_samples,
+    build_cached_dataset,
     compute_class_rates,
     evaluate,
     export_onnx,
     get_base_timestamp,
     get_device,
     get_performance_cpu_count,
-    get_transforms,
     is_original,
     load_samples,
     log_section,
@@ -48,7 +48,6 @@ from ponychart_classifier.training import (
     split_by_groups,
     train_model,
 )
-from ponychart_classifier.training.dataset import PonyChartDataset
 
 logging.basicConfig(
     level=logging.INFO,
@@ -160,15 +159,6 @@ def main() -> None:
         len(test_samples),
     )
 
-    # Prepare test loader (shared)
-    test_ds = PonyChartDataset(test_samples, get_transforms(is_train=False))
-    test_loader = make_dataloader(
-        test_ds,
-        BATCH_SIZE,
-        shuffle=False,
-        num_workers=num_workers,
-        device=device,
-    )
     criterion = nn.BCEWithLogitsLoss()
 
     # ── Run experiments ──
@@ -192,8 +182,16 @@ def main() -> None:
         )
         train_time = time.monotonic() - t0
 
-        # Evaluate on test set
+        # Evaluate on test set (recreate loader each time to avoid stale workers)
         model, thresholds = result.model, result.thresholds
+        test_ds = build_cached_dataset(test_samples, is_train=False)
+        test_loader = make_dataloader(
+            test_ds,
+            BATCH_SIZE,
+            shuffle=False,
+            num_workers=num_workers,
+            device=device,
+        )
         test_result = evaluate(model, test_loader, criterion, device, thresholds)
 
         # Model stats

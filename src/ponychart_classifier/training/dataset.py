@@ -174,6 +174,39 @@ def get_transforms(is_train: bool, input_size: int = INPUT_SIZE) -> transforms.C
 
 
 # ---------------------------------------------------------------------------
+# Dataset factory
+# ---------------------------------------------------------------------------
+def build_cached_dataset(
+    samples: list[tuple[str, list[int]]],
+    *,
+    is_train: bool = False,
+    max_cached: int | None = None,
+    pre_resize: int = PRE_RESIZE,
+    input_size: int = INPUT_SIZE,
+    transform: transforms.Compose | None = None,
+) -> PonyChartDataset:
+    """Build a :class:`PonyChartDataset` with cache-budget awareness.
+
+    If *transform* is ``None``, the default augmentation pipeline is
+    selected based on *is_train*.  If *max_cached* is ``None``, the
+    dataset auto-computes a safe budget for a single dataset via
+    :func:`compute_cache_budget`.
+
+    This is the recommended way to create a dataset when you need
+    control over cache allocation (e.g. when coordinating budgets
+    across multiple datasets).
+    """
+    if transform is None:
+        transform = get_transforms(is_train=is_train, input_size=input_size)
+    return PonyChartDataset(
+        samples,
+        transform,
+        pre_resize=pre_resize,
+        max_cached=max_cached,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Data pipeline factory
 # ---------------------------------------------------------------------------
 def build_data_pipeline(
@@ -198,11 +231,6 @@ def build_data_pipeline(
 
     Returns ``(train_loader, val_loader)``.
     """
-    if train_transform is None:
-        train_transform = get_transforms(is_train=True, input_size=input_size)
-    if val_transform is None:
-        val_transform = get_transforms(is_train=False, input_size=input_size)
-
     total_budget = compute_cache_budget(
         pre_resize,
         n_datasets=2,
@@ -212,17 +240,21 @@ def build_data_pipeline(
     train_budget = int(total_budget * len(train_samples) / n_total)
     val_budget = total_budget - train_budget
 
-    train_ds = PonyChartDataset(
+    train_ds = build_cached_dataset(
         train_samples,
-        train_transform,
-        pre_resize=pre_resize,
+        is_train=True,
         max_cached=train_budget,
-    )
-    val_ds = PonyChartDataset(
-        val_samples,
-        val_transform,
         pre_resize=pre_resize,
+        input_size=input_size,
+        transform=train_transform,
+    )
+    val_ds = build_cached_dataset(
+        val_samples,
+        is_train=False,
         max_cached=val_budget,
+        pre_resize=pre_resize,
+        input_size=input_size,
+        transform=val_transform,
     )
 
     train_loader = make_dataloader(
