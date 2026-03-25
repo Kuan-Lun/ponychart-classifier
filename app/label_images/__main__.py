@@ -1,7 +1,7 @@
 """入口點：掃描圖片並啟動標註 UI。
 
 Usage:
-    uv run python -m app.label_images
+    uv run --extra train python -m app.label_images
 """
 
 import glob
