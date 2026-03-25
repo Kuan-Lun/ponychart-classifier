@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import logging
-import ssl
 import urllib.request
 from pathlib import Path
 from typing import Any
@@ -14,6 +13,7 @@ import cv2 as cv
 import numpy as np
 import onnxruntime as ort
 
+from ._http import opener as _opener
 from .model_spec import (
     CLASS_NAMES,
     IMAGENET_MEAN,
@@ -27,40 +27,6 @@ from .model_spec import (
 
 _BASE_URL = "https://www.csie.ntu.edu.tw/~d06922002/ponychart_classifier"
 _logger = logging.getLogger(__name__)
-
-
-def _make_ssl_context() -> ssl.SSLContext:
-    """Create an SSL context, preferring *certifi*'s CA bundle if available."""
-    try:
-        import certifi  # type: ignore[import-not-found]
-
-        return ssl.create_default_context(cafile=certifi.where())
-    except ImportError:
-        return ssl.create_default_context()
-
-
-def _make_unverified_ssl_context() -> ssl.SSLContext:
-    """Create an SSL context that skips certificate verification."""
-    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-    ctx.check_hostname = False
-    ctx.verify_mode = ssl.CERT_NONE
-    return ctx
-
-
-def _urlopen(req: urllib.request.Request) -> Any:
-    """Open *req*, falling back to unverified SSL on certificate errors."""
-    try:
-        return urllib.request.urlopen(req, context=_make_ssl_context())  # noqa: S310
-    except urllib.error.URLError as first:
-        if not isinstance(first.reason, ssl.SSLError):
-            raise
-        _logger.warning(
-            "SSL verification failed (%s); retrying without verification.",
-            first.reason,
-        )
-        return urllib.request.urlopen(  # noqa: S310
-            req, context=_make_unverified_ssl_context()
-        )
 
 
 _IMAGENET_MEAN = np.array(IMAGENET_MEAN, dtype=np.float32)
@@ -87,7 +53,7 @@ class PonyChartClassifier:
         _logger.info("Downloading %s -> %s", url, p)
         req = urllib.request.Request(url)
         try:
-            with _urlopen(req) as resp:
+            with _opener().urlopen(req) as resp:
                 p.write_bytes(resp.read())
         except HTTPError as e:
             raise HTTPError(
@@ -121,7 +87,7 @@ class PonyChartClassifier:
         url = f"{_BASE_URL}/{filename}"
         req = urllib.request.Request(url, method="HEAD")
         try:
-            with _urlopen(req) as resp:
+            with _opener().urlopen(req) as resp:
                 etag: str | None = resp.headers.get("ETag")
                 return etag
         except (HTTPError, urllib.error.URLError):
