@@ -11,6 +11,7 @@
 
 import glob
 import json
+import logging
 import random
 import re
 import shutil
@@ -27,6 +28,8 @@ import ponychart_classifier as _pkg
 from ponychart_classifier.model_spec import select_predictions
 from ponychart_classifier.training.constants import VAL_SIZE
 from ponychart_classifier.training.splitting import group_hash_split
+
+logging.basicConfig(format="%(levelname)s: %(message)s")
 
 # 所有路徑以 repo root 為基準 (scripts/ 的上層)
 _REPO_DIR = Path(__file__).resolve().parent.parent
