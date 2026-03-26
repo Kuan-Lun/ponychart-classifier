@@ -15,47 +15,26 @@ uv pip install .
 # Install for development (with training dependencies)
 uv pip install -e ".[train]"
 
-# Run training
-uv run scripts/train.py
-uv run scripts/train.py --from-scratch  # ignore existing checkpoint
-
 # Label images (Tkinter GUI)
-uv run scripts/label_images.py
+uv run python -m app.label_images
 
 # Type checking
-uv run mypy src/ scripts/
+uv run mypy src/ app/
 
 # Linting
-uv run ruff check src/ scripts/
+uv run ruff check src/ app/
 
-# Build for PyPI
-pip install ".[publish]"
-python -m build
-twine upload dist/*
 ```
 
 There is no test suite. Quality is enforced via MyPy (strict mode) and Ruff.
 
-## Architecture
+## Project Structure
 
-### Inference (`src/ponychart_classifier/`)
+When you need to understand the directory layout, run `tree -I '__pycache__|*.egg-info|.venv|rawimage|checkpoints' -L 3` instead of maintaining a static listing here.
 
-- `model_spec.py` — Shared constants: 6 classes, input size 320×320, pre-resize 384×384, ImageNet normalization stats
-- `inference.py` — `PonyChartClassifier` class with lazy-loaded ONNX session. Public API: `predict(img_path)` and `preload()`
-- Ships bundled `model.onnx` and `thresholds.json` as package data
+## Key Design Decisions
 
-### Training (`src/ponychart_classifier/training/`)
-
-- `constants.py` — **Single source of truth** for all hyperparameters (backbone, LR, epochs, patience, thresholds)
-- `model.py` — `BACKBONE_REGISTRY` with 4 architectures (MobileNetV3-Small/Large, EfficientNet-B0/B2); replaces final classifier for NUM_CLASSES
-- `training.py` — Two-phase pipeline: Phase 1 freezes backbone (head-only), Phase 2 fine-tunes everything with early stopping
-- `dataset.py` — Memory-aware image caching with shared memory for DataLoader workers
-- `splitting.py` — MD5 hash-based stable train/val split that prevents data leakage across resume sessions
-- `sampling.py` — Separates original vs. cropped images by filename pattern; balances crops to match original class distribution
-- `export.py` — ONNX export (opset 18)
-
-### Key Design Decisions
-
+- `training/constants.py` is the **single source of truth** for all hyperparameters
 - **Resume training** auto-detects checkpoint compatibility and triggers from-scratch retraining if new data ratio exceeds 5% or validation set size increases
 - **Hash-based splitting** groups samples by timestamp so related crops stay together; assignment is deterministic regardless of dataset size
 - **Threshold optimization** tunes per-class sigmoid thresholds on validation data for multi-label F1
