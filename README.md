@@ -6,10 +6,26 @@ PonyChart 角色辨識模型，用於自動辨識 HentaiVerse 戰鬥中出現的
 
 ```
 ponychart-classifier/
+├── app/
+│   └── label_images/                  # 圖片標註工具 (Tkinter GUI)
+│       ├── __main__.py                # 進入點
+│       ├── app.py                     # LabelApp 主應用
+│       ├── checkpoint_viewer.py       # Checkpoint 資訊檢視
+│       ├── constants.py               # GUI 常數
+│       ├── crop_handler.py            # 裁切處理
+│       ├── file_ops.py                # 檔案操作
+│       ├── filter_builder.py          # 篩選條件建構
+│       ├── label_store.py             # 標籤儲存
+│       ├── navigator.py              # 圖片導覽
+│       └── analysis.py               # 標註分析
 ├── src/
 │   └── ponychart_classifier/          # PyPI 套件
-│       ├── __init__.py                # 公開 API (re-export model_spec)
-│       ├── model_spec.py              # 推論常數 + select_predictions()
+│       ├── __init__.py                # 公開 API (predict, update, preload, get_thresholds)
+│       ├── model_spec.py              # 推論常數 + PredictionResult / ClassThresholds
+│       ├── inference.py               # PonyChartClassifier (ONNX 推論)
+│       ├── _http.py                   # SSL-aware URL opener
+│       ├── model.onnx                 # 隨套件發佈的 ONNX 模型
+│       ├── thresholds.json            # 隨套件發佈的分類閾值
 │       └── training/                  # 訓練函式庫
 │           ├── __init__.py            # Re-export 所有 symbol
 │           ├── constants.py           # 常數與訓練超參數 (single source of truth)
@@ -20,11 +36,10 @@ ponychart-classifier/
 │           ├── sampling.py            # 樣本載入與平衡
 │           ├── splitting.py           # Hash-based group splitting
 │           ├── log_helpers.py         # 日誌輔助
+│           ├── script_utils.py        # 腳本共用工具
 │           └── export.py              # ONNX 匯出
 ├── scripts/                           # 開發用腳本 (不隨套件發佈)
 │   ├── train.py                       # 模型訓練腳本
-│   ├── label_images.py                # 圖片標註工具 (GUI)
-│   ├── inspect_checkpoint.py          # Checkpoint 資訊檢視
 │   ├── compare_backbones.py           # Backbone 架構比較
 │   ├── compare_crops.py               # 裁切圖片效果分析
 │   ├── compare_pos_weight.py          # pos_weight 效果比較
@@ -39,7 +54,9 @@ ponychart-classifier/
 ├── rawimage/                          # 訓練用原始圖片 (PNG)
 │   ├── labels.json                    # 標註資料 {"1/twilight/filename.png": [1,3]}
 │   └── checkpoint.pt                  # PyTorch checkpoint (resume 訓練用)
+├── mypy.ini                           # MyPy strict 設定
 ├── pyproject.toml
+├── uv.lock
 └── README.md
 ```
 
@@ -58,28 +75,41 @@ ponychart-classifier/
 
 ```bash
 # 推論用 (hbrowser 會自動安裝)
-pip install ponychart-classifier
+uv pip install ponychart-classifier
 
 # 開發用 (包含訓練依賴)
-pip install -e ".[train]"
+uv pip install -e ".[train]"
 ```
 
 ## 使用方式
 
 ```python
-from ponychart_classifier import predict, preload, update
+from ponychart_classifier import predict, preload, update, get_thresholds
+from ponychart_classifier import PonyChartClassifier, PredictionResult, ClassThresholds
 
-# 預先載入模型（首次呼叫時會自動從遠端下載）
+# 預先載入模型
 preload()
 
 # 檢查並更新模型至最新版本（比對 ETag，有新版才下載）
-update()
+updated: bool = update()
 
 # 預測圖片中的角色
-result = predict("path/to/image.png")
+result: PredictionResult = predict("path/to/image.png")
 print(result.labels)            # frozenset({'Rarity', 'Fluttershy'})
 print(result.rarity)            # 0.95
 print(result.twilight_sparkle)  # 0.02
+
+# 取得各角色的分類閾值
+thresholds: ClassThresholds = get_thresholds()
+```
+
+也可以直接使用 `PonyChartClassifier` 類別：
+
+```python
+from ponychart_classifier import PonyChartClassifier
+
+classifier = PonyChartClassifier(model_path="model.onnx", thresholds_path="thresholds.json")
+result = classifier.predict("path/to/image.png", min_k=1, max_k=3)
 ```
 
 ## 工作流程
@@ -91,15 +121,8 @@ print(result.twilight_sparkle)  # 0.02
 ### 2. 標註圖片
 
 ```bash
-uv run python scripts/label_images.py
+uv run python -m app.label_images
 ```
-
-操作方式：
-- `1`~`6`: 加/取消對應角色標籤
-- `A` / `D`: 上一張 / 下一張
-- `S`: 儲存目前標籤
-
-標註結果會即時更新到 `rawimage/labels.json`。
 
 ### 3. 訓練模型
 
@@ -129,11 +152,17 @@ uv run python scripts/train.py --from-scratch
 | 參數 | 預設值 | 說明 |
 |------|--------|------|
 | `BACKBONE` | `efficientnet_b0` | 見下方支援的 backbone |
-| `BATCH_SIZE` | 32 | 批次大小 |
+| `BATCH_SIZE` | 64 | 批次大小 |
 | `SEED` | 42 | 隨機種子 |
-| `PHASE1_EPOCHS` | 10 | Phase 1 (head-only) 訓練輪數 |
+| `PHASE1_EPOCHS` | 30 | Phase 1 (head-only) 訓練輪數 |
+| `PHASE1_PATIENCE` | 5 | Phase 1 early stopping patience |
 | `PHASE2_EPOCHS` | 100 | Phase 2 (full fine-tuning) 最大訓練輪數 |
 | `PHASE2_PATIENCE` | 12 | Phase 2 early stopping patience |
+| `LR_HEAD` | 4e-3 | Head 層學習率 |
+| `LR_FEATURES` | 1.2e-4 | Backbone 特徵提取層學習率 |
+| `LR_CLASSIFIER` | 1.2e-3 | 分類器層學習率 |
+| `VAL_SIZE` | 0.15 | 驗證集比例 |
+| `HOLDOUT_TEST_SIZE` | 0.20 | Holdout 測試集比例 |
 
 ## 支援的 Backbone
 
@@ -142,6 +171,7 @@ uv run python scripts/train.py --from-scratch
 | `mobilenet_v3_small` | 2.5M | ~4MB | 輕量快速 |
 | `mobilenet_v3_large` | 5.4M | ~9MB | 精度最高 |
 | `efficientnet_b0` | 5.3M | ~11MB | 預設，精度接近 Large，但訓練較慢 |
+| `efficientnet_b2` | 9.1M | ~18MB | 最大模型，較高精度但較慢 |
 
 所有 backbone 都使用 ImageNet 預訓練權重 + transfer learning。
 推論端使用 ONNX Runtime，backbone 更換後只需重新匯出 `model.onnx`，推論程式碼不需改動。
@@ -151,7 +181,7 @@ uv run python scripts/train.py --from-scratch
 分析腳本使用 `training/constants.py` 中的超參數設定：
 
 ```bash
-# 比較三種 backbone 的效果
+# 比較四種 backbone 的效果
 uv run python scripts/compare_backbones.py
 
 # 分析裁切圖片的影響
@@ -172,7 +202,7 @@ uv run python scripts/search_batch_lr.py
 
 ## 模型架構
 
-- **Backbone**: 可選 MobileNetV3-Small/Large 或 EfficientNet-B0 (預設 EfficientNet-B0，ImageNet 預訓練)
+- **Backbone**: 可選 MobileNetV3-Small/Large 或 EfficientNet-B0/B2 (預設 EfficientNet-B0，ImageNet 預訓練)
 - **訓練策略**: Phase 1 head-only + Phase 2 full fine-tuning，支援從 checkpoint 繼續訓練
 - **輸出**: 6 個 sigmoid 節點 (多標籤分類)
 - **推論引擎**: ONNX Runtime (CPU)
