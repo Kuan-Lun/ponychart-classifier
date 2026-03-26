@@ -45,10 +45,6 @@ Tracker = "https://github.com/Kuan-Lun/ponychart-classifier/issues"
 [tool.hatch.build.targets.wheel]
 packages = ["src/ponychart_classifier"]
 
-[tool.hatch.build.targets.wheel.force-include]
-"src/ponychart_classifier/model.onnx" = "ponychart_classifier/model.onnx"
-"src/ponychart_classifier/thresholds.json" = "ponychart_classifier/thresholds.json"
-
 [tool.ruff]
 line-length = 88
 
