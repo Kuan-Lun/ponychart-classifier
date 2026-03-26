@@ -33,7 +33,7 @@ def _load_checkpoint_data(path: Path) -> dict[str, Any]:
 
     samples = load_samples()
     labels_current = {
-        str(Path(p).relative_to(RAWIMAGE_DIR.parent)): labels for p, labels in samples
+        str(Path(p).relative_to(RAWIMAGE_DIR)): labels for p, labels in samples
     }
 
     all_files = [
