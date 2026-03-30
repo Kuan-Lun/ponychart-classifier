@@ -1,4 +1,9 @@
-"""Checkpoint 資訊：非模態視窗顯示訓練 checkpoint 的 metadata。"""
+"""Checkpoint 資訊：非模態視窗顯示訓練 checkpoint 的 metadata。
+
+拆分為兩個視窗：
+- DataStatusViewer：資料狀態（圖片數量、變更明細）
+- ModelInfoViewer：模型資訊（模型架構、訓練超參數）
+"""
 
 from __future__ import annotations
 
@@ -155,18 +160,23 @@ _FONT_BOLD = ("Consolas", 11, "bold")
 _FONT_HEADER = ("Consolas", 12, "bold")
 
 
-class CheckpointViewer:
-    """非模態視窗顯示 checkpoint 的 metadata。"""
+class _BaseViewer:
+    """非模態視窗的共用邏輯：載入、輪詢、重新整理。"""
+
+    _title: str = ""
 
     def __init__(self, parent: tk.Tk) -> None:
         self._parent = parent
         self._win: tk.Toplevel | None = None
+        self._thread: threading.Thread | None = None
+        self._result: dict[str, Any] | None = None
+        self._error: str | None = None
 
     def show(self) -> None:
         """顯示或重新聚焦視窗。"""
         if not _CHECKPOINT_PATH.exists():
             messagebox.showwarning(
-                "模型資訊",
+                self._title,
                 f"找不到 checkpoint 檔案：\n{_CHECKPOINT_PATH}",
                 parent=self._parent,
             )
@@ -178,7 +188,7 @@ class CheckpointViewer:
             return
 
         self._win = tk.Toplevel(self._parent)
-        self._win.title("模型資訊")
+        self._win.title(self._title)
         self._win.resizable(False, False)
 
         self._loading_label = tk.Label(
@@ -186,15 +196,13 @@ class CheckpointViewer:
         )
         self._loading_label.pack()
 
-        self._thread: threading.Thread | None = threading.Thread(
-            target=self._load, daemon=True
-        )
+        self._thread = threading.Thread(target=self._load, daemon=True)
         self._thread.start()
         self._poll()
 
     def _load(self) -> None:
-        self._result: dict[str, Any] | None = None
-        self._error: str | None = None
+        self._result = None
+        self._error = None
         try:
             self._result = _load_checkpoint_data(_CHECKPOINT_PATH)
         except Exception as e:
@@ -217,52 +225,7 @@ class CheckpointViewer:
             self._render(self._result)
 
     def _render(self, data: dict[str, Any]) -> None:
-        assert self._win is not None
-        container = tk.Frame(self._win)
-        container.pack(fill="both", expand=True, padx=8, pady=8)
-
-        def _pack_section_frame(parent: tk.Widget) -> tk.Frame:
-            frame = tk.Frame(parent)
-            frame.pack(anchor="w", padx=16, pady=(0, 4))
-            return frame
-
-        # --- 基本資訊 ---
-        self._section(container, "基本資訊")
-        f = _pack_section_frame(container)
-        self._kv(f, "檔案大小", f"{data['file_size_mb']:.2f} MB")
-        self._kv(f, "最新圖片時間", str(data.get("created_at", "N/A")))
-
-        # --- 圖片數量 ---
-        self._section(container, "圖片數量")
-        self._render_counts(container, data["counts"])
-
-        # --- 變更明細 ---
-        self._section(container, "變更明細")
-        self._render_changes(container, data["changes"])
-
-        # --- 模型 ---
-        self._section(container, "模型架構")
-        f = _pack_section_frame(container)
-        m = data["model"]
-        self._kv(f, "Backbone", str(m["backbone"]))
-        self._kv(f, "Input size", str(m["input_size"]))
-        self._kv(f, "Pre-resize", str(m["pre_resize"]))
-        self._kv(f, "Classes", str(m["num_classes"]))
-        self._kv(f, "Parameters", f"{m['n_params']:,}")
-        self._kv(f, "State dict keys", f"{m['n_keys']:,}")
-        self._kv(f, "Val size", str(m["val_size"]))
-        self._kv(f, "Val F1", str(m["val_f1"]))
-
-        # --- 超參數 ---
-        hp = data.get("hyperparams", {})
-        if hp:
-            self._section(container, "訓練超參數")
-            f = _pack_section_frame(container)
-            for label, val in hp.items():
-                self._kv(f, label, str(val))
-
-        # --- Refresh ---
-        tk.Button(container, text="重新載入", command=self._refresh).pack(pady=(8, 0))
+        raise NotImplementedError
 
     def _refresh(self) -> None:
         if self._win is None or not self._win.winfo_exists():
@@ -277,21 +240,63 @@ class CheckpointViewer:
         self._thread.start()
         self._poll()
 
-    # ── 表格繪製 helpers ──────────────────────────────────────
+    # ── helpers ───────────────────────────────────────────────
 
-    def _section(self, parent: tk.Widget, title: str) -> None:
+    @staticmethod
+    def _section(parent: tk.Widget, title: str) -> None:
         tk.Label(parent, text=title, font=_FONT_HEADER, anchor="w").pack(
             anchor="w", padx=8, pady=(8, 2)
         )
         tk.Frame(parent, height=1, bg="#ccc").pack(fill="x", padx=8, pady=(0, 4))
 
-    def _kv(self, parent: tk.Widget, key: str, value: str) -> None:
+    @staticmethod
+    def _kv(parent: tk.Widget, key: str, value: str) -> None:
         row = tk.Frame(parent)
         row.pack(anchor="w")
         tk.Label(row, text=f"{key}:", font=_FONT_BOLD, width=18, anchor="w").pack(
             side="left"
         )
         tk.Label(row, text=value, font=_FONT, anchor="w").pack(side="left")
+
+    @staticmethod
+    def _pack_section_frame(parent: tk.Widget) -> tk.Frame:
+        frame = tk.Frame(parent)
+        frame.pack(anchor="w", padx=16, pady=(0, 4))
+        return frame
+
+    @staticmethod
+    def _fmt_diff(cur: int, base: int) -> str:
+        diff = cur - base
+        ratio = diff / base if base else 0
+        return f"{diff:+,d} ({ratio:+.1%})"
+
+    @staticmethod
+    def _detail_cell(total: int, n_o: int, n_c: int) -> str:
+        return f"{total} ({n_o} 原圖, {n_c} 裁切)"
+
+
+class DataStatusViewer(_BaseViewer):
+    """資料狀態視窗：圖片數量、變更明細。"""
+
+    _title = "資料狀態"
+
+    def _render(self, data: dict[str, Any]) -> None:
+        assert self._win is not None
+        container = tk.Frame(self._win)
+        container.pack(fill="both", expand=True, padx=8, pady=8)
+
+        # --- 圖片數量 ---
+        self._section(container, "圖片數量")
+        f = self._pack_section_frame(container)
+        self._kv(f, "最新圖片時間", str(data.get("created_at", "N/A")))
+        self._render_counts(container, data["counts"])
+
+        # --- 變更明細 ---
+        self._section(container, "變更明細")
+        self._render_changes(container, data["changes"])
+
+        # --- Refresh ---
+        tk.Button(container, text="重新載入", command=self._refresh).pack(pady=(8, 0))
 
     def _render_counts(self, parent: tk.Widget, c: dict[str, Any]) -> None:
         frame = tk.Frame(parent)
@@ -391,12 +396,42 @@ class CheckpointViewer:
                 anchor="e",
             ).grid(row=r, column=2, padx=2)
 
-    @staticmethod
-    def _fmt_diff(cur: int, base: int) -> str:
-        diff = cur - base
-        ratio = diff / base if base else 0
-        return f"{diff:+,d} ({ratio:+.1%})"
 
-    @staticmethod
-    def _detail_cell(total: int, n_o: int, n_c: int) -> str:
-        return f"{total} ({n_o} 原圖, {n_c} 裁切)"
+class ModelInfoViewer(_BaseViewer):
+    """模型資訊視窗：模型架構、訓練超參數。"""
+
+    _title = "模型資訊"
+
+    def _render(self, data: dict[str, Any]) -> None:
+        assert self._win is not None
+        container = tk.Frame(self._win)
+        container.pack(fill="both", expand=True, padx=8, pady=8)
+
+        # --- 模型架構 ---
+        self._section(container, "模型架構")
+        f = self._pack_section_frame(container)
+        self._kv(f, "檔案大小", f"{data['file_size_mb']:.2f} MB")
+        m = data["model"]
+        self._kv(f, "Backbone", str(m["backbone"]))
+        self._kv(f, "Input size", str(m["input_size"]))
+        self._kv(f, "Pre-resize", str(m["pre_resize"]))
+        self._kv(f, "Classes", str(m["num_classes"]))
+        self._kv(f, "Parameters", f"{m['n_params']:,}")
+        self._kv(f, "State dict keys", f"{m['n_keys']:,}")
+        self._kv(f, "Val size", str(m["val_size"]))
+        self._kv(f, "Val F1", str(m["val_f1"]))
+
+        # --- 超參數 ---
+        hp = data.get("hyperparams", {})
+        if hp:
+            self._section(container, "訓練超參數")
+            f = self._pack_section_frame(container)
+            for label, val in hp.items():
+                self._kv(f, label, str(val))
+
+        # --- Refresh ---
+        tk.Button(container, text="重新載入", command=self._refresh).pack(pady=(8, 0))
+
+
+# Backward-compatible alias
+CheckpointViewer = ModelInfoViewer

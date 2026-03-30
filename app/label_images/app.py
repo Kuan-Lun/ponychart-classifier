@@ -10,7 +10,7 @@ from typing import Literal
 from PIL import Image, ImageTk
 
 from .analysis import AnalysisManager, AnalysisTable
-from .checkpoint_viewer import CheckpointViewer
+from .checkpoint_viewer import DataStatusViewer, ModelInfoViewer
 from .constants import (
     CLASS_NAMES_LIST,
     CONFLICT_SUBDIR,
@@ -78,7 +78,8 @@ class LabelApp:
 
         # Model analysis & checkpoint viewer
         self._analysis = AnalysisManager()
-        self._checkpoint_viewer = CheckpointViewer(root)
+        self._data_status_viewer = DataStatusViewer(root)
+        self._model_info_viewer = ModelInfoViewer(root)
         self._build_action_buttons(root)
         self._build_analysis_ui(root)
 
@@ -187,8 +188,14 @@ class LabelApp:
 
         tk.Button(
             action_frame,
+            text="資料狀態",
+            command=self._data_status_viewer.show,
+        ).pack(side="left", padx=(0, 16))
+
+        tk.Button(
+            action_frame,
             text="模型資訊",
-            command=self._checkpoint_viewer.show,
+            command=self._model_info_viewer.show,
         ).pack(side="left")
 
     def _build_analysis_ui(self, root: tk.Tk) -> None:
