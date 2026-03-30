@@ -78,54 +78,57 @@ class LabelApp:
     # ── UI 建構 ──────────────────────────────────────────────
 
     def _build_action_buttons(self, root: tk.Tk) -> None:
-        action_frame = tk.Frame(root)
-        action_frame.pack(pady=(0, 4))
+        # 第 1 排：高頻操作 + 資訊查看
+        primary_frame = tk.Frame(root)
+        primary_frame.pack(pady=(0, 4))
 
-        self._delete_btn = tk.Button(
-            action_frame,
-            text="刪除此裁切圖",
-            fg="red",
-            command=self._delete_crop,
-            state="disabled",
+        self._analyze_btn = tk.Button(
+            primary_frame,
+            text="自動標註",
+            command=self._start_analysis,
         )
-        self._delete_btn.pack(side="left", padx=(0, 16))
+        self._analyze_btn.pack(side="left", padx=(0, 8))
+        self._analyze_status = tk.Label(primary_frame, text="", fg="#999")
+        self._analyze_status.pack(side="left", padx=(0, 16))
 
         tk.Button(
-            action_frame,
-            text="清理孤兒標籤",
-            command=self._file_actions.purge_orphans,
-        ).pack(side="left", padx=(0, 16))
-
-        tk.Button(
-            action_frame,
-            text="全部整理",
-            command=self._organize_all,
-        ).pack(side="left", padx=(0, 16))
-
-        tk.Button(
-            action_frame,
+            primary_frame,
             text="資料狀態",
             command=self._data_status_viewer.show,
         ).pack(side="left", padx=(0, 16))
 
         tk.Button(
-            action_frame,
+            primary_frame,
             text="模型資訊",
             command=self._model_info_viewer.show,
         ).pack(side="left")
 
-    def _build_analysis_ui(self, root: tk.Tk) -> None:
-        analyze_frame = tk.Frame(root)
-        analyze_frame.pack(pady=(0, 4))
-        self._analyze_btn = tk.Button(
-            analyze_frame,
-            text="自動標註",
-            command=self._start_analysis,
-        )
-        self._analyze_btn.pack(side="left", padx=(0, 8))
-        self._analyze_status = tk.Label(analyze_frame, text="", fg="#999")
-        self._analyze_status.pack(side="left")
+        # 第 2 排：批次操作 + 破壞性操作
+        secondary_frame = tk.Frame(root)
+        secondary_frame.pack(pady=(0, 4))
 
+        tk.Button(
+            secondary_frame,
+            text="全部整理",
+            command=self._organize_all,
+        ).pack(side="left", padx=(0, 16))
+
+        tk.Button(
+            secondary_frame,
+            text="清理孤兒標籤",
+            command=self._file_actions.purge_orphans,
+        ).pack(side="left", padx=(0, 32))
+
+        self._delete_btn = tk.Button(
+            secondary_frame,
+            text="刪除此裁切圖",
+            fg="red",
+            command=self._delete_crop,
+            state="disabled",
+        )
+        self._delete_btn.pack(side="left")
+
+    def _build_analysis_ui(self, root: tk.Tk) -> None:
         self._analysis_table = AnalysisTable(root)
 
     # ── UI 更新 ──────────────────────────────────────────────
