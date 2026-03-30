@@ -119,7 +119,7 @@ class LabelApp:
         analyze_frame.pack(pady=(0, 4))
         self._analyze_btn = tk.Button(
             analyze_frame,
-            text="Analyze labels",
+            text="自動標註",
             command=self._start_analysis,
         )
         self._analyze_btn.pack(side="left", padx=(0, 8))
