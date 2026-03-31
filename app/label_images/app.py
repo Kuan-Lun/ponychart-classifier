@@ -8,6 +8,7 @@ from tkinter import messagebox, simpledialog
 from .analysis import AnalysisManager, AnalysisTable
 from .checkpoint_viewer import DataStatusViewer, ModelInfoViewer
 from .constants import IMAGE_SUBDIR, LABEL_FILE, LABEL_MAP
+from .distribution_viewer import DistributionViewer
 from .file_actions import FileActions
 from .file_ops import is_raw_image, organize_single
 from .filter_panel import FilterPanel
@@ -57,6 +58,7 @@ class LabelApp:
         self._analysis = AnalysisManager()
         self._data_status_viewer = DataStatusViewer(root)
         self._model_info_viewer = ModelInfoViewer(root)
+        self._distribution_viewer = DistributionViewer(root, self.store)
         self._build_action_buttons(root)
         self._build_analysis_ui(root)
 
@@ -90,6 +92,12 @@ class LabelApp:
         self._analyze_btn.pack(side="left", padx=(0, 8))
         self._analyze_status = tk.Label(primary_frame, text="", fg="#999")
         self._analyze_status.pack(side="left", padx=(0, 16))
+
+        tk.Button(
+            primary_frame,
+            text="角色分布",
+            command=self._distribution_viewer.show,
+        ).pack(side="left", padx=(0, 16))
 
         tk.Button(
             primary_frame,
