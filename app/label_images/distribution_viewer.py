@@ -130,7 +130,7 @@ class DistributionViewer:
 
         self._render_summary(container, orig, all_)
         self._render_char_table(container, orig, all_)
-        self._render_combo_table(container, orig, all_, size=2, title="雙標籤組合")
+        self._render_double_matrix(container, orig, all_)
         self._render_combo_table(container, orig, all_, size=3, title="三標籤組合")
         self._render_cooccurrence(container, orig, all_)
 
@@ -225,6 +225,47 @@ class DistributionViewer:
                 _NUM_CLASSES + 1,
                 width=12,
             )
+
+    def _render_double_matrix(
+        self,
+        parent: tk.Widget,
+        orig: dict[str, list[int]],
+        all_: dict[str, list[int]],
+    ) -> None:
+        """雙標籤組合：以上三角矩陣呈現，每格原圖/全部。"""
+        self._section(parent, "雙標籤組合")
+
+        orig_combos = dict(_combo_counts(orig, 2))
+        all_combos = dict(_combo_counts(all_, 2))
+        o_total = sum(orig_combos.values())
+        a_total = sum(all_combos.values())
+
+        frame = tk.Frame(parent)
+        frame.pack(anchor="w", padx=8, pady=(0, 4))
+
+        # Column headers
+        self._make_cell(frame, "原圖/全部", 0, 0, font=_FONT_BOLD, width=12, anchor="w")
+        for c, name in enumerate(_SHORT_NAMES):
+            self._make_cell(frame, name, 0, c + 1, font=_FONT_BOLD, width=12)
+
+        for i in range(_NUM_CLASSES):
+            self._make_cell(
+                frame,
+                _SHORT_NAMES[i],
+                i + 1,
+                0,
+                font=_FONT_BOLD,
+                anchor="w",
+                width=6,
+            )
+            for j in range(_NUM_CLASSES):
+                if j <= i:
+                    self._make_cell(frame, "—", i + 1, j + 1, width=12)
+                else:
+                    combo = (i + 1, j + 1)
+                    o_s = _pct(orig_combos.get(combo, 0), o_total)
+                    a_s = _pct(all_combos.get(combo, 0), a_total)
+                    self._make_cell(frame, f"{o_s}/{a_s}", i + 1, j + 1, width=12)
 
     def _render_combo_table(
         self,
