@@ -39,10 +39,10 @@ def _split_samples(
 
 
 def _pct(count: int, total: int) -> str:
-    """格式化百分比，total 為 0 時回傳 '—'。"""
+    """格式化百分比（不帶 % 符號），total 為 0 時回傳 '—'。"""
     if total == 0:
         return "—"
-    return f"{count / total * 100:.1f}%"
+    return f"{count / total * 100:.1f}"
 
 
 def _count_by_label_size(
@@ -199,27 +199,32 @@ class DistributionViewer:
         all_overall = _overall_counts(all_)
 
         # Header
-        headers = [""] + _SHORT_NAMES + ["合計"]
+        headers = ["原圖/全部"] + _SHORT_NAMES + ["合計"]
         for col, h in enumerate(headers):
-            self._make_cell(frame, h, 0, col, font=_FONT_BOLD, width=10)
+            self._make_cell(frame, h, 0, col, font=_FONT_BOLD, width=12)
 
-        row_defs: list[tuple[str, list[int]]] = [
-            ("單標籤 (原圖)", orig_by_n[1]),
-            ("雙標籤 (原圖)", orig_by_n[2]),
-            ("三標籤 (原圖)", orig_by_n[3]),
-            ("單標籤 (全部)", all_by_n[1]),
-            ("雙標籤 (全部)", all_by_n[2]),
-            ("三標籤 (全部)", all_by_n[3]),
-            ("出現次數 (原圖)", orig_overall),
-            ("出現次數 (全部)", all_overall),
+        row_defs: list[tuple[str, list[int], list[int]]] = [
+            ("單標籤", orig_by_n[1], all_by_n[1]),
+            ("雙標籤", orig_by_n[2], all_by_n[2]),
+            ("三標籤", orig_by_n[3], all_by_n[3]),
+            ("出現次數", orig_overall, all_overall),
         ]
 
-        for r, (label, counts) in enumerate(row_defs, start=1):
-            self._make_cell(frame, label, r, 0, font=_FONT_BOLD, anchor="w", width=16)
-            total = sum(counts)
-            for c, val in enumerate(counts):
-                self._make_cell(frame, _pct(val, total), r, c + 1)
-            self._make_cell(frame, str(total), r, _NUM_CLASSES + 1)
+        for r, (label, o_counts, a_counts) in enumerate(row_defs, start=1):
+            self._make_cell(frame, label, r, 0, font=_FONT_BOLD, anchor="w", width=12)
+            o_total = sum(o_counts)
+            a_total = sum(a_counts)
+            for c in range(_NUM_CLASSES):
+                o_s = _pct(o_counts[c], o_total)
+                a_s = _pct(a_counts[c], a_total)
+                self._make_cell(frame, f"{o_s}/{a_s}", r, c + 1, width=12)
+            self._make_cell(
+                frame,
+                f"{o_total}/{a_total}",
+                r,
+                _NUM_CLASSES + 1,
+                width=12,
+            )
 
     def _render_combo_table(
         self,
@@ -257,34 +262,33 @@ class DistributionViewer:
 
         # Header
         combo_labels = ["+".join(_SHORT_NAMES[i - 1] for i in c) for c in combo_keys]
-        headers = [""] + combo_labels + ["合計"]
+        headers = ["原圖/全部"] + combo_labels + ["合計"]
         for col, h in enumerate(headers):
-            w = max(8, len(h) + 2)
+            w = max(10, len(h) + 2)
             self._make_cell(frame, h, 0, col, font=_FONT_BOLD, width=w)
 
-        rows: list[tuple[str, dict[tuple[int, ...], int]]] = [
-            ("原圖", orig_map),
-            ("全部", all_map),
-        ]
-        for r, (label, cmap) in enumerate(rows, start=1):
-            self._make_cell(frame, label, r, 0, font=_FONT_BOLD, anchor="w", width=8)
-            total = sum(cmap.values())
-            for c_idx, combo in enumerate(combo_keys):
-                val = cmap.get(combo, 0)
-                self._make_cell(
-                    frame,
-                    _pct(val, total),
-                    r,
-                    c_idx + 1,
-                    width=max(8, len(combo_labels[c_idx]) + 2),
-                )
+        o_total = sum(orig_map.values())
+        a_total = sum(all_map.values())
+        self._make_cell(frame, "", 1, 0, font=_FONT_BOLD, anchor="w", width=10)
+        for c_idx, combo in enumerate(combo_keys):
+            o_val = orig_map.get(combo, 0)
+            a_val = all_map.get(combo, 0)
+            o_s = _pct(o_val, o_total)
+            a_s = _pct(a_val, a_total)
             self._make_cell(
                 frame,
-                str(total),
-                r,
-                len(combo_keys) + 1,
-                width=max(8, len("合計") + 2),
+                f"{o_s}/{a_s}",
+                1,
+                c_idx + 1,
+                width=max(10, len(combo_labels[c_idx]) + 2),
             )
+        self._make_cell(
+            frame,
+            f"{o_total}/{a_total}",
+            1,
+            len(combo_keys) + 1,
+            width=max(10, len("合計") + 2),
+        )
 
     def _render_cooccurrence(
         self,
@@ -292,8 +296,8 @@ class DistributionViewer:
         orig: dict[str, list[int]],
         all_: dict[str, list[int]],
     ) -> None:
-        """共現矩陣：原圖 / 全部並列。"""
-        self._section(parent, "共現矩陣")
+        """共現矩陣：原圖 / 全部並列，顯示條件機率 P(col|row)。"""
+        self._section(parent, "共現矩陣 P(col|row)")
 
         outer = tk.Frame(parent)
         outer.pack(anchor="w", padx=8, pady=(0, 4))
@@ -361,5 +365,10 @@ class DistributionViewer:
                         else:
                             bg = ""
                         self._make_cell(
-                            sub, f"{rate:.0f}%", i + 2, j + 1, width=6, bg=bg
+                            sub,
+                            f"{rate:.0f}%",
+                            i + 2,
+                            j + 1,
+                            width=6,
+                            bg=bg,
                         )
