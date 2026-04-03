@@ -23,7 +23,6 @@ class FilterPanel:
         self._on_filter_changed = on_filter_changed
         self._build_filter_ui(root)
         self._build_class_filter_ui(root)
-        self._build_suspicious_filter_ui(root)
 
     # ── UI 建構 ──────────────────────────────────────────────
 
@@ -88,13 +87,11 @@ class FilterPanel:
                 command=self._on_filter_changed,
             ).pack(side="left", padx=(2, 2))
 
-    def _build_suspicious_filter_ui(self, root: tk.Tk) -> None:
-        suspicious_frame = tk.Frame(root)
-        suspicious_frame.pack(pady=(0, 4))
-
+    def build_suspicious_checkboxes(self, parent: tk.Frame) -> None:
+        """在指定的 frame 中建構 Mislabel / Missing checkbox。"""
         self._mislabel_var = tk.BooleanVar(value=False)
         self._mislabel_cb = tk.Checkbutton(
-            suspicious_frame,
+            parent,
             text="Mislabel (−)",
             variable=self._mislabel_var,
             command=self._on_filter_changed,
@@ -103,7 +100,7 @@ class FilterPanel:
 
         self._missing_var = tk.BooleanVar(value=False)
         self._missing_cb = tk.Checkbutton(
-            suspicious_frame,
+            parent,
             text="Missing (+)",
             variable=self._missing_var,
             command=self._on_filter_changed,

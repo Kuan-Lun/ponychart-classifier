@@ -80,7 +80,7 @@ class LabelApp:
     # ── UI 建構 ──────────────────────────────────────────────
 
     def _build_action_buttons(self, root: tk.Tk) -> None:
-        # 第 1 排：高頻操作 + 資訊查看
+        # 第 1 排：自動標註 + 可疑篩選
         primary_frame = tk.Frame(root)
         primary_frame.pack(pady=(0, 4))
 
@@ -89,46 +89,52 @@ class LabelApp:
             text="自動標註",
             command=self._start_analysis,
         )
-        self._analyze_btn.pack(side="left", padx=(0, 8))
+        self._analyze_btn.pack(side="left", padx=(0, 4))
         self._analyze_status = tk.Label(primary_frame, text="", fg="#999")
-        self._analyze_status.pack(side="left", padx=(0, 16))
+        self._analyze_status.pack(side="left", padx=(0, 4))
+
+        self._filter_panel.build_suspicious_checkboxes(primary_frame)
+
+        # 第 2 排：資訊查看
+        info_frame = tk.Frame(root)
+        info_frame.pack(pady=(0, 4))
 
         tk.Button(
-            primary_frame,
+            info_frame,
             text="角色分布",
             command=self._distribution_viewer.show,
         ).pack(side="left", padx=(0, 16))
 
         tk.Button(
-            primary_frame,
+            info_frame,
             text="資料狀態",
             command=self._data_status_viewer.show,
         ).pack(side="left", padx=(0, 16))
 
         tk.Button(
-            primary_frame,
+            info_frame,
             text="模型資訊",
             command=self._model_info_viewer.show,
         ).pack(side="left")
 
-        # 第 2 排：批次操作 + 破壞性操作
-        secondary_frame = tk.Frame(root)
-        secondary_frame.pack(pady=(0, 4))
+        # 第 3 排：批次操作 + 破壞性操作
+        batch_frame = tk.Frame(root)
+        batch_frame.pack(pady=(0, 4))
 
         tk.Button(
-            secondary_frame,
+            batch_frame,
             text="全部整理",
             command=self._organize_all,
         ).pack(side="left", padx=(0, 16))
 
         tk.Button(
-            secondary_frame,
+            batch_frame,
             text="清理孤兒標籤",
             command=self._file_actions.purge_orphans,
         ).pack(side="left", padx=(0, 32))
 
         self._delete_btn = tk.Button(
-            secondary_frame,
+            batch_frame,
             text="刪除此裁切圖",
             fg="red",
             command=self._delete_crop,
@@ -269,8 +275,7 @@ class LabelApp:
         )
 
     def _on_analysis_complete(self) -> None:
-        count = len(self._analysis.model_probs) if self._analysis.model_probs else 0
-        self._analyze_status.configure(text=f"Done ({count} images)")
+        self._analyze_status.configure(text="")
         self._filter_panel.set_suspicious_state("normal")
         self._refresh()
 
