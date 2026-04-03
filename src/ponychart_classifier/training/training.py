@@ -325,7 +325,13 @@ def train_model(
         min_lr=SCHEDULER_MIN_LR,
     )
 
-    best_f1 = 0.0
+    # Evaluate baseline before training starts
+    if resuming:
+        baseline_result = evaluate(model, val_loader, criterion, device)
+        best_f1 = baseline_result.macro_f1
+        logger.info("  Baseline val_F1 (before training): %.4f", best_f1)
+    else:
+        best_f1 = 0.0
     best_state = copy.deepcopy(model.state_dict())
     patience_counter = 0
 

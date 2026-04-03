@@ -10,14 +10,18 @@ ponychart-classifier/
 │   └── label_images/                  # 圖片標註工具 (Tkinter GUI)
 │       ├── __main__.py                # 進入點
 │       ├── app.py                     # LabelApp 主應用
+│       ├── analysis.py                # 模型分析 (背景推論)
 │       ├── checkpoint_viewer.py       # Checkpoint 資訊檢視
 │       ├── constants.py               # GUI 常數
 │       ├── crop_handler.py            # 裁切處理
+│       ├── distribution_viewer.py     # 角色分布統計檢視
+│       ├── file_actions.py            # 批次檔案操作
 │       ├── file_ops.py                # 檔案操作
 │       ├── filter_builder.py          # 篩選條件建構
+│       ├── filter_panel.py            # 篩選面板 UI
+│       ├── image_viewer.py            # 圖片顯示元件
 │       ├── label_store.py             # 標籤儲存
-│       ├── navigator.py              # 圖片導覽
-│       └── analysis.py               # 標註分析
+│       └── navigator.py              # 圖片導覽
 ├── src/
 │   └── ponychart_classifier/          # PyPI 套件
 │       ├── __init__.py                # 公開 API (predict, update, preload, get_thresholds)
@@ -33,6 +37,7 @@ ponychart-classifier/
 │           ├── dataset.py             # 資料載入、Dataset、transforms
 │           ├── model.py               # Backbone registry + build_model()
 │           ├── training.py            # 訓練迴圈、evaluate、threshold 優化
+│           ├── checkpoint.py          # Checkpoint val_f1 重新計算與更新
 │           ├── sampling.py            # 樣本載入與平衡
 │           ├── splitting.py           # Hash-based group splitting
 │           ├── log_helpers.py         # 日誌輔助
@@ -118,17 +123,22 @@ result = classifier.predict("path/to/image.png", min_k=1, max_k=3)
 
 將新的 PonyChart 截圖 (PNG) 放入 `rawimage/` 資料夾。
 
-### 2. 標註圖片
+### 2. 安裝訓練依賴
+
+```bash
+# 只需一次，標註工具與訓練皆需要
+uv pip install -e ".[train]"
+```
+
+### 3. 標註圖片
 
 ```bash
 uv run python -m app.label_images
 ```
 
-### 3. 訓練模型
+### 4. 訓練模型
 
 ```bash
-# 安裝訓練依賴 (只需一次)
-uv pip install -e ".[train]"
 
 # 執行訓練 (若存在 checkpoint.pt 則自動從上次結果繼續訓練)
 uv run python scripts/train.py

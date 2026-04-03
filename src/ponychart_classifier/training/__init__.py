@@ -1,5 +1,6 @@
 """Common utilities for PonyChart ML scripts."""
 
+from .checkpoint import recompute_checkpoint_val_f1
 from .constants import (
     BACKBONE,
     BATCH_SIZE,
@@ -159,6 +160,7 @@ __all__ = [
     "make_dataloader",
     "optimize_thresholds",
     "prepare_balanced_samples",
+    "recompute_checkpoint_val_f1",
     "prepare_holdout_split",
     "separate_orig_crop",
     "split_by_groups",

@@ -43,13 +43,13 @@ from ponychart_classifier.training import (
     VAL_SIZE,
     WEIGHT_DECAY,
     balance_crop_samples,
-    build_model,
     compute_class_rates,
     export_onnx,
     get_base_timestamp,
     group_hash_split,
     is_original,
     load_samples,
+    recompute_checkpoint_val_f1,
     seed_all,
     separate_orig_crop,
     setup_device_and_workers,
@@ -205,34 +205,7 @@ def main() -> None:
         verbose=True,
         resume_from=resume_from,
     )
-    model, thresholds, best_f1 = result.model, result.thresholds, result.best_f1
-
-    # Guard: skip overwrite if resume training produced worse val_F1
-    if resume_from is not None:
-        ckpt = torch.load(resume_from, map_location=device, weights_only=True)
-        prev_f1 = ckpt.get("val_f1")
-        if prev_f1 is not None and best_f1 < prev_f1:
-            artifacts_exist = OUTPUT_ONNX.exists() and OUTPUT_THRESHOLDS.exists()
-            if artifacts_exist:
-                logger.warning(
-                    "Resume training val_F1 (%.4f) < previous val_F1 (%.4f). "
-                    "Skipping checkpoint/ONNX/thresholds overwrite.",
-                    best_f1,
-                    prev_f1,
-                )
-                logger.info("Done! (no files updated)")
-                return
-            # Artifacts missing — restore from checkpoint's better weights
-            logger.warning(
-                "Resume training val_F1 (%.4f) < previous val_F1 (%.4f), "
-                "but artifacts missing. Restoring from checkpoint.",
-                best_f1,
-                prev_f1,
-            )
-            model = build_model(BACKBONE, pretrained=False)
-            model.load_state_dict(ckpt["state_dict"])
-            thresholds = ckpt["thresholds"]
-            best_f1 = prev_f1
+    model, thresholds = result.model, result.thresholds
 
     # Save thresholds
     thresholds_dict = dict(zip(CLASS_NAMES, thresholds))
@@ -264,7 +237,6 @@ def main() -> None:
         {
             "state_dict": model.state_dict(),
             "thresholds": thresholds,
-            "val_f1": best_f1,
             "n_orig": n_orig_current,
             "n_crop": n_crop_current,
             "labels_at_full_train": labels_at_full_train,
@@ -290,16 +262,18 @@ def main() -> None:
         OUTPUT_CHECKPOINT,
     )
     logger.info(
-        "Checkpoint saved: %s (n_orig=%s, val_f1=%.4f, created_at=%s)",
+        "Checkpoint saved: %s (n_orig=%s, created_at=%s)",
         OUTPUT_CHECKPOINT,
         f"{n_orig_current:,}",
-        best_f1,
         latest_timestamp,
     )
 
     # Export ONNX
     logger.info("Exporting ONNX...")
     export_onnx(model, OUTPUT_ONNX)
+
+    # Recompute val_f1 on current dataset and update checkpoint
+    recompute_checkpoint_val_f1(OUTPUT_CHECKPOINT, device, num_workers)
 
     logger.info("Done!")
 

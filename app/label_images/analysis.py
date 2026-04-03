@@ -6,6 +6,7 @@ from collections.abc import Callable
 
 import ponychart_classifier as _pkg
 from ponychart_classifier.model_spec import select_predictions
+from ponychart_classifier.training import OUTPUT_CHECKPOINT, recompute_checkpoint_val_f1
 
 from .constants import CLASS_NAMES_LIST, LABEL_MAP, SUSPICIOUS_MARGIN
 from .label_store import LabelStore
@@ -95,6 +96,9 @@ class AnalysisManager:
                     pred.applejack,
                 ]
             self._result = (result, thresholds)
+            # Update checkpoint val_f1 based on current dataset
+            if OUTPUT_CHECKPOINT.exists():
+                recompute_checkpoint_val_f1(OUTPUT_CHECKPOINT)
         except Exception as e:
             self._error = str(e)
 
