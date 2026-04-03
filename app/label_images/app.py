@@ -127,12 +127,6 @@ class LabelApp:
             command=self._organize_all,
         ).pack(side="left", padx=(0, 16))
 
-        tk.Button(
-            batch_frame,
-            text="清理孤兒標籤",
-            command=self._file_actions.purge_orphans,
-        ).pack(side="left", padx=(0, 32))
-
         self._delete_btn = tk.Button(
             batch_frame,
             text="刪除此裁切圖",

@@ -1,4 +1,4 @@
-"""批次檔案操作：刪除裁切圖、清理孤兒標籤、全部整理。"""
+"""批次檔案操作：刪除裁切圖、全部整理（含去重、清理孤兒標籤、搬移）。"""
 
 from pathlib import Path
 from tkinter import messagebox
@@ -45,30 +45,8 @@ class FileActions:
         path.unlink(missing_ok=True)
         return True
 
-    def purge_orphans(self) -> None:
-        """清理 labels.json 中沒有對應檔案的孤兒標籤。"""
-        orphans = self._store.purge_orphans(IMAGE_DIR)
-        if not orphans:
-            messagebox.showinfo("清理孤兒標籤", "沒有孤兒標籤。")
-            return
-        confirm = messagebox.askyesno(
-            "清理孤兒標籤",
-            f"發現 {len(orphans)} 筆孤兒標籤"
-            f"（檔案不存在）：\n\n"
-            + "\n".join(orphans[:20])
-            + ("\n..." if len(orphans) > 20 else "")
-            + "\n\n確定要從 labels.json 移除？",
-        )
-        if not confirm:
-            return
-        self._store.save()
-        messagebox.showinfo(
-            "清理孤兒標籤",
-            f"已移除 {len(orphans)} 筆孤兒標籤。",
-        )
-
     def organize_all(self) -> None:
-        """去重並將所有圖片搬到正確的子資料夾。"""
+        """去重、清理孤兒標籤、並將所有圖片搬到正確的子資料夾。"""
         dups = dedup_images(list(self._nav.all_paths))
         n_dedup = 0
         if dups:
@@ -92,6 +70,11 @@ class FileActions:
                 n_dedup += 1
             self._store.save()
 
+        orphans = self._store.purge_orphans(IMAGE_DIR)
+        n_orphan = len(orphans)
+        if n_orphan:
+            self._store.save()
+
         pending: list[tuple[Path, str]] = []
         for p in list(self._nav.all_paths):
             key = self._store.path_to_key(p)
@@ -100,7 +83,7 @@ class FileActions:
             if p != target:
                 pending.append((p, key))
 
-        if not pending and not n_dedup:
+        if not pending and not n_dedup and not n_orphan:
             messagebox.showinfo("全部整理", "所有圖片已在正確位置，無重複。")
             return
 
@@ -135,6 +118,8 @@ class FileActions:
         parts = []
         if n_dedup:
             parts.append(f"已刪除 {n_dedup} 張重複圖片。")
+        if n_orphan:
+            parts.append(f"已清理 {n_orphan} 筆孤兒標籤。")
         if n_moved:
             parts.append(f"已搬移 {n_moved} 張圖片。")
         if n_conflict:
