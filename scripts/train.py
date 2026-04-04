@@ -42,13 +42,13 @@ from ponychart_classifier.training import (
     SEED,
     VAL_SIZE,
     WEIGHT_DECAY,
-    balance_crop_samples,
     compute_class_rates,
     export_onnx,
     get_base_timestamp,
     group_hash_split,
     is_original,
     load_samples,
+    prepare_balanced_samples,
     recompute_checkpoint_val_f1,
     seed_all,
     separate_orig_crop,
@@ -90,18 +90,12 @@ def main() -> None:
         logger.error("No samples found. Check rawimage/ and rawimage/labels.json.")
         raise SystemExit(1)
 
-    # Separate originals and crops, then balance crops to match original distribution
     orig_samples, crop_samples = separate_orig_crop(samples)
     orig_rates = compute_class_rates(orig_samples)
-    rng = seed_all(SEED)
-    balanced_crops = balance_crop_samples(crop_samples, orig_rates, rng)
-    samples = orig_samples + balanced_crops
     logger.info(
-        "Orig: %s  Crop: %s -> Balanced: %s  Total: %s",
+        "Orig: %s  Crop: %s",
         f"{len(orig_samples):,}",
         f"{len(crop_samples):,}",
-        f"{len(balanced_crops):,}",
-        f"{len(samples):,}",
     )
 
     # Auto-detect checkpoint for resume training
@@ -185,12 +179,13 @@ def main() -> None:
                 )
 
     train_idx, val_idx = group_hash_split(samples, test_size=VAL_SIZE)
-    train_samples = [samples[i] for i in train_idx]
     val_samples = [
         s for s in (samples[i] for i in val_idx) if is_original(os.path.basename(s[0]))
     ]
+    rng = seed_all(SEED)
+    train_samples = prepare_balanced_samples([samples[i] for i in train_idx], rng)
     logger.info(
-        "Train: %s  Val: %s (orig only)",
+        "Train: %s (balanced)  Val: %s (orig only)",
         f"{len(train_samples):,}",
         f"{len(val_samples):,}",
     )

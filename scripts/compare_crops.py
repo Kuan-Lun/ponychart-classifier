@@ -33,7 +33,6 @@ from ponychart_classifier.training import (
     NUM_CLASSES,
     SEED,
     VAL_SIZE,
-    balance_crop_samples,
     build_groups,
     compute_class_rates,
     evaluate,
@@ -43,6 +42,7 @@ from ponychart_classifier.training import (
     load_samples_or_exit,
     log_section,
     make_test_loader,
+    prepare_balanced_samples,
     seed_all,
     setup_device_and_workers,
     split_by_groups,
@@ -131,10 +131,9 @@ def main() -> None:
     train_val_orig = [all_samples[i] for i in train_val_indices_orig]
     train_val_crop = [all_samples[i] for i in train_val_indices_crop]
 
-    # ── Experiment C: balance crop samples to match original distribution ──
+    # ── Experiment C: balance samples using GoF-based strategy ──
     orig_rates = compute_class_rates(train_val_orig)
-    balanced_crops = balance_crop_samples(train_val_crop, orig_rates, rng)
-    train_val_balanced = train_val_orig + balanced_crops
+    train_val_balanced = prepare_balanced_samples(train_val_all, rng)
 
     # ── Helper: split a sample list into train/val using pre-computed groups ──
     def _train_val_split(
@@ -222,7 +221,7 @@ def main() -> None:
     log_section(logger, "DISTRIBUTION ANALYSIS", width=80)
     log_distribution("Original images (train+val)", train_val_orig)
     crop_rates = log_distribution("Crop images (raw)", train_val_crop)
-    log_distribution("Crop images (balanced)", balanced_crops)
+    log_distribution("Samples (balanced)", train_val_balanced)
     logger.info("")
     logger.info("  Per-class bias (crop_rate - orig_rate):")
     bias_per_class = []

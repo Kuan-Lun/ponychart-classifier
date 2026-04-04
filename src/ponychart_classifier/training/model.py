@@ -93,12 +93,14 @@ def _extract_submodules(
     Raises :class:`TypeError` if *model* does not satisfy
     :class:`FeatureClassifierModel`.
     """
-    if not isinstance(model, FeatureClassifierModel):
+    features = getattr(model, "features", None)
+    classifier = getattr(model, "classifier", None)
+    if not isinstance(features, nn.Module) or not isinstance(classifier, nn.Sequential):
         raise TypeError(
             f"{type(model).__name__} does not satisfy FeatureClassifierModel "
             "(missing .features or .classifier)"
         )
-    return model.features, model.classifier
+    return features, classifier
 
 
 def build_model(
