@@ -15,26 +15,29 @@ from typing import Any
 
 from .constants import IMAGE_DIR
 
+_CHECKPOINT_PATH = IMAGE_DIR / "checkpoint.pt"
+_FONT = ("Consolas", 11)
+_FONT_BOLD = ("Consolas", 11, "bold")
+_FONT_HEADER = ("Consolas", 12, "bold")
 
-def _load_checkpoint_data(path: Path) -> dict[str, Any]:
-    """載入 checkpoint 並整理成結構化資料。
 
-    在背景執行緒中呼叫，避免阻塞 UI。
-    """
+# ── Checkpoint data loading ──────────────────────────────────
+
+
+def _load_checkpoint(path: Path) -> dict[str, Any]:
+    """載入 checkpoint 檔案（在背景執行緒中呼叫）。"""
     import torch
 
+    result: dict[str, Any] = torch.load(path, map_location="cpu", weights_only=True)
+    return result
+
+
+def _extract_counts(ckpt: dict[str, Any]) -> dict[str, Any]:
+    """從 checkpoint 萃取圖片數量統計。"""
     from ponychart_classifier.training.constants import RAWIMAGE_DIR
-    from ponychart_classifier.training.model import BACKBONE_REGISTRY, build_model
     from ponychart_classifier.training.sampling import is_original, load_samples
 
-    ckpt: dict[str, Any] = torch.load(path, map_location="cpu", weights_only=True)
-
-    # --- basic ---
-    file_size_mb = path.stat().st_size / 1024 / 1024
-
-    # --- image counts ---
     labels_full: dict[str, list[int]] = ckpt["labels_at_full_train"]
-    labels_last: dict[str, list[int]] = ckpt["labels_at_last_save"]
 
     samples = load_samples()
     labels_current = {
@@ -49,7 +52,9 @@ def _load_checkpoint_data(path: Path) -> dict[str, Any]:
     n_cur_orig = sum(1 for f in all_files if is_original(f))
     n_cur_crop = len(all_files) - n_cur_orig
 
-    def count_orig_crop(labels: dict[str, list[int]]) -> tuple[int, int]:
+    def count_orig_crop(
+        labels: dict[str, list[int]],
+    ) -> tuple[int, int]:
         n_o = sum(1 for k in labels if is_original(k.split("/")[-1]))
         return n_o, len(labels) - n_o
 
@@ -57,11 +62,37 @@ def _load_checkpoint_data(path: Path) -> dict[str, Any]:
     n_orig = ckpt.get("n_orig")
     n_crop = ckpt.get("n_crop")
     n_total_last = (n_orig or 0) + (n_crop or 0) if n_orig is not None else None
-    n_unlabeled = len(all_files) - len(labels_current)
 
-    # --- changes ---
+    return {
+        "orig_full": n_orig_full,
+        "crop_full": n_crop_full,
+        "orig_last": n_orig,
+        "crop_last": n_crop,
+        "orig_cur": n_cur_orig,
+        "crop_cur": n_cur_crop,
+        "total_full": len(labels_full),
+        "total_last": n_total_last,
+        "total_cur": n_cur_orig + n_cur_crop,
+        "unlabeled": len(all_files) - len(labels_current),
+    }
+
+
+def _extract_changes(ckpt: dict[str, Any]) -> dict[str, Any]:
+    """從 checkpoint 萃取變更明細。"""
+    from ponychart_classifier.training.constants import RAWIMAGE_DIR
+    from ponychart_classifier.training.sampling import is_original, load_samples
+
+    labels_full: dict[str, list[int]] = ckpt["labels_at_full_train"]
+    labels_last: dict[str, list[int]] = ckpt["labels_at_last_save"]
+
+    samples = load_samples()
+    labels_current = {
+        str(Path(p).relative_to(RAWIMAGE_DIR)): labels for p, labels in samples
+    }
+
     def diff_labels(
-        baseline: dict[str, list[int]], current: dict[str, list[int]]
+        baseline: dict[str, list[int]],
+        current: dict[str, list[int]],
     ) -> tuple[set[str], set[str], set[str]]:
         base_keys = set(baseline)
         cur_keys = set(current)
@@ -80,10 +111,21 @@ def _load_checkpoint_data(path: Path) -> dict[str, Any]:
         added, removed, relabeled = diff_labels(baseline, labels_current)
         return [(len(s), *split_orig_crop(s)) for s in (added, removed, relabeled)]
 
-    full_detail = diff_detail(labels_full)
-    last_detail = diff_detail(labels_last)
+    return {
+        "full": diff_detail(labels_full),
+        "last": diff_detail(labels_last),
+    }
 
-    # --- model ---
+
+def _extract_model(ckpt: dict[str, Any]) -> dict[str, Any]:
+    """從 checkpoint 萃取模型架構資訊。"""
+    import torch
+
+    from ponychart_classifier.training.model import (
+        BACKBONE_REGISTRY,
+        build_model,
+    )
+
     state_dict: dict[str, Any] = ckpt.get("state_dict", {})
     n_params = sum(
         p.numel()
@@ -92,6 +134,7 @@ def _load_checkpoint_data(path: Path) -> dict[str, Any]:
             for v in state_dict.values()
         )
     )
+
     backbone_name = ckpt.get("backbone")
     if not backbone_name:
         for name in BACKBONE_REGISTRY:
@@ -105,7 +148,23 @@ def _load_checkpoint_data(path: Path) -> dict[str, Any]:
         else:
             backbone_name = "unknown"
 
-    # --- hyperparameters ---
+    val_f1 = ckpt.get("val_f1")
+
+    return {
+        "backbone": backbone_name,
+        "input_size": ckpt.get("input_size", "N/A"),
+        "pre_resize": ckpt.get("pre_resize", "N/A"),
+        "num_classes": ckpt.get("num_classes", "N/A"),
+        "n_params": n_params,
+        "n_keys": len(state_dict),
+        "val_size": ckpt.get("val_size", "N/A"),
+        "val_f1": f"{val_f1:.4f}" if val_f1 is not None else "N/A",
+        "per_class_f1": ckpt.get("per_class_f1"),
+    }
+
+
+def _extract_hyperparams(ckpt: dict[str, Any]) -> dict[str, Any]:
+    """從 checkpoint 萃取訓練超參數。"""
     hp_keys = [
         ("seed", "Seed"),
         ("batch_size", "Batch size"),
@@ -115,51 +174,23 @@ def _load_checkpoint_data(path: Path) -> dict[str, Any]:
         ("weight_decay", "Weight decay"),
         ("label_smoothing", "Label smoothing"),
     ]
-    hyperparams = {
-        label: ckpt[key] for key, label in hp_keys if ckpt.get(key) is not None
-    }
+    return {label: ckpt[key] for key, label in hp_keys if ckpt.get(key) is not None}
 
-    val_f1 = ckpt.get("val_f1")
-    per_class_f1: list[float] | None = ckpt.get("per_class_f1")
 
+def _load_checkpoint_data(path: Path) -> dict[str, Any]:
+    """載入 checkpoint 並整理成結構化資料。"""
+    ckpt = _load_checkpoint(path)
     return {
-        "file_size_mb": file_size_mb,
+        "file_size_mb": path.stat().st_size / 1024 / 1024,
         "created_at": ckpt.get("created_at"),
-        "counts": {
-            "orig_full": n_orig_full,
-            "crop_full": n_crop_full,
-            "orig_last": n_orig,
-            "crop_last": n_crop,
-            "orig_cur": n_cur_orig,
-            "crop_cur": n_cur_crop,
-            "total_full": len(labels_full),
-            "total_last": n_total_last,
-            "total_cur": n_cur_orig + n_cur_crop,
-            "unlabeled": n_unlabeled,
-        },
-        "changes": {
-            "full": full_detail,
-            "last": last_detail,
-        },
-        "model": {
-            "backbone": backbone_name,
-            "input_size": ckpt.get("input_size", "N/A"),
-            "pre_resize": ckpt.get("pre_resize", "N/A"),
-            "num_classes": ckpt.get("num_classes", "N/A"),
-            "n_params": n_params,
-            "n_keys": len(state_dict),
-            "val_size": ckpt.get("val_size", "N/A"),
-            "val_f1": f"{val_f1:.4f}" if val_f1 is not None else "N/A",
-            "per_class_f1": per_class_f1,
-        },
-        "hyperparams": hyperparams,
+        "counts": _extract_counts(ckpt),
+        "changes": _extract_changes(ckpt),
+        "model": _extract_model(ckpt),
+        "hyperparams": _extract_hyperparams(ckpt),
     }
 
 
-_CHECKPOINT_PATH = IMAGE_DIR / "checkpoint.pt"
-_FONT = ("Consolas", 11)
-_FONT_BOLD = ("Consolas", 11, "bold")
-_FONT_HEADER = ("Consolas", 12, "bold")
+# ── Base viewer ──────────────────────────────────────────────
 
 
 class _BaseViewer:
@@ -220,7 +251,11 @@ class _BaseViewer:
         self._loading_label.destroy()
         if self._error is not None:
             tk.Label(
-                self._win, text=f"錯誤：{self._error}", font=_FONT, fg="red", padx=16
+                self._win,
+                text=f"錯誤：{self._error}",
+                font=_FONT,
+                fg="red",
+                padx=16,
             ).pack()
             return
         if self._result is not None:
@@ -277,6 +312,9 @@ class _BaseViewer:
         return f"{total} ({n_o} 原圖, {n_c} 裁切)"
 
 
+# ── Concrete viewers ─────────────────────────────────────────
+
+
 class DataStatusViewer(_BaseViewer):
     """資料狀態視窗：圖片數量、變更明細。"""
 
@@ -306,24 +344,9 @@ class DataStatusViewer(_BaseViewer):
 
         headers = ["", "完整訓練", "上次存檔", "目前", "距上次", "距完整訓練"]
         rows = [
-            (
-                "原圖",
-                c["orig_full"],
-                c["orig_last"],
-                c["orig_cur"],
-            ),
-            (
-                "裁切",
-                c["crop_full"],
-                c["crop_last"],
-                c["crop_cur"],
-            ),
-            (
-                "合計",
-                c["total_full"],
-                c["total_last"],
-                c["total_cur"],
-            ),
+            ("原圖", c["orig_full"], c["orig_last"], c["orig_cur"]),
+            ("裁切", c["crop_full"], c["crop_last"], c["crop_cur"]),
+            ("合計", c["total_full"], c["total_last"], c["total_cur"]),
         ]
 
         for col, h in enumerate(headers):
@@ -432,7 +455,3 @@ class ModelInfoViewer(_BaseViewer):
 
         # --- Refresh ---
         tk.Button(container, text="重新載入", command=self._refresh).pack(pady=(8, 0))
-
-
-# Backward-compatible alias
-CheckpointViewer = ModelInfoViewer
