@@ -1,4 +1,4 @@
-"""角色分布分析：以表格呈現標籤分布統計與均勻性檢定。"""
+"""角色分布：以表格呈現標籤分布統計與均勻性檢定。"""
 
 from __future__ import annotations
 
@@ -100,7 +100,7 @@ def _combo_counts_flat(samples: dict[str, list[int]], size: int) -> list[int]:
 
 
 class DistributionViewer:
-    """角色分布分析視窗。"""
+    """角色分布視窗。"""
 
     def __init__(self, parent: tk.Tk, store: LabelStore) -> None:
         self._parent = parent
@@ -114,7 +114,7 @@ class DistributionViewer:
             return
 
         self._win = tk.Toplevel(self._parent)
-        self._win.title("角色分布分析")
+        self._win.title("角色分布")
         self._win.resizable(False, False)
 
         orig, all_ = _split_samples(self._store)
@@ -396,13 +396,7 @@ class DistributionViewer:
             sum(1 for v in orig.values() if len(v) == n) for n in (1, 2, 3)
         ]
         if sum(label_size_counts) > 0:
-            from functools import reduce
-            from math import gcd
-
-            scale = 1000
-            ints = [round(p * scale) for p in LABEL_SIZE_PROBS]
-            g = reduce(gcd, ints)
-            ratio_label = ":".join(str(v // g) for v in ints)
+            ratio_label = ":".join(str(round(p * 50)) for p in LABEL_SIZE_PROBS)
             ratio_rows.append((f"標籤數 {ratio_label}", label_size_counts))
 
         frame = tk.Frame(parent)
