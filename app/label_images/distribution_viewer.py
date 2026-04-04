@@ -315,25 +315,87 @@ class DistributionViewer:
             return s + "* "
         return s + "  "
 
+    def _render_gof_rows(
+        self,
+        frame: tk.Widget,
+        rows: list[tuple[str, list[int]]],
+        start_row: int,
+        all_methods: list[tuple[str, str]],
+        total_cols: int,
+        label_w: int,
+        stat_w: int,
+        p_w: int,
+        *,
+        probs: list[float] | None = None,
+    ) -> int:
+        """渲染一組 GoF 資料列，回傳下一個可用的 row index。"""
+        for r_idx, (row_label, counts) in enumerate(rows):
+            row = start_row + r_idx
+            n = sum(counts)
+            self._make_cell(
+                frame,
+                f"{row_label} (n={n})",
+                row,
+                0,
+                font=_FONT_BOLD,
+                width=label_w,
+                anchor="w",
+            )
+            for i, (method_key, _mname) in enumerate(all_methods):
+                col = 1 + i * 2
+                if n == 0:
+                    self._make_cell(frame, "—", row, col, width=stat_w)
+                    self._make_cell(frame, "—", row, col + 1, width=p_w)
+                else:
+                    r = goodness_of_fit_test(
+                        counts,
+                        probs=probs,
+                        method=method_key,  # type: ignore[arg-type]
+                    )
+                    self._make_cell(
+                        frame,
+                        self._fmt_stat(r),
+                        row,
+                        col,
+                        width=stat_w,
+                    )
+                    self._make_cell(
+                        frame,
+                        self._fmt_p(r),
+                        row,
+                        col + 1,
+                        width=p_w,
+                    )
+        return start_row + len(rows)
+
     def _render_gof_table(
         self,
         parent: tk.Widget,
         orig: dict[str, list[int]],
     ) -> None:
-        """均勻性檢定：一張表呈現所有分布 × 所有方法（三層表頭）。"""
-        self._section(parent, "均勻性檢定（原圖）")
+        """適合度檢定：一張表呈現所有分布 × 所有方法（三層表頭）。"""
+        self._section(parent, "適合度檢定（原圖）")
 
+        # ── 均勻性檢定資料列 ──
         by_n = _count_by_label_size(orig)
         overall = _overall_counts(orig)
-        data_rows: list[tuple[str, list[int]]] = [("整體出現次數", overall)]
+        uniform_rows: list[tuple[str, list[int]]] = [("整體出現次數", overall)]
         if sum(by_n[1]) > 0:
-            data_rows.append(("單標籤", by_n[1]))
+            uniform_rows.append(("單標籤", by_n[1]))
         combo2 = _combo_counts_flat(orig, 2)
         if sum(combo2) > 0:
-            data_rows.append(("雙標籤組合", combo2))
+            uniform_rows.append(("雙標籤組合", combo2))
         combo3 = _combo_counts_flat(orig, 3)
         if sum(combo3) > 0:
-            data_rows.append(("三標籤組合", combo3))
+            uniform_rows.append(("三標籤組合", combo3))
+
+        # ── 比例檢定資料列 ──
+        ratio_rows: list[tuple[str, list[int]]] = []
+        label_size_counts = [
+            sum(1 for v in orig.values() if len(v) == n) for n in (1, 2, 3)
+        ]
+        if sum(label_size_counts) > 0:
+            ratio_rows.append(("標籤數 20:21:9", label_size_counts))
 
         frame = tk.Frame(parent)
         frame.pack(anchor="w", padx=8, pady=(0, 4))
@@ -361,7 +423,6 @@ class DistributionViewer:
                 anchor="center",
             )
             lbl.grid(row=0, column=col, columnspan=span, padx=1, pady=1)
-            # Underline spanning the same columns as the group header
             tk.Frame(frame, height=1, bg="#999").grid(
                 row=1,
                 column=col,
@@ -384,7 +445,6 @@ class DistributionViewer:
                 anchor="center",
             )
             lbl.grid(row=2, column=col, columnspan=2, padx=1, pady=1)
-            # Underline spanning the same columns as the method header
             tk.Frame(frame, height=1, bg="#999").grid(
                 row=3,
                 column=col,
@@ -418,40 +478,35 @@ class DistributionViewer:
             pady=2,
         )
 
-        # Row 6+: data
-        for r_idx, (row_label, counts) in enumerate(data_rows):
-            row = r_idx + 6
-            n = sum(counts)
-            self._make_cell(
-                frame,
-                f"{row_label} (n={n})",
-                row,
-                0,
-                font=_FONT_BOLD,
-                width=label_w,
-                anchor="w",
+        # 均勻性檢定
+        next_row = self._render_gof_rows(
+            frame,
+            uniform_rows,
+            6,
+            all_methods,
+            total_cols,
+            label_w,
+            stat_w,
+            p_w,
+        )
+
+        # 比例檢定（以分隔線區隔）
+        if ratio_rows:
+            tk.Frame(frame, height=1, bg="#ccc").grid(
+                row=next_row,
+                column=0,
+                columnspan=total_cols,
+                sticky="ew",
+                pady=2,
             )
-            for i, (method_key, _mname) in enumerate(all_methods):
-                col = 1 + i * 2
-                if n == 0:
-                    self._make_cell(frame, "—", row, col, width=stat_w)
-                    self._make_cell(frame, "—", row, col + 1, width=p_w)
-                else:
-                    r = goodness_of_fit_test(
-                        counts,
-                        method=method_key,  # type: ignore[arg-type]
-                    )
-                    self._make_cell(
-                        frame,
-                        self._fmt_stat(r),
-                        row,
-                        col,
-                        width=stat_w,
-                    )
-                    self._make_cell(
-                        frame,
-                        self._fmt_p(r),
-                        row,
-                        col + 1,
-                        width=p_w,
-                    )
+            self._render_gof_rows(
+                frame,
+                ratio_rows,
+                next_row + 1,
+                all_methods,
+                total_cols,
+                label_w,
+                stat_w,
+                p_w,
+                probs=[20 / 50, 21 / 50, 9 / 50],
+            )
