@@ -361,10 +361,19 @@ class DistributionViewer:
                 anchor="center",
             )
             lbl.grid(row=0, column=col, columnspan=span, padx=1, pady=1)
+            # Underline spanning the same columns as the group header
+            tk.Frame(frame, height=1, bg="#999").grid(
+                row=1,
+                column=col,
+                columnspan=span,
+                sticky="ew",
+                padx=4,
+                pady=0,
+            )
             col += span
 
-        # Row 1: method names (Pearson / LR / Probability)
-        self._make_cell(frame, "", 1, 0, width=label_w)
+        # Row 2: method names (Pearson / LR / Probability)
+        self._make_cell(frame, "", 2, 0, width=label_w)
         for i, (_key, mname) in enumerate(all_methods):
             col = 1 + i * 2
             lbl = tk.Label(
@@ -374,13 +383,22 @@ class DistributionViewer:
                 width=stat_w + p_w,
                 anchor="center",
             )
-            lbl.grid(row=1, column=col, columnspan=2, padx=1, pady=1)
+            lbl.grid(row=2, column=col, columnspan=2, padx=1, pady=1)
+            # Underline spanning the same columns as the method header
+            tk.Frame(frame, height=1, bg="#999").grid(
+                row=3,
+                column=col,
+                columnspan=2,
+                sticky="ew",
+                padx=4,
+                pady=0,
+            )
 
-        # Row 2: sub-headers (統計量 / p-value)
+        # Row 4: sub-headers (統計量 / p-value)
         self._make_cell(
             frame,
             "分布",
-            2,
+            4,
             0,
             font=_FONT_BOLD,
             width=label_w,
@@ -388,21 +406,21 @@ class DistributionViewer:
         )
         for i in range(n_methods):
             col = 1 + i * 2
-            self._make_cell(frame, "統計量", 2, col, font=_FONT_BOLD, width=stat_w)
-            self._make_cell(frame, "p-value", 2, col + 1, font=_FONT_BOLD, width=p_w)
+            self._make_cell(frame, "統計量", 4, col, font=_FONT_BOLD, width=stat_w)
+            self._make_cell(frame, "p-value", 4, col + 1, font=_FONT_BOLD, width=p_w)
 
-        # Row 3: separator
+        # Row 5: separator
         tk.Frame(frame, height=1, bg="#ccc").grid(
-            row=3,
+            row=5,
             column=0,
             columnspan=total_cols,
             sticky="ew",
             pady=2,
         )
 
-        # Row 4+: data
+        # Row 6+: data
         for r_idx, (row_label, counts) in enumerate(data_rows):
-            row = r_idx + 4
+            row = r_idx + 6
             n = sum(counts)
             self._make_cell(
                 frame,
