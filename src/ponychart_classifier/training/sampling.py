@@ -6,13 +6,22 @@ import json
 import logging
 import os
 import re
-from collections import defaultdict
+from collections import Counter, defaultdict
+from itertools import combinations
 from typing import NamedTuple
 
 import numpy as np
 import torch
 
-from .constants import LABELS_FILE, NUM_CLASSES, RAWIMAGE_DIR
+from ponychart_classifier.stats import goodness_of_fit_test
+
+from .constants import (
+    GOF_ALPHA,
+    LABEL_SIZE_PROBS,
+    LABELS_FILE,
+    NUM_CLASSES,
+    RAWIMAGE_DIR,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -114,57 +123,149 @@ def compute_pos_weight(
     return torch.tensor([(n - c) / max(c, 1) for c in counts], dtype=torch.float32)
 
 
-def balance_crop_samples(
-    crop_samples: list[Sample],
-    target_rates: list[float],
+def combo_counts_flat(
+    samples: list[Sample],
+    label_size: int,
+) -> list[int]:
+    """計算指定標籤數量的組合出現次數。
+
+    回傳長度為 C(NUM_CLASSES, label_size) 的 list，
+    順序依 itertools.combinations(range(1, NUM_CLASSES+1), label_size)。
+    """
+    combos = [tuple(sorted(s.labels)) for s in samples if len(s.labels) == label_size]
+    cnt = Counter(combos)
+    all_combos = list(combinations(range(1, NUM_CLASSES + 1), label_size))
+    return [cnt.get(c, 0) for c in all_combos]
+
+
+def _combo_key(labels: list[int]) -> tuple[int, ...]:
+    return tuple(sorted(labels))
+
+
+def _oversample_to_uniform(
+    samples: list[Sample],
+    label_size: int,
     rng: np.random.RandomState,
 ) -> list[Sample]:
-    """Oversample crop 圖片使 per-class 出現比例接近 target_rates。"""
-    if not crop_samples:
+    """Oversample 使指定標籤數量的組合分布均勻。"""
+    group = [s for s in samples if len(s.labels) == label_size]
+    if not group:
         return []
 
-    current_rates = compute_class_rates(crop_samples)
-    n = len(crop_samples)
+    by_combo: dict[tuple[int, ...], list[Sample]] = defaultdict(list)
+    for s in group:
+        by_combo[_combo_key(s.labels)].append(s)
 
-    target_counts = [max(int(round(tr * n)), 0) for tr in target_rates]
-    current_counts = [int(round(cr * n)) for cr in current_rates]
+    max_count = max(len(v) for v in by_combo.values())
+    result: list[Sample] = []
+    for combo_samples in by_combo.values():
+        result.extend(combo_samples)
+        deficit = max_count - len(combo_samples)
+        if deficit > 0 and combo_samples:
+            extra_idx = rng.choice(len(combo_samples), size=deficit, replace=True)
+            result.extend(combo_samples[i] for i in extra_idx)
 
-    class_to_indices: dict[int, list[int]] = defaultdict(list)
-    for idx, (_, labels) in enumerate(crop_samples):
-        for lbl in labels:
-            class_to_indices[lbl - 1].append(idx)
+    return result
 
-    extra_indices: set[int] = set()
-    extra_samples: list[Sample] = []
 
-    for cls in range(NUM_CLASSES):
-        deficit = target_counts[cls] - current_counts[cls]
-        if deficit <= 0 or not class_to_indices[cls]:
+def _should_balance(
+    samples: list[Sample],
+    label_size: int,
+) -> bool:
+    """對原圖的指定標籤數量組做均勻性檢定，回傳是否應平衡（不拒絕 H0）。"""
+    counts = combo_counts_flat(samples, label_size)
+    if sum(counts) == 0:
+        return False
+    result = goodness_of_fit_test(counts)
+    logger.info(
+        "GoF test (label_size=%d): p=%.4f, %s",
+        label_size,
+        result.p_value,
+        "balance" if result.p_value > GOF_ALPHA else "skip",
+    )
+    return result.p_value > GOF_ALPHA
+
+
+def _balance_label_size_ratio(
+    samples_by_size: dict[int, list[Sample]],
+    target_probs: list[float],
+    rng: np.random.RandomState,
+) -> dict[int, list[Sample]]:
+    """調整各標籤數量組的樣本數以符合目標比例。"""
+    sizes = [1, 2, 3]
+    current_counts = [len(samples_by_size.get(sz, [])) for sz in sizes]
+    total = sum(current_counts)
+    if total == 0:
+        return samples_by_size
+
+    target_counts = [max(int(round(p * total)), 0) for p in target_probs]
+
+    result: dict[int, list[Sample]] = {}
+    for sz, target_n in zip(sizes, target_counts):
+        group = samples_by_size.get(sz, [])
+        if not group:
+            result[sz] = []
             continue
-        available = [idx for idx in class_to_indices[cls] if idx not in extra_indices]
-        n_to_sample = min(deficit, len(available))
-        if n_to_sample <= 0:
-            continue
-        sampled = rng.choice(available, size=n_to_sample, replace=False)
-        for idx in sampled:
-            extra_indices.add(idx)
-            extra_samples.append(crop_samples[idx])
-
-    return list(crop_samples) + extra_samples
+        if len(group) >= target_n:
+            result[sz] = list(group)
+        else:
+            extra_idx = rng.choice(len(group), size=target_n - len(group), replace=True)
+            result[sz] = list(group) + [group[i] for i in extra_idx]
+    return result
 
 
 def prepare_balanced_samples(
     samples: list[Sample],
     rng: np.random.RandomState,
 ) -> list[Sample]:
-    """Separate originals and crops, then balance crops to match original distribution.
+    """按標籤組合平衡 orig 和 crop，維持標籤數量比例。
 
-    Returns the combined list of originals + balanced crops.
+    1. 分離 orig / crop
+    2. 對 orig 各標籤數量組做均勻性檢定
+    3. 不拒絕的組：orig 和 crop 各自 oversample 到組合均勻
+    4. 拒絕的組：原樣保留
+    5. 檢定標籤數量比例，調整各組樣本數
+    6. 合併 balanced orig + balanced crop
     """
     orig, crop = separate_orig_crop(samples)
-    rates = compute_class_rates(orig)
-    balanced = balance_crop_samples(crop, rates, rng)
-    return orig + balanced
+
+    # 逐組檢定並平衡
+    balanced_orig: dict[int, list[Sample]] = {}
+    balanced_crop: dict[int, list[Sample]] = {}
+    for label_size in (1, 2, 3):
+        orig_group = [s for s in orig if len(s.labels) == label_size]
+        crop_group = [s for s in crop if len(s.labels) == label_size]
+
+        if _should_balance(orig, label_size):
+            balanced_orig[label_size] = _oversample_to_uniform(orig, label_size, rng)
+            balanced_crop[label_size] = _oversample_to_uniform(crop, label_size, rng)
+        else:
+            balanced_orig[label_size] = orig_group
+            balanced_crop[label_size] = crop_group
+
+    # 檢定標籤數量比例
+    size_counts = [sum(1 for s in orig if len(s.labels) == n) for n in (1, 2, 3)]
+    if sum(size_counts) > 0:
+        size_result = goodness_of_fit_test(size_counts, probs=LABEL_SIZE_PROBS)
+        logger.info(
+            "GoF test (label-size ratio): p=%.4f, %s",
+            size_result.p_value,
+            "adjust" if size_result.p_value > GOF_ALPHA else "keep actual",
+        )
+        if size_result.p_value > GOF_ALPHA:
+            balanced_orig = _balance_label_size_ratio(
+                balanced_orig, LABEL_SIZE_PROBS, rng
+            )
+            balanced_crop = _balance_label_size_ratio(
+                balanced_crop, LABEL_SIZE_PROBS, rng
+            )
+
+    # 合併
+    result: list[Sample] = []
+    for label_size in (1, 2, 3):
+        result.extend(balanced_orig.get(label_size, []))
+        result.extend(balanced_crop.get(label_size, []))
+    return result
 
 
 def labels_to_binary(label_list: list[int]) -> torch.Tensor:

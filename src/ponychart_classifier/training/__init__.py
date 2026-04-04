@@ -58,7 +58,7 @@ from .model import (
 )
 from .sampling import (
     Sample,
-    balance_crop_samples,
+    combo_counts_flat,
     compute_class_rates,
     compute_pos_weight,
     get_base_timestamp,
@@ -142,7 +142,7 @@ __all__ = [
     "TrainResult",
     "VAL_SIZE",
     "WEIGHT_DECAY",
-    "balance_crop_samples",
+    "combo_counts_flat",
     "build_cached_dataset",
     "build_groups",
     "build_data_pipeline",

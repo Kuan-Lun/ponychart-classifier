@@ -56,6 +56,12 @@ SCHEDULER_MIN_LR = 1e-7
 HOLDOUT_TEST_SIZE = 0.20
 VAL_SIZE = 0.15
 
+# Balancing: goodness-of-fit significance level
+GOF_ALPHA = 0.05
+
+# Expected label-size proportions (single / double / triple)
+LABEL_SIZE_PROBS: list[float] = [20 / 50, 21 / 50, 9 / 50]
+
 # Resume vs from-scratch threshold (updated by compare_resume_scratch analysis)
 # 以「上次 from-scratch 訓練時的樣本數」為基準計算累積 ratio：
 #   cumulative_ratio = (目前樣本數 - n_samples_at_full_train) / n_samples_at_full_train

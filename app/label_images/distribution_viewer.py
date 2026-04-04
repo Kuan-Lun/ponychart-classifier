@@ -7,6 +7,7 @@ from collections import Counter
 from itertools import combinations
 
 from ponychart_classifier.stats import GoFTestResult, goodness_of_fit_test
+from ponychart_classifier.training.constants import LABEL_SIZE_PROBS
 
 from .constants import LABEL_MAP
 from .file_ops import is_raw_image
@@ -395,7 +396,14 @@ class DistributionViewer:
             sum(1 for v in orig.values() if len(v) == n) for n in (1, 2, 3)
         ]
         if sum(label_size_counts) > 0:
-            ratio_rows.append(("標籤數 20:21:9", label_size_counts))
+            from functools import reduce
+            from math import gcd
+
+            scale = 1000
+            ints = [round(p * scale) for p in LABEL_SIZE_PROBS]
+            g = reduce(gcd, ints)
+            ratio_label = ":".join(str(v // g) for v in ints)
+            ratio_rows.append((f"標籤數 {ratio_label}", label_size_counts))
 
         frame = tk.Frame(parent)
         frame.pack(anchor="w", padx=8, pady=(0, 4))
@@ -508,5 +516,5 @@ class DistributionViewer:
                 label_w,
                 stat_w,
                 p_w,
-                probs=[20 / 50, 21 / 50, 9 / 50],
+                probs=LABEL_SIZE_PROBS,
             )

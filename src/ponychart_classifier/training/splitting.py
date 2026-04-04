@@ -186,25 +186,17 @@ def prepare_holdout_split(
         if is_original(os.path.basename(samples[idx].path))
     ]
 
-    # Train+val: balanced crops
-    train_val_all = [samples[idx] for gk in gsp.train + gsp.val for idx in groups[gk]]
-    balanced = prepare_balanced_samples(train_val_all, rng)
-
-    # Split balanced pool by val group keys
-    val_gk_set = set(gsp.val)
-    tv_groups = build_groups(balanced)
-    train = [
-        balanced[idx]
-        for gk, indices in tv_groups.items()
-        if gk not in val_gk_set
-        for idx in indices
-    ]
+    # Val: originals only (no crops, no balancing)
     val = [
-        balanced[idx]
-        for gk, indices in tv_groups.items()
-        if gk in val_gk_set
-        for idx in indices
+        samples[idx]
+        for gk in gsp.val
+        for idx in groups[gk]
+        if is_original(os.path.basename(samples[idx].path))
     ]
+
+    # Train: balanced (orig + crop)
+    train_all = [samples[idx] for gk in gsp.train for idx in groups[gk]]
+    train = prepare_balanced_samples(train_all, rng)
 
     logger.info(
         "Train: %d  Val: %d  Test: %d",
