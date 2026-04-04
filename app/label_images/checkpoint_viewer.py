@@ -120,6 +120,7 @@ def _load_checkpoint_data(path: Path) -> dict[str, Any]:
     }
 
     val_f1 = ckpt.get("val_f1")
+    per_class_f1: list[float] | None = ckpt.get("per_class_f1")
 
     return {
         "file_size_mb": file_size_mb,
@@ -149,6 +150,7 @@ def _load_checkpoint_data(path: Path) -> dict[str, Any]:
             "n_keys": len(state_dict),
             "val_size": ckpt.get("val_size", "N/A"),
             "val_f1": f"{val_f1:.4f}" if val_f1 is not None else "N/A",
+            "per_class_f1": per_class_f1,
         },
         "hyperparams": hyperparams,
     }
@@ -419,7 +421,6 @@ class ModelInfoViewer(_BaseViewer):
         self._kv(f, "Parameters", f"{m['n_params']:,}")
         self._kv(f, "State dict keys", f"{m['n_keys']:,}")
         self._kv(f, "Val size", str(m["val_size"]))
-        self._kv(f, "Val F1", str(m["val_f1"]))
 
         # --- 超參數 ---
         hp = data.get("hyperparams", {})

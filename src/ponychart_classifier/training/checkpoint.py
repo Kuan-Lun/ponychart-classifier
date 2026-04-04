@@ -80,6 +80,7 @@ def recompute_checkpoint_val_f1(
 
     # Update checkpoint
     ckpt["val_f1"] = val_f1
+    ckpt["per_class_f1"] = result.per_class_f1
     torch.save(ckpt, checkpoint_path)
     logger.info("Updated checkpoint val_f1: %.4f (%s)", val_f1, checkpoint_path)
 

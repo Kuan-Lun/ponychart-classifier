@@ -15,6 +15,7 @@ from .filter_panel import FilterPanel
 from .image_viewer import ImageViewer
 from .label_store import LabelStore
 from .navigator import ImageNavigator
+from .val_f1_viewer import ValF1Viewer
 
 
 class LabelApp:
@@ -59,6 +60,7 @@ class LabelApp:
         self._data_status_viewer = DataStatusViewer(root)
         self._model_info_viewer = ModelInfoViewer(root)
         self._distribution_viewer = DistributionViewer(root, self.store)
+        self._val_f1_viewer = ValF1Viewer(root)
         self._build_action_buttons(root)
         self._build_analysis_ui(root)
 
@@ -92,6 +94,12 @@ class LabelApp:
         self._analyze_btn.pack(side="left", padx=(0, 4))
         self._analyze_status = tk.Label(primary_frame, text="", fg="#999")
         self._analyze_status.pack(side="left", padx=(0, 4))
+
+        tk.Button(
+            primary_frame,
+            text="分析結果",
+            command=self._val_f1_viewer.show,
+        ).pack(side="left", padx=(0, 4))
 
         self._filter_panel.build_suspicious_checkboxes(primary_frame)
 
