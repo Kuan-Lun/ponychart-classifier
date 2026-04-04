@@ -248,7 +248,7 @@ class GoFTableSection:
         by_n = _count_by_label_size(self._orig)
         overall = _overall_counts(self._orig)
 
-        uniform_rows: list[tuple[str, list[int]]] = [("整體出現次數", overall)]
+        uniform_rows: list[tuple[str, list[int]]] = []
         if sum(by_n[1]) > 0:
             uniform_rows.append(("單標籤", by_n[1]))
         combo2 = _combo_counts_flat(self._orig, 2)
@@ -257,6 +257,7 @@ class GoFTableSection:
         combo3 = _combo_counts_flat(self._orig, 3)
         if sum(combo3) > 0:
             uniform_rows.append(("三標籤組合", combo3))
+        uniform_rows.append(("整體出現次數", overall))
 
         ratio_rows: list[tuple[str, list[int]]] = []
         label_size_counts = [
