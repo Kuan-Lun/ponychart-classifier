@@ -69,7 +69,7 @@ def compute_cache_budget(
 # ---------------------------------------------------------------------------
 # Dataset
 # ---------------------------------------------------------------------------
-class PonyChartDataset(Dataset):  # type: ignore[misc]
+class PonyChartDataset(Dataset[tuple[torch.Tensor, torch.Tensor]]):
     """Dataset with adaptive image caching based on available memory.
 
     When *max_cached* is ``None`` (the default), the dataset
@@ -100,6 +100,7 @@ class PonyChartDataset(Dataset):  # type: ignore[misc]
         n_cache = min(max_cached, len(samples))
 
         self._n_cached = n_cache
+        self._cache: torch.Tensor | None
         if n_cache > 0:
             self._cache = torch.empty(
                 n_cache,
@@ -113,7 +114,7 @@ class PonyChartDataset(Dataset):  # type: ignore[misc]
                 img = Image.open(path).convert("RGB")
                 img = img.resize((pre_resize, pre_resize), Image.Resampling.BOX)
                 self._cache[i] = torch.from_numpy(np.array(img))
-            self._cache.share_memory_()
+            self._cache.share_memory_()  # type: ignore[no-untyped-call]
         else:
             self._cache = None
 
@@ -221,7 +222,10 @@ def build_data_pipeline(
     input_size: int = INPUT_SIZE,
     train_transform: transforms.Compose | None = None,
     val_transform: transforms.Compose | None = None,
-) -> tuple[DataLoader, DataLoader]:
+) -> tuple[
+    DataLoader[tuple[torch.Tensor, torch.Tensor]],
+    DataLoader[tuple[torch.Tensor, torch.Tensor]],
+]:
     """Build train/val datasets with memory-safe caching and DataLoaders.
 
     Computes a safe cache budget based on available system memory,
@@ -278,12 +282,12 @@ def build_data_pipeline(
 # DataLoader factory
 # ---------------------------------------------------------------------------
 def make_dataloader(
-    dataset: Dataset,
+    dataset: Dataset[tuple[torch.Tensor, torch.Tensor]],
     batch_size: int,
     shuffle: bool,
     num_workers: int,
     device: torch.device,
-) -> DataLoader:
+) -> DataLoader[tuple[torch.Tensor, torch.Tensor]]:
     """Create a DataLoader with standard settings."""
     use_persistent = num_workers > 0
     return DataLoader(

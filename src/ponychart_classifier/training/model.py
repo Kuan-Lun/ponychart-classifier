@@ -7,6 +7,7 @@ import logging
 import os
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Protocol, cast, runtime_checkable
 
 import psutil
 import torch
@@ -16,6 +17,14 @@ from torchvision import models
 from .constants import NUM_CLASSES
 
 logger = logging.getLogger(__name__)
+
+
+@runtime_checkable
+class FeatureClassifierModel(Protocol):
+    """Protocol for models with separate feature-extractor and classifier."""
+
+    features: nn.Module
+    classifier: nn.Sequential
 
 
 @dataclass(frozen=True)
@@ -30,22 +39,22 @@ class BackboneConfig:
 
 def _build_mobilenet_v3_small(pretrained: bool) -> nn.Module:
     weights = models.MobileNet_V3_Small_Weights.IMAGENET1K_V1 if pretrained else None
-    return models.mobilenet_v3_small(weights=weights)
+    return cast(nn.Module, models.mobilenet_v3_small(weights=weights))
 
 
 def _build_mobilenet_v3_large(pretrained: bool) -> nn.Module:
     weights = models.MobileNet_V3_Large_Weights.IMAGENET1K_V1 if pretrained else None
-    return models.mobilenet_v3_large(weights=weights)
+    return cast(nn.Module, models.mobilenet_v3_large(weights=weights))
 
 
 def _build_efficientnet_b0(pretrained: bool) -> nn.Module:
     weights = models.EfficientNet_B0_Weights.IMAGENET1K_V1 if pretrained else None
-    return models.efficientnet_b0(weights=weights)
+    return cast(nn.Module, models.efficientnet_b0(weights=weights))
 
 
 def _build_efficientnet_b2(pretrained: bool) -> nn.Module:
     weights = models.EfficientNet_B2_Weights.IMAGENET1K_V1 if pretrained else None
-    return models.efficientnet_b2(weights=weights)
+    return cast(nn.Module, models.efficientnet_b2(weights=weights))
 
 
 BACKBONE_REGISTRY: dict[str, BackboneConfig] = {
@@ -76,6 +85,22 @@ BACKBONE_REGISTRY: dict[str, BackboneConfig] = {
 }
 
 
+def _extract_submodules(
+    model: nn.Module,
+) -> tuple[nn.Module, nn.Sequential]:
+    """Extract ``features`` and ``classifier`` sub-modules.
+
+    Raises :class:`TypeError` if *model* does not satisfy
+    :class:`FeatureClassifierModel`.
+    """
+    if not isinstance(model, FeatureClassifierModel):
+        raise TypeError(
+            f"{type(model).__name__} does not satisfy FeatureClassifierModel "
+            "(missing .features or .classifier)"
+        )
+    return model.features, model.classifier
+
+
 def build_model(
     backbone: str = "mobilenet_v3_large",
     pretrained: bool = True,
@@ -83,6 +108,7 @@ def build_model(
     """Build a model with the specified backbone.
 
     Replaces the final classification layer for NUM_CLASSES output.
+    All supported backbones satisfy :class:`FeatureClassifierModel`.
     """
     if backbone not in BACKBONE_REGISTRY:
         available = ", ".join(BACKBONE_REGISTRY.keys())
@@ -90,10 +116,11 @@ def build_model(
 
     config = BACKBONE_REGISTRY[backbone]
     model = config.build_fn(pretrained)
+    _, classifier = _extract_submodules(model)
 
     layer_idx = config.classifier_layer_index
-    in_features: int = model.classifier[layer_idx].in_features
-    model.classifier[layer_idx] = nn.Linear(in_features, NUM_CLASSES)
+    in_features: int = cast(nn.Linear, classifier[layer_idx]).in_features
+    classifier[layer_idx] = nn.Linear(in_features, NUM_CLASSES)
 
     return model
 

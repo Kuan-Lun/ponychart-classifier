@@ -107,6 +107,8 @@ def make_test_loader(
     device: torch.device | None = None,
 ) -> torch.utils.data.DataLoader[Any]:
     """Build a test ``DataLoader`` with standard eval transforms."""
+    if device is None:
+        device = torch.device("cpu")
     test_ds = PonyChartDataset(test_samples, get_transforms(is_train=False))
     return make_dataloader(
         test_ds,

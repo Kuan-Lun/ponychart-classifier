@@ -38,7 +38,7 @@ from .constants import (
     WEIGHT_DECAY,
 )
 from .dataset import build_data_pipeline
-from .model import build_model, measure_training_memory
+from .model import _extract_submodules, build_model, measure_training_memory
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +68,7 @@ class TrainResult:
 # ---------------------------------------------------------------------------
 def train_one_epoch(
     model: nn.Module,
-    loader: DataLoader,
+    loader: DataLoader[tuple[torch.Tensor, torch.Tensor]],
     criterion: nn.Module,
     optimizer: torch.optim.Optimizer,
     device: torch.device,
@@ -87,13 +87,14 @@ def train_one_epoch(
         loss.backward()
         optimizer.step()
         total_loss += loss.item() * images.size(0)
-    return total_loss / len(loader.dataset)
+    n_samples = len(loader.dataset)  # type: ignore[arg-type]
+    return total_loss / n_samples
 
 
-@torch.no_grad()  # type: ignore[untyped-decorator]
+@torch.no_grad()
 def evaluate(
     model: nn.Module,
-    loader: DataLoader,
+    loader: DataLoader[tuple[torch.Tensor, torch.Tensor]],
     criterion: nn.Module,
     device: torch.device,
     thresholds: list[float] | None = None,
@@ -134,8 +135,9 @@ def evaluate(
         per_class_precision.append(float(prec))
         per_class_recall.append(float(rec))
 
+    n_samples = len(loader.dataset)  # type: ignore[arg-type]
     return EvalResult(
-        loss=total_loss / len(loader.dataset),
+        loss=total_loss / n_samples,
         macro_f1=float(np.mean(per_class_f1)),
         per_class_f1=per_class_f1,
         per_class_precision=per_class_precision,
@@ -143,10 +145,10 @@ def evaluate(
     )
 
 
-@torch.no_grad()  # type: ignore[untyped-decorator]
+@torch.no_grad()
 def optimize_thresholds(
     model: nn.Module,
-    loader: DataLoader,
+    loader: DataLoader[tuple[torch.Tensor, torch.Tensor]],
     device: torch.device,
 ) -> list[float]:
     """Find optimal per-class thresholds by grid search."""
@@ -265,13 +267,15 @@ def train_model(
         pos_weight=pos_weight.to(device) if pos_weight is not None else None,
     )
 
+    features, classifier = _extract_submodules(model)
+
     # Phase 1: Head only (skipped when resuming from checkpoint)
     if not resuming:
         logger.info("--- Phase 1: Head-only (up to %d epochs) ---", phase1_epochs)
-        for param in model.features.parameters():
+        for param in features.parameters():
             param.requires_grad = False
         optimizer = torch.optim.AdamW(
-            model.classifier.parameters(), lr=LR_HEAD, weight_decay=WEIGHT_DECAY
+            classifier.parameters(), lr=LR_HEAD, weight_decay=WEIGHT_DECAY
         )
         best_p1_loss = float("inf")
         p1_patience_counter = 0
@@ -308,12 +312,12 @@ def train_model(
 
     # Phase 2: Full fine-tuning
     logger.info("--- Phase 2: Full fine-tuning (%d epochs) ---", phase2_epochs)
-    for param in model.features.parameters():
+    for param in features.parameters():
         param.requires_grad = True
     optimizer = torch.optim.AdamW(
         [
-            {"params": model.features.parameters(), "lr": lr_features},
-            {"params": model.classifier.parameters(), "lr": lr_classifier},
+            {"params": features.parameters(), "lr": lr_features},
+            {"params": classifier.parameters(), "lr": lr_classifier},
         ],
         weight_decay=WEIGHT_DECAY,
     )
