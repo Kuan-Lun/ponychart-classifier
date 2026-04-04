@@ -7,6 +7,7 @@ from collections.abc import Callable
 import ponychart_classifier as _pkg
 from ponychart_classifier.model_spec import select_predictions
 from ponychart_classifier.training import OUTPUT_CHECKPOINT, recompute_checkpoint_val_f1
+from ponychart_classifier.training.sampling import Sample
 
 from .constants import CLASS_NAMES_LIST, LABEL_MAP, SUSPICIOUS_MARGIN
 from .label_store import LabelStore
@@ -43,11 +44,11 @@ class AnalysisManager:
         if self.is_running:
             return
 
-        samples: list[tuple[str, list[int]]] = []
+        samples: list[Sample] = []
         keys: list[str] = []
         for p in nav.all_paths:
             key = store.path_to_key(p)
-            samples.append((str(p), store.get(key)))
+            samples.append(Sample(str(p), store.get(key)))
             keys.append(key)
 
         self._result = None
@@ -78,7 +79,7 @@ class AnalysisManager:
 
     def _run(
         self,
-        samples: list[tuple[str, list[int]]],
+        samples: list[Sample],
         keys: list[str],
     ) -> None:
         try:

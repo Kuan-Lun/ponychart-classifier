@@ -15,7 +15,12 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from .sampling import get_base_timestamp, is_original, prepare_balanced_samples
+from .sampling import (
+    Sample,
+    get_base_timestamp,
+    is_original,
+    prepare_balanced_samples,
+)
 
 _HASH_MODULUS = 1000
 
@@ -74,7 +79,7 @@ def _split_n_way(
 
 
 def build_groups(
-    samples: list[tuple[str, list[int]]],
+    samples: list[Sample],
 ) -> dict[str, list[int]]:
     """Build a mapping from base timestamp group key to sample indices."""
     groups: dict[str, list[int]] = defaultdict(list)
@@ -87,7 +92,7 @@ def build_groups(
 
 
 def group_hash_split(
-    samples: list[tuple[str, list[int]]],
+    samples: list[Sample],
     test_size: float = 0.15,
 ) -> tuple[list[int], list[int]]:
     """Hash-based group split returning (train_idx, val_idx).
@@ -107,7 +112,7 @@ def group_hash_split(
 
 
 def split_by_groups(
-    samples: list[tuple[str, list[int]]],
+    samples: list[Sample],
     test_size: float,
     val_size: float = 0.0,
 ) -> GroupSplit:
@@ -147,20 +152,18 @@ def split_by_groups(
 
 logger = logging.getLogger(__name__)
 
-_Sample = tuple[str, list[int]]
-
 
 @dataclass(frozen=True)
 class HoldoutSplit:
     """Ready-to-use train / val / test sample lists for holdout evaluation."""
 
-    train: list[_Sample]
-    val: list[_Sample]
-    test: list[_Sample]
+    train: list[Sample]
+    val: list[Sample]
+    test: list[Sample]
 
 
 def prepare_holdout_split(
-    samples: list[_Sample],
+    samples: list[Sample],
     rng: np.random.RandomState,
     test_size: float,
     val_size: float,
@@ -180,7 +183,7 @@ def prepare_holdout_split(
         samples[idx]
         for gk in gsp.test
         for idx in groups[gk]
-        if is_original(os.path.basename(samples[idx][0]))
+        if is_original(os.path.basename(samples[idx].path))
     ]
 
     # Train+val: balanced crops

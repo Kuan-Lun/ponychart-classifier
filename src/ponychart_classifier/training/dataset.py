@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 import numpy as np
 import psutil
@@ -13,7 +12,9 @@ from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
 
 from .constants import IMAGENET_MEAN, IMAGENET_STD, INPUT_SIZE, PRE_RESIZE
-from .sampling import labels_to_binary
+from .sampling import Sample, labels_to_binary
+
+TensorBatch = tuple[torch.Tensor, torch.Tensor]
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +70,7 @@ def compute_cache_budget(
 # ---------------------------------------------------------------------------
 # Dataset
 # ---------------------------------------------------------------------------
-class PonyChartDataset(Dataset[tuple[torch.Tensor, torch.Tensor]]):
+class PonyChartDataset(Dataset[TensorBatch]):
     """Dataset with adaptive image caching based on available memory.
 
     When *max_cached* is ``None`` (the default), the dataset
@@ -86,7 +87,7 @@ class PonyChartDataset(Dataset[tuple[torch.Tensor, torch.Tensor]]):
 
     def __init__(
         self,
-        samples: list[tuple[str, list[int]]],
+        samples: list[Sample],
         transform: transforms.Compose | None = None,
         pre_resize: int = PRE_RESIZE,
         max_cached: int | None = None,
@@ -110,7 +111,7 @@ class PonyChartDataset(Dataset[tuple[torch.Tensor, torch.Tensor]]):
                 dtype=torch.uint8,
             )
             for i in range(n_cache):
-                path = samples[i][0]
+                path = samples[i].path
                 img = Image.open(path).convert("RGB")
                 img = img.resize((pre_resize, pre_resize), Image.Resampling.BOX)
                 self._cache[i] = torch.from_numpy(np.array(img))
@@ -127,19 +128,20 @@ class PonyChartDataset(Dataset[tuple[torch.Tensor, torch.Tensor]]):
     def _load_image(self, idx: int) -> Image.Image:
         if self._cache is not None and idx < self._n_cached:
             return Image.fromarray(self._cache[idx].numpy())
-        path = self.samples[idx][0]
+        path = self.samples[idx].path
         img = Image.open(path).convert("RGB")
         return img.resize((self._pre_resize, self._pre_resize), Image.Resampling.BOX)
 
     def __len__(self) -> int:
         return len(self.samples)
 
-    def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor]:
-        image: Any = self._load_image(idx)
-        if self.transform:
-            image = self.transform(image)
-        target = labels_to_binary(self.samples[idx][1])
-        return image, target
+    def __getitem__(self, idx: int) -> TensorBatch:
+        image = self._load_image(idx)
+        if self.transform is None:
+            raise RuntimeError("PonyChartDataset requires a transform")
+        tensor: torch.Tensor = self.transform(image)
+        target = labels_to_binary(self.samples[idx].labels)
+        return tensor, target
 
 
 # ---------------------------------------------------------------------------
@@ -178,7 +180,7 @@ def get_transforms(is_train: bool, input_size: int = INPUT_SIZE) -> transforms.C
 # Dataset factory
 # ---------------------------------------------------------------------------
 def build_cached_dataset(
-    samples: list[tuple[str, list[int]]],
+    samples: list[Sample],
     *,
     is_train: bool = False,
     max_cached: int | None = None,
@@ -211,8 +213,8 @@ def build_cached_dataset(
 # Data pipeline factory
 # ---------------------------------------------------------------------------
 def build_data_pipeline(
-    train_samples: list[tuple[str, list[int]]],
-    val_samples: list[tuple[str, list[int]]],
+    train_samples: list[Sample],
+    val_samples: list[Sample],
     *,
     batch_size: int,
     device: torch.device,
@@ -223,8 +225,8 @@ def build_data_pipeline(
     train_transform: transforms.Compose | None = None,
     val_transform: transforms.Compose | None = None,
 ) -> tuple[
-    DataLoader[tuple[torch.Tensor, torch.Tensor]],
-    DataLoader[tuple[torch.Tensor, torch.Tensor]],
+    DataLoader[TensorBatch],
+    DataLoader[TensorBatch],
 ]:
     """Build train/val datasets with memory-safe caching and DataLoaders.
 
@@ -282,12 +284,12 @@ def build_data_pipeline(
 # DataLoader factory
 # ---------------------------------------------------------------------------
 def make_dataloader(
-    dataset: Dataset[tuple[torch.Tensor, torch.Tensor]],
+    dataset: Dataset[TensorBatch],
     batch_size: int,
     shuffle: bool,
     num_workers: int,
     device: torch.device,
-) -> DataLoader[tuple[torch.Tensor, torch.Tensor]]:
+) -> DataLoader[TensorBatch]:
     """Create a DataLoader with standard settings."""
     use_persistent = num_workers > 0
     return DataLoader(

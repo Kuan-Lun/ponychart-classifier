@@ -7,6 +7,7 @@ import logging
 import os
 import re
 from collections import defaultdict
+from typing import NamedTuple
 
 import numpy as np
 import torch
@@ -18,6 +19,13 @@ logger = logging.getLogger(__name__)
 ORIG_PATTERN = re.compile(r"^pony_chart_\d{8}_\d{6}\.png$")
 
 
+class Sample(NamedTuple):
+    """A labeled image sample: file path and 1-indexed label list."""
+
+    path: str
+    labels: list[int]
+
+
 # ---------------------------------------------------------------------------
 # File helpers
 # ---------------------------------------------------------------------------
@@ -27,11 +35,11 @@ def is_original(filename: str) -> bool:
 
 
 def separate_orig_crop(
-    samples: list[tuple[str, list[int]]],
-) -> tuple[list[tuple[str, list[int]]], list[tuple[str, list[int]]]]:
+    samples: list[Sample],
+) -> tuple[list[Sample], list[Sample]]:
     """Separate samples into originals and crops based on filename pattern."""
-    orig = [s for s in samples if is_original(os.path.basename(s[0]))]
-    crop = [s for s in samples if not is_original(os.path.basename(s[0]))]
+    orig = [s for s in samples if is_original(os.path.basename(s.path))]
+    crop = [s for s in samples if not is_original(os.path.basename(s.path))]
     return orig, crop
 
 
@@ -51,7 +59,7 @@ def load_labels() -> dict[str, list[int]]:
     return result
 
 
-def load_samples() -> list[tuple[str, list[int]]]:
+def load_samples() -> list[Sample]:
     """Load labeled samples from labels.json.
 
     Returns list of (image_path, [1-indexed labels]).
@@ -64,13 +72,13 @@ def load_samples() -> list[tuple[str, list[int]]]:
         # key 相對於 RAWIMAGE_DIR（例如 3/twilight/xxx.png）
         filepath_from_key = str(RAWIMAGE_DIR / key)
         if os.path.isfile(filepath_from_key):
-            samples.append((filepath_from_key, label_list))
+            samples.append(Sample(filepath_from_key, label_list))
         else:
             # Fallback: 僅用檔名在 RAWIMAGE_DIR 根目錄尋找
             filename = key.split("/")[-1]
             filepath = str(RAWIMAGE_DIR / filename)
             if os.path.isfile(filepath):
-                samples.append((filepath, label_list))
+                samples.append(Sample(filepath, label_list))
     logger.info(
         "Loaded %s samples (of %s labels.json entries)",
         f"{len(samples):,}",
@@ -80,7 +88,7 @@ def load_samples() -> list[tuple[str, list[int]]]:
 
 
 def compute_class_rates(
-    samples: list[tuple[str, list[int]]],
+    samples: list[Sample],
 ) -> list[float]:
     """計算每個 class 的出現比例 (positive rate)。"""
     counts = [0] * NUM_CLASSES
@@ -92,7 +100,7 @@ def compute_class_rates(
 
 
 def compute_pos_weight(
-    samples: list[tuple[str, list[int]]],
+    samples: list[Sample],
 ) -> torch.Tensor:
     """從訓練樣本計算 BCEWithLogitsLoss 的 pos_weight。
 
@@ -107,10 +115,10 @@ def compute_pos_weight(
 
 
 def balance_crop_samples(
-    crop_samples: list[tuple[str, list[int]]],
+    crop_samples: list[Sample],
     target_rates: list[float],
     rng: np.random.RandomState,
-) -> list[tuple[str, list[int]]]:
+) -> list[Sample]:
     """Oversample crop 圖片使 per-class 出現比例接近 target_rates。"""
     if not crop_samples:
         return []
@@ -127,7 +135,7 @@ def balance_crop_samples(
             class_to_indices[lbl - 1].append(idx)
 
     extra_indices: set[int] = set()
-    extra_samples: list[tuple[str, list[int]]] = []
+    extra_samples: list[Sample] = []
 
     for cls in range(NUM_CLASSES):
         deficit = target_counts[cls] - current_counts[cls]
@@ -146,9 +154,9 @@ def balance_crop_samples(
 
 
 def prepare_balanced_samples(
-    samples: list[tuple[str, list[int]]],
+    samples: list[Sample],
     rng: np.random.RandomState,
-) -> list[tuple[str, list[int]]]:
+) -> list[Sample]:
     """Separate originals and crops, then balance crops to match original distribution.
 
     Returns the combined list of originals + balanced crops.

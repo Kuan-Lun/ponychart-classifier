@@ -37,8 +37,9 @@ from .constants import (
     SCHEDULER_PATIENCE,
     WEIGHT_DECAY,
 )
-from .dataset import build_data_pipeline
+from .dataset import TensorBatch, build_data_pipeline
 from .model import _extract_submodules, build_model, measure_training_memory
+from .sampling import Sample
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +69,7 @@ class TrainResult:
 # ---------------------------------------------------------------------------
 def train_one_epoch(
     model: nn.Module,
-    loader: DataLoader[tuple[torch.Tensor, torch.Tensor]],
+    loader: DataLoader[TensorBatch],
     criterion: nn.Module,
     optimizer: torch.optim.Optimizer,
     device: torch.device,
@@ -94,7 +95,7 @@ def train_one_epoch(
 @torch.no_grad()
 def evaluate(
     model: nn.Module,
-    loader: DataLoader[tuple[torch.Tensor, torch.Tensor]],
+    loader: DataLoader[TensorBatch],
     criterion: nn.Module,
     device: torch.device,
     thresholds: list[float] | None = None,
@@ -148,7 +149,7 @@ def evaluate(
 @torch.no_grad()
 def optimize_thresholds(
     model: nn.Module,
-    loader: DataLoader[tuple[torch.Tensor, torch.Tensor]],
+    loader: DataLoader[TensorBatch],
     device: torch.device,
 ) -> list[float]:
     """Find optimal per-class thresholds by grid search."""
@@ -181,8 +182,8 @@ def optimize_thresholds(
 # High-level training pipeline
 # ---------------------------------------------------------------------------
 def train_model(
-    train_samples: list[tuple[str, list[int]]],
-    val_samples: list[tuple[str, list[int]]],
+    train_samples: list[Sample],
+    val_samples: list[Sample],
     device: torch.device,
     num_workers: int,
     experiment_name: str,

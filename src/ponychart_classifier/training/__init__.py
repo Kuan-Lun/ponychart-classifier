@@ -39,6 +39,7 @@ from .constants import (
 )
 from .dataset import (
     PonyChartDataset,
+    TensorBatch,
     build_cached_dataset,
     build_data_pipeline,
     compute_cache_budget,
@@ -51,10 +52,12 @@ from .log_helpers import log_section
 from .model import (
     BACKBONE_REGISTRY,
     BackboneConfig,
+    FeatureClassifierModel,
     build_model,
     measure_training_memory,
 )
 from .sampling import (
+    Sample,
     balance_crop_samples,
     compute_class_rates,
     compute_pos_weight,
@@ -98,6 +101,7 @@ __all__ = [
     "BACKBONE_REGISTRY",
     "BATCH_SIZE",
     "BackboneConfig",
+    "FeatureClassifierModel",
     "GroupSplit",
     "HoldoutSplit",
     "EvalResult",
@@ -123,6 +127,8 @@ __all__ = [
     "PHASE2_PATIENCE",
     "PRE_RESIZE",
     "PonyChartDataset",
+    "Sample",
+    "TensorBatch",
     "RAWIMAGE_DIR",
     "RETRAIN_NEW_DATA_RATIO",
     "SCHEDULER_FACTOR",

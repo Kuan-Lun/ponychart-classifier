@@ -9,15 +9,16 @@ from __future__ import annotations
 
 import logging
 import os
+from collections.abc import Callable
 from typing import Any
 
 import numpy as np
 import torch
 
 from .constants import BATCH_SIZE, CLASS_NAMES, SEED
-from .dataset import PonyChartDataset, get_transforms, make_dataloader
+from .dataset import PonyChartDataset, TensorBatch, get_transforms, make_dataloader
 from .device import get_device, get_performance_cpu_count
-from .sampling import is_original, load_samples
+from .sampling import Sample, is_original, load_samples
 from .splitting import HoldoutSplit, prepare_holdout_split
 from .training import TrainResult, train_model
 
@@ -50,7 +51,7 @@ def setup_device_and_workers(
 # ---------------------------------------------------------------------------
 def load_samples_or_exit(
     logger: logging.Logger,
-) -> list[tuple[str, list[int]]]:
+) -> list[Sample]:
     """Load samples, log count, and raise ``SystemExit`` if empty."""
     all_samples = load_samples()
     if not all_samples:
@@ -64,7 +65,7 @@ def load_samples_or_exit(
 # Holdout split with logging
 # ---------------------------------------------------------------------------
 def prepare_holdout_split_logged(
-    all_samples: list[tuple[str, list[int]]],
+    all_samples: list[Sample],
     rng: np.random.RandomState,
     logger: logging.Logger,
     test_size: float,
@@ -83,15 +84,15 @@ def prepare_holdout_split_logged(
 # Group-based original-only test extraction
 # ---------------------------------------------------------------------------
 def extract_original_test_samples(
-    all_samples: list[tuple[str, list[int]]],
+    all_samples: list[Sample],
     test_group_keys: list[str],
     groups: dict[str, list[int]],
-) -> list[tuple[str, list[int]]]:
+) -> list[Sample]:
     """Extract only original (non-crop) images from *test_group_keys*."""
     test_indices: list[int] = []
     for gk in test_group_keys:
         for idx in groups[gk]:
-            fname = os.path.basename(all_samples[idx][0])
+            fname = os.path.basename(all_samples[idx].path)
             if is_original(fname):
                 test_indices.append(idx)
     return [all_samples[i] for i in test_indices]
@@ -101,11 +102,11 @@ def extract_original_test_samples(
 # Test DataLoader
 # ---------------------------------------------------------------------------
 def make_test_loader(
-    test_samples: list[tuple[str, list[int]]],
+    test_samples: list[Sample],
     batch_size: int = BATCH_SIZE,
     num_workers: int = 0,
     device: torch.device | None = None,
-) -> torch.utils.data.DataLoader[Any]:
+) -> torch.utils.data.DataLoader[TensorBatch]:
     """Build a test ``DataLoader`` with standard eval transforms."""
     if device is None:
         device = torch.device("cpu")
@@ -123,8 +124,8 @@ def make_test_loader(
 # Train with seed reset
 # ---------------------------------------------------------------------------
 def train_with_seed_reset(
-    train_samples: list[tuple[str, list[int]]],
-    val_samples: list[tuple[str, list[int]]],
+    train_samples: list[Sample],
+    val_samples: list[Sample],
     device: torch.device,
     num_workers: int,
     label: str,
@@ -150,7 +151,7 @@ def train_with_seed_reset(
 def log_per_class_table(
     logger: logging.Logger,
     col_labels: list[str],
-    get_cell: Any,  # Callable[[int, int], str]
+    get_cell: Callable[[int, int], str],
     col_width: int = 12,
 ) -> None:
     """Print a per-class table with :data:`CLASS_NAMES` as rows.

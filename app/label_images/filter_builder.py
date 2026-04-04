@@ -6,6 +6,7 @@ from pathlib import Path
 
 from ponychart_classifier.model_spec import select_predictions
 from ponychart_classifier.training.constants import VAL_SIZE
+from ponychart_classifier.training.sampling import Sample
 from ponychart_classifier.training.splitting import group_hash_split
 
 from .constants import IMAGE_DIR
@@ -68,13 +69,13 @@ def build_filter_fn(
     train_base_timestamps: set[str] | None = None
     if config.train_only:
         samples = [
-            (str(p), store.get(store.path_to_key(p)))
+            Sample(str(p), store.get(store.path_to_key(p)))
             for p in all_paths
             if store.has(store.path_to_key(p))
         ]
         train_idx, _ = group_hash_split(samples, test_size=VAL_SIZE)
         train_base_timestamps = {
-            "_".join(Path(samples[i][0]).stem.split("_")[:4]) for i in train_idx
+            "_".join(Path(samples[i].path).stem.split("_")[:4]) for i in train_idx
         }
 
     # 預計算已有裁切圖的 raw stem 集合
