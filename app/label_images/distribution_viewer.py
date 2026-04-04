@@ -229,16 +229,7 @@ class GoFTableSection:
         next_row = self._render_data_rows(frame, uniform_rows, 6)
 
         if ratio_rows:
-            tk.Frame(frame, height=1, bg="#ccc").grid(
-                row=next_row,
-                column=0,
-                columnspan=self._total_cols,
-                sticky="ew",
-                pady=2,
-            )
-            self._render_data_rows(
-                frame, ratio_rows, next_row + 1, probs=LABEL_SIZE_PROBS
-            )
+            self._render_data_rows(frame, ratio_rows, next_row, probs=LABEL_SIZE_PROBS)
 
     # ── Private helpers ──
 
