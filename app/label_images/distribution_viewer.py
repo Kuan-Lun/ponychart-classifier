@@ -1,10 +1,12 @@
-"""角色分布分析：以表格呈現標籤分布統計。"""
+"""角色分布分析：以表格呈現標籤分布統計與均勻性檢定。"""
 
 from __future__ import annotations
 
 import tkinter as tk
 from collections import Counter
 from itertools import combinations
+
+from ponychart_classifier.stats import GoFTestResult, goodness_of_fit_test
 
 from .constants import LABEL_MAP
 from .file_ops import is_raw_image
@@ -88,16 +90,12 @@ def _combo_counts(
     return result
 
 
-def _cooccurrence_matrix(
-    samples: dict[str, list[int]],
-) -> list[list[int]]:
-    """6x6 共現矩陣。"""
-    matrix = [[0] * _NUM_CLASSES for _ in range(_NUM_CLASSES)]
-    for labels in samples.values():
-        for a in labels:
-            for b in labels:
-                matrix[a - 1][b - 1] += 1
-    return matrix
+def _combo_counts_flat(samples: dict[str, list[int]], size: int) -> list[int]:
+    """計算指定大小的標籤組合出現次數，回傳 flat list。"""
+    combos = [tuple(sorted(v)) for v in samples.values() if len(v) == size]
+    cnt = Counter(combos)
+    all_combos = list(combinations(range(1, _NUM_CLASSES + 1), size))
+    return [cnt.get(c, 0) for c in all_combos]
 
 
 class DistributionViewer:
@@ -131,8 +129,7 @@ class DistributionViewer:
         self._render_summary(container, orig, all_)
         self._render_char_table(container, orig, all_)
         self._render_double_matrix(container, orig, all_)
-        self._render_combo_table(container, orig, all_, size=3, title="三標籤組合")
-        self._render_cooccurrence(container, orig, all_)
+        self._render_gof_table(container, orig)
 
     # ── Helpers ──────────────────────────────────────────────
 
@@ -267,149 +264,176 @@ class DistributionViewer:
                     a_s = _pct(all_combos.get(combo, 0), a_total)
                     self._make_cell(frame, f"{o_s}/{a_s}", i + 1, j + 1, width=12)
 
-    def _render_combo_table(
+    # ── GoF test table ────────────────────────────────────────
+
+    # ── GoF table: 3-level header ─────────────────────────────
+    #
+    # Row 0:  [blank]     Asymptotic          Exact
+    # Row 1:  [blank]     Pearson    LR       Pearson    LR       Probability
+    # Row 2:  分布        統計量 p   統計量 p  統計量 p   統計量 p  統計量 p
+    # ------- separator -------
+    # Row 4+: data
+
+    # (group_label, colspan_in_methods, methods_in_group)
+    # Each method: (api_key, display_name)
+    _GOF_GROUPS: list[tuple[str, list[tuple[str, str]]]] = [
+        (
+            "Asymptotic",
+            [
+                ("pearson_asymptotic", "Pearson"),
+                ("lr_asymptotic", "LR"),
+            ],
+        ),
+        (
+            "Exact",
+            [
+                ("pearson_exact", "Pearson"),
+                ("lr_exact", "LR"),
+                ("probability_exact", "Probability"),
+            ],
+        ),
+    ]
+
+    @staticmethod
+    def _fmt_stat(r: GoFTestResult) -> str:
+        if r.statistic is None:
+            return "—"
+        return f"{r.statistic:.2f}"
+
+    @staticmethod
+    def _fmt_p(r: GoFTestResult) -> str:
+        p = r.p_value
+        if p < 0.001:
+            s = "<.001"
+        elif p > 0.999:
+            s = ">.999"
+        else:
+            s = f"{p:.3f}"
+        if p <= 0.01:
+            return s + "**"
+        if p <= 0.05:
+            return s + "* "
+        return s + "  "
+
+    def _render_gof_table(
         self,
         parent: tk.Widget,
         orig: dict[str, list[int]],
-        all_: dict[str, list[int]],
-        *,
-        size: int,
-        title: str,
     ) -> None:
-        """雙/三標籤組合表。"""
-        orig_combos = _combo_counts(orig, size)
-        all_combos = _combo_counts(all_, size)
-        # Union of non-zero combos, sorted by all_ count descending
-        combo_keys: list[tuple[int, ...]] = []
-        seen: set[tuple[int, ...]] = set()
-        for c, _ in all_combos:
-            if c not in seen:
-                combo_keys.append(c)
-                seen.add(c)
-        for c, _ in orig_combos:
-            if c not in seen:
-                combo_keys.append(c)
-                seen.add(c)
+        """均勻性檢定：一張表呈現所有分布 × 所有方法（三層表頭）。"""
+        self._section(parent, "均勻性檢定（原圖）")
 
-        if not combo_keys:
-            return
+        by_n = _count_by_label_size(orig)
+        overall = _overall_counts(orig)
+        data_rows: list[tuple[str, list[int]]] = [("整體出現次數", overall)]
+        if sum(by_n[1]) > 0:
+            data_rows.append(("單標籤", by_n[1]))
+        combo2 = _combo_counts_flat(orig, 2)
+        if sum(combo2) > 0:
+            data_rows.append(("雙標籤組合", combo2))
+        combo3 = _combo_counts_flat(orig, 3)
+        if sum(combo3) > 0:
+            data_rows.append(("三標籤組合", combo3))
 
-        self._section(parent, title)
         frame = tk.Frame(parent)
         frame.pack(anchor="w", padx=8, pady=(0, 4))
 
-        orig_map = dict(orig_combos)
-        all_map = dict(all_combos)
+        label_w = 16
+        stat_w = 8
+        p_w = 9
 
-        # Header
-        combo_labels = ["+".join(_SHORT_NAMES[i - 1] for i in c) for c in combo_keys]
-        headers = ["原圖/全部"] + combo_labels + ["合計"]
-        for col, h in enumerate(headers):
-            w = max(10, len(h) + 2)
-            self._make_cell(frame, h, 0, col, font=_FONT_BOLD, width=w)
+        # Flatten methods for column indexing
+        all_methods: list[tuple[str, str]] = []
+        for _grp, methods in self._GOF_GROUPS:
+            all_methods.extend(methods)
+        n_methods = len(all_methods)
+        total_cols = 1 + n_methods * 2
 
-        o_total = sum(orig_map.values())
-        a_total = sum(all_map.values())
-        self._make_cell(frame, "", 1, 0, font=_FONT_BOLD, anchor="w", width=10)
-        for c_idx, combo in enumerate(combo_keys):
-            o_val = orig_map.get(combo, 0)
-            a_val = all_map.get(combo, 0)
-            o_s = _pct(o_val, o_total)
-            a_s = _pct(a_val, a_total)
-            self._make_cell(
+        # Row 0: group headers (Asymptotic / Exact)
+        self._make_cell(frame, "", 0, 0, width=label_w)
+        col = 1
+        for grp_label, methods in self._GOF_GROUPS:
+            span = len(methods) * 2
+            lbl = tk.Label(
                 frame,
-                f"{o_s}/{a_s}",
-                1,
-                c_idx + 1,
-                width=max(10, len(combo_labels[c_idx]) + 2),
+                text=grp_label,
+                font=_FONT_BOLD,
+                anchor="center",
             )
+            lbl.grid(row=0, column=col, columnspan=span, padx=1, pady=1)
+            col += span
+
+        # Row 1: method names (Pearson / LR / Probability)
+        self._make_cell(frame, "", 1, 0, width=label_w)
+        for i, (_key, mname) in enumerate(all_methods):
+            col = 1 + i * 2
+            lbl = tk.Label(
+                frame,
+                text=mname,
+                font=_FONT_BOLD,
+                width=stat_w + p_w,
+                anchor="center",
+            )
+            lbl.grid(row=1, column=col, columnspan=2, padx=1, pady=1)
+
+        # Row 2: sub-headers (統計量 / p-value)
         self._make_cell(
             frame,
-            f"{o_total}/{a_total}",
-            1,
-            len(combo_keys) + 1,
-            width=max(10, len("合計") + 2),
+            "分布",
+            2,
+            0,
+            font=_FONT_BOLD,
+            width=label_w,
+            anchor="w",
+        )
+        for i in range(n_methods):
+            col = 1 + i * 2
+            self._make_cell(frame, "統計量", 2, col, font=_FONT_BOLD, width=stat_w)
+            self._make_cell(frame, "p-value", 2, col + 1, font=_FONT_BOLD, width=p_w)
+
+        # Row 3: separator
+        tk.Frame(frame, height=1, bg="#ccc").grid(
+            row=3,
+            column=0,
+            columnspan=total_cols,
+            sticky="ew",
+            pady=2,
         )
 
-    def _render_cooccurrence(
-        self,
-        parent: tk.Widget,
-        orig: dict[str, list[int]],
-        all_: dict[str, list[int]],
-    ) -> None:
-        """共現矩陣：原圖 / 全部並列，顯示條件機率 P(col|row)。"""
-        self._section(parent, "共現矩陣 P(col|row)")
-
-        outer = tk.Frame(parent)
-        outer.pack(anchor="w", padx=8, pady=(0, 4))
-
-        orig_matrix = _cooccurrence_matrix(orig)
-        all_matrix = _cooccurrence_matrix(all_)
-
-        for side, (label, matrix) in enumerate(
-            [("原圖", orig_matrix), ("全部", all_matrix)]
-        ):
-            if side > 0:
-                # spacer
-                tk.Frame(outer, width=24).grid(row=0, column=1)
-
-            sub = tk.Frame(outer)
-            sub.grid(row=0, column=side * 2, sticky="n")
-
-            tk.Label(sub, text=label, font=_FONT_BOLD).grid(
-                row=0, column=0, columnspan=_NUM_CLASSES + 1
+        # Row 4+: data
+        for r_idx, (row_label, counts) in enumerate(data_rows):
+            row = r_idx + 4
+            n = sum(counts)
+            self._make_cell(
+                frame,
+                f"{row_label} (n={n})",
+                row,
+                0,
+                font=_FONT_BOLD,
+                width=label_w,
+                anchor="w",
             )
-
-            # Column headers
-            self._make_cell(sub, "", 1, 0, width=6)
-            for c, name in enumerate(_SHORT_NAMES):
-                self._make_cell(sub, name, 1, c + 1, font=_FONT_BOLD, width=6)
-
-            # Conditional probability P(col|row)
-            cond: list[list[float]] = [
-                [0.0] * _NUM_CLASSES for _ in range(_NUM_CLASSES)
-            ]
-            for i in range(_NUM_CLASSES):
-                diag = matrix[i][i]
-                for j in range(_NUM_CLASSES):
-                    if i != j and diag > 0:
-                        cond[i][j] = matrix[i][j] / diag * 100
-
-            flat_cond = [
-                cond[i][j]
-                for i in range(_NUM_CLASSES)
-                for j in range(_NUM_CLASSES)
-                if i != j
-            ]
-            cond_max = max(flat_cond) if flat_cond else 1.0
-
-            for i in range(_NUM_CLASSES):
-                self._make_cell(
-                    sub,
-                    _SHORT_NAMES[i],
-                    i + 2,
-                    0,
-                    font=_FONT_BOLD,
-                    anchor="w",
-                    width=6,
-                )
-                for j in range(_NUM_CLASSES):
-                    if i == j:
-                        self._make_cell(sub, "—", i + 2, j + 1, width=6)
-                    else:
-                        rate = cond[i][j]
-                        if cond_max > 0 and rate > 0:
-                            intensity = int(200 * rate / cond_max)
-                            r_ = 200 - intensity
-                            g_ = 200 - intensity // 2
-                            bg = f"#{r_:02x}{g_:02x}{200:02x}"
-                        else:
-                            bg = ""
-                        self._make_cell(
-                            sub,
-                            f"{rate:.0f}%",
-                            i + 2,
-                            j + 1,
-                            width=6,
-                            bg=bg,
-                        )
+            for i, (method_key, _mname) in enumerate(all_methods):
+                col = 1 + i * 2
+                if n == 0:
+                    self._make_cell(frame, "—", row, col, width=stat_w)
+                    self._make_cell(frame, "—", row, col + 1, width=p_w)
+                else:
+                    r = goodness_of_fit_test(
+                        counts,
+                        method=method_key,  # type: ignore[arg-type]
+                    )
+                    self._make_cell(
+                        frame,
+                        self._fmt_stat(r),
+                        row,
+                        col,
+                        width=stat_w,
+                    )
+                    self._make_cell(
+                        frame,
+                        self._fmt_p(r),
+                        row,
+                        col + 1,
+                        width=p_w,
+                    )
