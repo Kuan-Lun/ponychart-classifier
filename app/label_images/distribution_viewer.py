@@ -204,14 +204,17 @@ class GoFTableSection:
         ),
     ]
 
-    _LABEL_W = 16
+    _NAME_W = 10
+    _N_W = 7
+    _DIST_W = 8
     _STAT_W = 8
     _P_W = 9
+    _INFO_COLS = 3  # 名稱, n, 分布
 
     def __init__(self, orig: dict[str, list[int]]) -> None:
         self._orig = orig
         self._all_methods = [m for _, methods in self._GOF_GROUPS for m in methods]
-        self._total_cols = 1 + len(self._all_methods) * 2
+        self._total_cols = self._INFO_COLS + len(self._all_methods) * 2
 
     def render(self, parent: tk.Widget) -> None:
         _section_header(parent, "適合度檢定（原圖）")
@@ -264,15 +267,17 @@ class GoFTableSection:
             sum(1 for v in self._orig.values() if len(v) == n) for n in (1, 2, 3)
         ]
         if sum(label_size_counts) > 0:
-            ratio_label = ":".join(str(round(p * 50)) for p in LABEL_SIZE_PROBS)
-            ratio_rows.append((f"標籤數 {ratio_label}", label_size_counts))
+            ratio_rows.append(("標籤數", label_size_counts))
 
         return uniform_rows, ratio_rows
 
     def _render_header(self, frame: tk.Widget) -> None:
+        c0 = self._INFO_COLS  # first data column offset
+
         # Row 0: group headers (Asymptotic / Exact)
-        _make_cell(frame, "", 0, 0, width=self._LABEL_W)
-        col = 1
+        for ic in range(self._INFO_COLS):
+            _make_cell(frame, "", 0, ic, width=self._NAME_W)
+        col = c0
         for grp_label, methods in self._GOF_GROUPS:
             span = len(methods) * 2
             lbl = tk.Label(frame, text=grp_label, font=_FONT_BOLD, anchor="center")
@@ -283,9 +288,8 @@ class GoFTableSection:
             col += span
 
         # Row 2: method names
-        _make_cell(frame, "", 2, 0, width=self._LABEL_W)
         for i, (_key, mname) in enumerate(self._all_methods):
-            col = 1 + i * 2
+            col = c0 + i * 2
             lbl = tk.Label(
                 frame,
                 text=mname,
@@ -299,11 +303,11 @@ class GoFTableSection:
             )
 
         # Row 4: sub-headers
-        _make_cell(
-            frame, "分布", 4, 0, font=_FONT_BOLD, width=self._LABEL_W, anchor="w"
-        )
+        _make_cell(frame, "名稱", 4, 0, font=_FONT_BOLD, width=self._NAME_W, anchor="w")
+        _make_cell(frame, "n", 4, 1, font=_FONT_BOLD, width=self._N_W)
+        _make_cell(frame, "分布", 4, 2, font=_FONT_BOLD, width=self._DIST_W)
         for i in range(len(self._all_methods)):
-            col = 1 + i * 2
+            col = c0 + i * 2
             _make_cell(frame, "統計量", 4, col, font=_FONT_BOLD, width=self._STAT_W)
             _make_cell(frame, "p-value", 4, col + 1, font=_FONT_BOLD, width=self._P_W)
 
@@ -320,20 +324,24 @@ class GoFTableSection:
         *,
         probs: list[float] | None = None,
     ) -> int:
+        c0 = self._INFO_COLS
+        dist_text = ":".join(str(round(p * 50)) for p in probs) if probs else "均勻"
         for r_idx, (row_label, counts) in enumerate(rows):
             row = start_row + r_idx
             n = sum(counts)
             _make_cell(
                 frame,
-                f"{row_label} (n={n})",
+                row_label,
                 row,
                 0,
                 font=_FONT_BOLD,
-                width=self._LABEL_W,
+                width=self._NAME_W,
                 anchor="w",
             )
+            _make_cell(frame, str(n), row, 1, width=self._N_W)
+            _make_cell(frame, dist_text, row, 2, width=self._DIST_W)
             for i, (method_key, _mname) in enumerate(self._all_methods):
-                col = 1 + i * 2
+                col = c0 + i * 2
                 if n == 0:
                     _make_cell(frame, "—", row, col, width=self._STAT_W)
                     _make_cell(frame, "—", row, col + 1, width=self._P_W)
