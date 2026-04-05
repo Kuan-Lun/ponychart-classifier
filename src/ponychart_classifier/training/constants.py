@@ -60,7 +60,7 @@ VAL_SIZE = 0.15
 GOF_ALPHA = 0.05
 
 # Expected label-size proportions (single / double / triple)
-LABEL_SIZE_PROBS: list[float] = [20 / 50, 21 / 50, 9 / 50]
+LABEL_SIZE_PROBS: list[float] = [2 / 5, 2 / 5, 1 / 5]
 
 # Resume vs from-scratch threshold (updated by compare_resume_scratch analysis)
 # 以「上次 from-scratch 訓練時的樣本數」為基準計算累積 ratio：
