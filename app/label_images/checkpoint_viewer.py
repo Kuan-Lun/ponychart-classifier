@@ -90,6 +90,9 @@ def _extract_changes(ckpt: dict[str, Any]) -> dict[str, Any]:
         str(Path(p).relative_to(RAWIMAGE_DIR)): labels for p, labels in samples
     }
 
+    def _filename(key: str) -> str:
+        return key.split("/")[-1]
+
     def diff_labels(
         baseline: dict[str, list[int]],
         current: dict[str, list[int]],
@@ -98,7 +101,23 @@ def _extract_changes(ckpt: dict[str, Any]) -> dict[str, Any]:
         cur_keys = set(current)
         added = cur_keys - base_keys
         removed = base_keys - cur_keys
+
+        # 檔案重新標注後可能被搬到不同子資料夾，key 會改變。
+        # 用檔名配對 added/removed 來偵測這類「搬移」。
+        added_by_name = {_filename(k): k for k in added}
+        moved_names = {_filename(k) for k in removed if _filename(k) in added_by_name}
+        moved_base = {k for k in removed if _filename(k) in moved_names}
+        moved_cur = {added_by_name[n] for n in moved_names}
+
+        # 搬移的檔案：若 label 有變動算 relabeled，否則忽略
         relabeled = {k for k in base_keys & cur_keys if baseline[k] != current[k]}
+        for bk in moved_base:
+            ck = added_by_name[_filename(bk)]
+            if baseline[bk] != current[ck]:
+                relabeled.add(ck)
+
+        added -= moved_cur
+        removed -= moved_base
         return added, removed, relabeled
 
     def split_orig_crop(keys: set[str]) -> tuple[int, int]:
