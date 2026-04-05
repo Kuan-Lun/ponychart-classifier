@@ -182,6 +182,29 @@ def _extract_model(ckpt: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _extract_split_counts() -> dict[str, Any]:
+    """計算目前資料的訓練/驗證集張數與比例。"""
+    import os
+
+    from ponychart_classifier.training.constants import VAL_SIZE
+    from ponychart_classifier.training.sampling import is_original, load_samples
+    from ponychart_classifier.training.splitting import group_hash_split
+
+    samples = load_samples()
+    train_idx, val_idx = group_hash_split(samples, test_size=VAL_SIZE)
+
+    n_train = sum(1 for i in train_idx if is_original(os.path.basename(samples[i][0])))
+    n_val = sum(1 for i in val_idx if is_original(os.path.basename(samples[i][0])))
+    n_total = n_train + n_val
+    return {
+        "train_size": n_train,
+        "val_size": n_val,
+        "total_size": n_total,
+        "train_ratio": n_train / n_total if n_total else 0.0,
+        "val_ratio": n_val / n_total if n_total else 0.0,
+    }
+
+
 def _extract_hyperparams(ckpt: dict[str, Any]) -> dict[str, Any]:
     """從 checkpoint 萃取訓練超參數。"""
     hp_keys = [
@@ -206,6 +229,7 @@ def _load_checkpoint_data(path: Path) -> dict[str, Any]:
         "changes": _extract_changes(ckpt),
         "model": _extract_model(ckpt),
         "hyperparams": _extract_hyperparams(ckpt),
+        "split_counts": _extract_split_counts(),
     }
 
 
