@@ -48,7 +48,7 @@ def _logsumexp(log_values: list[float]) -> float:
     if not log_values:
         return float("-inf")
     arr = np.array(log_values)
-    max_val = np.max(arr)
+    max_val: float = np.max(arr)
     if np.isinf(max_val) and max_val < 0:
         return float("-inf")
     return float(max_val + np.log(np.sum(np.exp(arr - max_val))))

@@ -100,8 +100,8 @@ updated: bool = update()
 
 # 預測圖片中的角色
 result: PredictionResult = predict("path/to/image.png")
-print(result.labels)            # frozenset({'Rarity', 'Fluttershy'})
-print(result.rarity)            # 0.95
+print(result.labels)  # frozenset({'Rarity', 'Fluttershy'})
+print(result.rarity)  # 0.95
 print(result.twilight_sparkle)  # 0.02
 
 # 取得各角色的分類閾值
@@ -113,7 +113,9 @@ thresholds: ClassThresholds = get_thresholds()
 ```python
 from ponychart_classifier import PonyChartClassifier
 
-classifier = PonyChartClassifier(model_path="model.onnx", thresholds_path="thresholds.json")
+classifier = PonyChartClassifier(
+    model_path="model.onnx", thresholds_path="thresholds.json"
+)
 result = classifier.predict("path/to/image.png", min_k=1, max_k=3)
 ```
 
