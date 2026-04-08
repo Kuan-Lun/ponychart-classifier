@@ -7,11 +7,13 @@ build
 dist
 .DS_Store
 
-!/.gitignore
-!/.github/
+!.gitignore
+!.github/
 !.github/**
-!/.vscode/
+!.vscode/
 !.vscode/**
+!.claude/
+!.claude/**
 
 uv.lock
 
