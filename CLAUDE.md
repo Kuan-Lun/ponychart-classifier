@@ -43,6 +43,10 @@ When you need to understand the directory layout, run `tree -I '__pycache__|*.eg
 
 - Follow SOLID principles: single responsibility, open/closed, Liskov substitution, interface segregation, dependency inversion
 
+## Running Python
+
+- Always use `uv run python` to run scripts, tests, or ad-hoc snippets (use `uv run --extra train python` when training dependencies are needed).
+
 ## Code Style
 
 - **Formatter:** Black (line-length 88)
