@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from scipy.stats import chisquare  # type: ignore[import-untyped]
+from scipy.stats import chisquare
 
 from ponychart_classifier.stats import (
     GoFTestResult,

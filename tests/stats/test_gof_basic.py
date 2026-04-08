@@ -104,7 +104,7 @@ class TestSmallSample:
         counts = [4, 1, 1]
         results = {}
         for m in ("pearson_exact", "lr_exact", "probability_exact"):
-            r = goodness_of_fit_test(counts, method=m)  # type: ignore[arg-type]
+            r = goodness_of_fit_test(counts, method=m)
             results[m] = r.p_value
             assert r.exact
             assert 0.0 <= r.p_value <= 1.0

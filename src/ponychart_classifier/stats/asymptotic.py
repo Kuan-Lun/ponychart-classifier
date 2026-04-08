@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import numpy as np
 from numpy.typing import NDArray
-from scipy.stats import chi2  # type: ignore[import-untyped]
+from scipy.stats import chi2
 
 from ponychart_classifier.stats.statistics import g_stat, pearson_stat
 

@@ -33,6 +33,7 @@ from ponychart_classifier.training import (
     NUM_CLASSES,
     SEED,
     VAL_SIZE,
+    Sample,
     build_groups,
     compute_class_rates,
     evaluate,
@@ -75,13 +76,13 @@ logger = logging.getLogger(__name__)
 
 def log_distribution(
     label: str,
-    samples: list[tuple[str, list[int]]],
+    samples: list[Sample],
 ) -> list[float]:
     """印出並回傳 per-class positive rate。"""
     rates = compute_class_rates(samples)
     logger.info("  %s (%d samples):", label, len(samples))
     for i, name in enumerate(CLASS_NAMES):
-        count = sum(1 for _, lbls in samples if (i + 1) in lbls)
+        count = sum(1 for s in samples if (i + 1) in s.labels)
         logger.info("    %-20s  %4d  (%.1f%%)", name, count, rates[i] * 100)
     return rates
 
@@ -121,7 +122,7 @@ def main() -> None:
     train_val_indices_crop = []
     for gk in gsp.train + gsp.val:
         for idx in groups[gk]:
-            fname = os.path.basename(all_samples[idx][0])
+            fname = os.path.basename(all_samples[idx].path)
             if is_original(fname):
                 train_val_indices_orig.append(idx)
             else:
@@ -137,8 +138,8 @@ def main() -> None:
 
     # ── Helper: split a sample list into train/val using pre-computed groups ──
     def _train_val_split(
-        samples: list[tuple[str, list[int]]],
-    ) -> tuple[list[tuple[str, list[int]]], list[tuple[str, list[int]]]]:
+        samples: list[Sample],
+    ) -> tuple[list[Sample], list[Sample]]:
         idx_groups = build_groups(samples)
         train = [
             samples[i]
@@ -167,7 +168,7 @@ def main() -> None:
     criterion = nn.BCEWithLogitsLoss()
 
     # ---- Train experiments (all from ImageNet pretrained weights) ----
-    result_a = train_model(
+    train_result_a = train_model(
         train_a,
         val_a,
         device,
@@ -175,9 +176,9 @@ def main() -> None:
         "A: Originals + biased crops",
         backbone=BACKBONE,
     )
-    model_a, thresholds_a = result_a.model, result_a.thresholds
+    model_a, thresholds_a = train_result_a.model, train_result_a.thresholds
 
-    result_b = train_with_seed_reset(
+    train_result_b = train_with_seed_reset(
         train_b,
         val_b,
         device,
@@ -185,9 +186,9 @@ def main() -> None:
         "B: Originals only (baseline)",
         backbone=BACKBONE,
     )
-    model_b, thresholds_b = result_b.model, result_b.thresholds
+    model_b, thresholds_b = train_result_b.model, train_result_b.thresholds
 
-    result_c = train_with_seed_reset(
+    train_result_c = train_with_seed_reset(
         train_c,
         val_c,
         device,
@@ -195,14 +196,14 @@ def main() -> None:
         "C: Originals + balanced crops",
         backbone=BACKBONE,
     )
-    model_c, thresholds_c = result_c.model, result_c.thresholds
+    model_c, thresholds_c = train_result_c.model, train_result_c.thresholds
 
     # ---- Evaluate all on test set ----
     test_loader = make_test_loader(test_samples, BATCH_SIZE, num_workers, device)
 
-    result_a = evaluate(model_a, test_loader, criterion, device, thresholds_a)
-    result_b = evaluate(model_b, test_loader, criterion, device, thresholds_b)
-    result_c = evaluate(model_c, test_loader, criterion, device, thresholds_c)
+    eval_a = evaluate(model_a, test_loader, criterion, device, thresholds_a)
+    eval_b = evaluate(model_b, test_loader, criterion, device, thresholds_b)
+    eval_c = evaluate(model_c, test_loader, criterion, device, thresholds_c)
 
     # ── Data split summary ──
     log_section(logger, "DATA SPLIT SUMMARY", width=80)
@@ -252,16 +253,16 @@ def main() -> None:
     logger.info(
         "%-20s  %-14.4f  %-14.4f  %-14.4f",
         "Macro F1",
-        result_a.macro_f1,
-        result_b.macro_f1,
-        result_c.macro_f1,
+        eval_a.macro_f1,
+        eval_b.macro_f1,
+        eval_c.macro_f1,
     )
     logger.info(
         "%-20s  %-14.4f  %-14.4f  %-14.4f",
         "Loss",
-        result_a.loss,
-        result_b.loss,
-        result_c.loss,
+        eval_a.loss,
+        eval_b.loss,
+        eval_c.loss,
     )
 
     logger.info("")
@@ -284,22 +285,22 @@ def main() -> None:
             "  %-20s  %-7.4f %-7.4f %-7.4f | %-7.4f %-7.4f %-7.4f"
             " | %-7.4f %-7.4f %-7.4f",
             name,
-            result_a.per_class_precision[i],
-            result_a.per_class_recall[i],
-            result_a.per_class_f1[i],
-            result_b.per_class_precision[i],
-            result_b.per_class_recall[i],
-            result_b.per_class_f1[i],
-            result_c.per_class_precision[i],
-            result_c.per_class_recall[i],
-            result_c.per_class_f1[i],
+            eval_a.per_class_precision[i],
+            eval_a.per_class_recall[i],
+            eval_a.per_class_f1[i],
+            eval_b.per_class_precision[i],
+            eval_b.per_class_recall[i],
+            eval_b.per_class_f1[i],
+            eval_c.per_class_precision[i],
+            eval_c.per_class_recall[i],
+            eval_c.per_class_f1[i],
         )
 
     # ── Effect decomposition ──
     log_section(logger, "EFFECT DECOMPOSITION", width=80)
-    total_effect = result_a.macro_f1 - result_b.macro_f1
-    augment_effect = result_c.macro_f1 - result_b.macro_f1
-    bias_effect = result_a.macro_f1 - result_c.macro_f1
+    total_effect = eval_a.macro_f1 - eval_b.macro_f1
+    augment_effect = eval_c.macro_f1 - eval_b.macro_f1
+    bias_effect = eval_a.macro_f1 - eval_c.macro_f1
     logger.info(
         "  A vs B (total effect = augmentation + bias): %+.4f",
         total_effect,
@@ -322,9 +323,9 @@ def main() -> None:
     )
     f1_diff_ab = []
     for i, name in enumerate(CLASS_NAMES):
-        ab = result_a.per_class_f1[i] - result_b.per_class_f1[i]
-        cb = result_c.per_class_f1[i] - result_b.per_class_f1[i]
-        ac = result_a.per_class_f1[i] - result_c.per_class_f1[i]
+        ab = eval_a.per_class_f1[i] - eval_b.per_class_f1[i]
+        cb = eval_c.per_class_f1[i] - eval_b.per_class_f1[i]
+        ac = eval_a.per_class_f1[i] - eval_c.per_class_f1[i]
         f1_diff_ab.append(ab)
         logger.info(
             "  %-20s  %+.1f%%     %+.4f     %+.4f     %+.4f",
@@ -339,7 +340,7 @@ def main() -> None:
     log_section(logger, "CORRELATION ANALYSIS", width=80)
     r_ab = _pearson_r(bias_per_class, f1_diff_ab)
     f1_diff_ac = [
-        result_a.per_class_f1[i] - result_c.per_class_f1[i] for i in range(NUM_CLASSES)
+        eval_a.per_class_f1[i] - eval_c.per_class_f1[i] for i in range(NUM_CLASSES)
     ]
     r_ac = _pearson_r(bias_per_class, f1_diff_ac)
     ab_hint = (
@@ -359,9 +360,9 @@ def main() -> None:
     log_section(logger, "SUMMARY", width=80)
     logger.info(
         "  Macro F1:  A=%.4f  B=%.4f  C=%.4f",
-        result_a.macro_f1,
-        result_b.macro_f1,
-        result_c.macro_f1,
+        eval_a.macro_f1,
+        eval_b.macro_f1,
+        eval_c.macro_f1,
     )
     logger.info("  Total effect   (A-B): %+.4f", total_effect)
     logger.info("  Augment effect (C-B): %+.4f", augment_effect)
@@ -389,11 +390,11 @@ def main() -> None:
     train_crops = [
         s
         for s in train_val_crop
-        if get_base_timestamp(os.path.basename(s[0])) in train_gk_set
+        if get_base_timestamp(os.path.basename(s.path)) in train_gk_set
     ]
     crop_counts_per_class = [0] * NUM_CLASSES
-    for _, labels in train_crops:
-        for lbl in labels:
+    for s in train_crops:
+        for lbl in s.labels:
             crop_counts_per_class[lbl - 1] += 1
 
     total_crops = len(train_crops)
@@ -407,9 +408,9 @@ def main() -> None:
     recommendations: list[CropRecommendation] = []
     max_crop = max(crop_counts_per_class) if crop_counts_per_class else 1
     for i in range(NUM_CLASSES):
-        cb = result_c.per_class_f1[i] - result_b.per_class_f1[i]
-        ab = result_a.per_class_f1[i] - result_b.per_class_f1[i]
-        b_f1 = result_b.per_class_f1[i]
+        cb = eval_c.per_class_f1[i] - eval_b.per_class_f1[i]
+        ab = eval_a.per_class_f1[i] - eval_b.per_class_f1[i]
+        b_f1 = eval_b.per_class_f1[i]
         crop_n = crop_counts_per_class[i]
         target_n = target_per_class[i]
         deficit = max(target_n - crop_n, 0)

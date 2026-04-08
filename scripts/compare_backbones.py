@@ -31,6 +31,7 @@ from ponychart_classifier.training import (
     VAL_SIZE,
     EvalResult,
     HoldoutSplit,
+    Sample,
     build_cached_dataset,
     evaluate,
     export_onnx,
@@ -91,9 +92,9 @@ def count_parameters(model: nn.Module) -> int:
 
 def run_experiment(
     backbone_name: str,
-    train_samples: list[tuple[str, list[int]]],
-    val_samples: list[tuple[str, list[int]]],
-    test_samples: list[tuple[str, list[int]]],
+    train_samples: list[Sample],
+    val_samples: list[Sample],
+    test_samples: list[Sample],
     device: torch.device,
     num_workers: int,
 ) -> ExperimentResult:

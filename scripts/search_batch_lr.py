@@ -60,6 +60,7 @@ from ponychart_classifier.training.dataset import (
     compute_cache_budget,
     get_transforms,
 )
+from ponychart_classifier.training.model import _extract_submodules
 
 logging.basicConfig(
     level=logging.INFO,
@@ -130,24 +131,25 @@ def run_experiment(
     )
 
     model = build_model(backbone=backbone, pretrained=True).to(device)
+    features, classifier = _extract_submodules(model)
     criterion = nn.BCEWithLogitsLoss()
 
     # Phase 1: Head only
-    for param in model.features.parameters():
+    for param in features.parameters():
         param.requires_grad = False
     optimizer = torch.optim.AdamW(
-        model.classifier.parameters(), lr=lr_head, weight_decay=WEIGHT_DECAY
+        classifier.parameters(), lr=lr_head, weight_decay=WEIGHT_DECAY
     )
     for _epoch in range(1, SEARCH_PHASE1_EPOCHS + 1):
         train_one_epoch(model, train_loader, criterion, optimizer, device)
 
     # Phase 2: Full fine-tuning
-    for param in model.features.parameters():
+    for param in features.parameters():
         param.requires_grad = True
     optimizer = torch.optim.AdamW(
         [
-            {"params": model.features.parameters(), "lr": lr_features},
-            {"params": model.classifier.parameters(), "lr": lr_classifier},
+            {"params": features.parameters(), "lr": lr_features},
+            {"params": classifier.parameters(), "lr": lr_classifier},
         ],
         weight_decay=WEIGHT_DECAY,
     )

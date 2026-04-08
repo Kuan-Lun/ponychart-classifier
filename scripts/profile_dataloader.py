@@ -18,6 +18,7 @@ from ponychart_classifier.training import (
     SEED,
     VAL_SIZE,
     WEIGHT_DECAY,
+    TensorBatch,
     build_cached_dataset,
     build_model,
     get_device,
@@ -38,7 +39,7 @@ NUM_EPOCHS = 3
 
 
 def profile_dataloader_only(
-    loader: torch.utils.data.DataLoader,
+    loader: torch.utils.data.DataLoader[TensorBatch],
     device: torch.device,
     n_epochs: int,
 ) -> dict[str, float]:
@@ -66,7 +67,7 @@ def profile_dataloader_only(
 
 def profile_training(
     model: nn.Module,
-    loader: torch.utils.data.DataLoader,
+    loader: torch.utils.data.DataLoader[TensorBatch],
     criterion: nn.Module,
     optimizer: torch.optim.Optimizer,
     device: torch.device,

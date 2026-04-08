@@ -58,7 +58,7 @@ def main() -> None:
     logger.info("pos_weight: %s", dict(zip(CLASS_NAMES, pw.tolist())))
 
     # ── Experiment A: Baseline (no pos_weight) ──
-    result_a = train_with_seed_reset(
+    train_result_a = train_with_seed_reset(
         train_samples,
         val_samples,
         device,
@@ -67,7 +67,7 @@ def main() -> None:
         backbone=BACKBONE,
         verbose=True,
     )
-    model_a, thresholds_a = result_a.model, result_a.thresholds
+    model_a, thresholds_a = train_result_a.model, train_result_a.thresholds
 
     # ── Experiment B: With pos_weight ──
     train_result_b = train_with_seed_reset(
@@ -86,8 +86,8 @@ def main() -> None:
     criterion = nn.BCEWithLogitsLoss()
     test_loader = make_test_loader(test_samples, num_workers=num_workers, device=device)
 
-    result_a = evaluate(model_a, test_loader, criterion, device, thresholds_a)
-    result_b = evaluate(model_b, test_loader, criterion, device, thresholds_b)
+    eval_a = evaluate(model_a, test_loader, criterion, device, thresholds_a)
+    eval_b = evaluate(model_b, test_loader, criterion, device, thresholds_b)
 
     # ── Report ──
     log_section(
@@ -108,20 +108,20 @@ def main() -> None:
         "Delta",
     )
     logger.info("-" * 70)
-    delta_f1 = result_b.macro_f1 - result_a.macro_f1
+    delta_f1 = eval_b.macro_f1 - eval_a.macro_f1
     logger.info(
         "%-20s  %-18.4f  %-18.4f  %+.4f",
         "Macro F1",
-        result_a.macro_f1,
-        result_b.macro_f1,
+        eval_a.macro_f1,
+        eval_b.macro_f1,
         delta_f1,
     )
-    delta_loss = result_b.loss - result_a.loss
+    delta_loss = eval_b.loss - eval_a.loss
     logger.info(
         "%-20s  %-18.4f  %-18.4f  %+.4f",
         "Loss",
-        result_a.loss,
-        result_b.loss,
+        eval_a.loss,
+        eval_b.loss,
         delta_loss,
     )
 
@@ -141,17 +141,17 @@ def main() -> None:
     logger.info("  " + "-" * 75)
     deltas = []
     for i, name in enumerate(CLASS_NAMES):
-        d = result_b.per_class_f1[i] - result_a.per_class_f1[i]
+        d = eval_b.per_class_f1[i] - eval_a.per_class_f1[i]
         deltas.append(d)
         logger.info(
             "  %-20s  %-7.4f %-7.4f %-7.4f | %-7.4f %-7.4f %-7.4f | %+.4f",
             name,
-            result_a.per_class_precision[i],
-            result_a.per_class_recall[i],
-            result_a.per_class_f1[i],
-            result_b.per_class_precision[i],
-            result_b.per_class_recall[i],
-            result_b.per_class_f1[i],
+            eval_a.per_class_precision[i],
+            eval_a.per_class_recall[i],
+            eval_a.per_class_f1[i],
+            eval_b.per_class_precision[i],
+            eval_b.per_class_recall[i],
+            eval_b.per_class_f1[i],
             d,
         )
 
@@ -159,8 +159,8 @@ def main() -> None:
     log_section(logger, "SUMMARY", width=80)
     logger.info(
         "  Macro F1:  A (Baseline)=%.4f  B (pos_weight)=%.4f  Delta=%+.4f",
-        result_a.macro_f1,
-        result_b.macro_f1,
+        eval_a.macro_f1,
+        eval_b.macro_f1,
         delta_f1,
     )
 

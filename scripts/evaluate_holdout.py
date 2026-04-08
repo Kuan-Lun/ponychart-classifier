@@ -57,7 +57,7 @@ def main() -> None:
     train_samples, val_samples, test_samples = split.train, split.val, split.test
 
     # ── Train from scratch (never resume: different split → data leakage) ──
-    result = train_model(
+    train_result = train_model(
         train_samples,
         val_samples,
         device,
@@ -66,13 +66,13 @@ def main() -> None:
         backbone=BACKBONE,
         verbose=True,
     )
-    model, thresholds = result.model, result.thresholds
+    model, thresholds = train_result.model, train_result.thresholds
 
     # ── Evaluate on holdout test set (originals only) ──
     criterion = nn.BCEWithLogitsLoss()
     test_loader = make_test_loader(test_samples, num_workers=num_workers, device=device)
 
-    result = evaluate(model, test_loader, criterion, device, thresholds)
+    eval_result = evaluate(model, test_loader, criterion, device, thresholds)
 
     # ── Report ──
     log_section(
@@ -83,8 +83,8 @@ def main() -> None:
     )
     logger.info("Thresholds (from val set): %s", dict(zip(CLASS_NAMES, thresholds)))
     logger.info("")
-    logger.info("  Macro F1: %.4f", result.macro_f1)
-    logger.info("  Loss:     %.4f", result.loss)
+    logger.info("  Macro F1: %.4f", eval_result.macro_f1)
+    logger.info("  Loss:     %.4f", eval_result.loss)
     logger.info("")
     logger.info(
         "  %-20s  %-10s  %-10s  %-10s",
@@ -98,9 +98,9 @@ def main() -> None:
         logger.info(
             "  %-20s  %-10.4f  %-10.4f  %-10.4f",
             name,
-            result.per_class_precision[i],
-            result.per_class_recall[i],
-            result.per_class_f1[i],
+            eval_result.per_class_precision[i],
+            eval_result.per_class_recall[i],
+            eval_result.per_class_f1[i],
         )
     logger.info("=" * 70)
 

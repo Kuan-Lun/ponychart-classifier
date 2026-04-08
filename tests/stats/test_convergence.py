@@ -154,7 +154,7 @@ _Z = 3  # number of standard errors for margin
 
 def _margin(alpha: float, n_sim: int) -> float:
     """Compute assertion margin: z * SE of binomial proportion at alpha."""
-    return _Z * (alpha * (1 - alpha) / n_sim) ** 0.5
+    return float(_Z * (alpha * (1 - alpha) / n_sim) ** 0.5)
 
 
 @dataclass

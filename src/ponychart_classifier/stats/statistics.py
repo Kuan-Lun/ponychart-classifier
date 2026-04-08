@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import numpy as np
 from numpy.typing import NDArray
-from scipy.special import gammaln  # type: ignore[import-untyped]
+from scipy.special import gammaln
 
 
 def pearson_stat(

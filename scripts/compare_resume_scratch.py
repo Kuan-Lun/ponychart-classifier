@@ -32,6 +32,7 @@ from ponychart_classifier.training import (
     HOLDOUT_TEST_SIZE,
     SEED,
     VAL_SIZE,
+    Sample,
     build_groups,
     evaluate,
     extract_original_test_samples,
@@ -71,10 +72,10 @@ SAFETY_MARGIN = 0.75
 # Helpers
 # ---------------------------------------------------------------------------
 def prepare_train_val(
-    samples: list[tuple[str, list[int]]],
+    samples: list[Sample],
     seed: int,
     val_gk_set: set[str],
-) -> tuple[list[tuple[str, list[int]]], list[tuple[str, list[int]]]]:
+) -> tuple[list[Sample], list[Sample]]:
     """Apply orig/crop balance + train/val split (same pipeline as train.py)."""
     rng = np.random.RandomState(seed)
     balanced = prepare_balanced_samples(samples, rng)

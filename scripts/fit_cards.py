@@ -102,7 +102,7 @@ def fit_p(
 
     # Try scipy first
     try:
-        from scipy.optimize import minimize_scalar  # type: ignore[import-untyped]
+        from scipy.optimize import minimize_scalar
 
         res = minimize_scalar(objective, bounds=(1e-9, 0.999999), method="bounded")
         return float(res.x)
@@ -237,7 +237,7 @@ def cmd_scan(args: argparse.Namespace) -> None:
 
     if args.plot:
         try:
-            import matplotlib.pyplot as plt  # type: ignore[import-untyped]
+            import matplotlib.pyplot as plt
 
             ps = [r[0] for r in rows]
             plt.figure(figsize=(9, 5))
