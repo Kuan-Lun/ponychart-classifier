@@ -5,6 +5,8 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import messagebox, simpledialog
 
+from ponychart_classifier.training.sampling import Sample
+
 from .analysis import AnalysisManager, AnalysisTable
 from .checkpoint_viewer import DataStatusViewer, ModelInfoViewer
 from .constants import IMAGE_SUBDIR, LABEL_FILE, LABEL_MAP
@@ -183,44 +185,64 @@ class _AnalysisActions:
 
     def __init__(self, app: "LabelApp") -> None:
         self._app = app
+        self._just_ran_full = False
 
     def start(self) -> None:
-        self._start(unlabeled_only=False)
+        """完整模式：對所有尚未有預測的圖片補跑推論。"""
+        a = self._app
+        existing = a.analysis.model_probs or {}
+        samples, keys = a.analysis.collect_samples(
+            a.nav, a.store, key_filter=lambda k: k not in existing
+        )
+        if not samples:
+            messagebox.showinfo("Info", "所有圖片皆已分析過。")
+            return
+        self._launch(samples, keys, scope="", full=True)
 
     def start_unlabeled_only(self) -> None:
+        """僅未標註模式：對尚未手動標註的圖片跑推論。"""
         a = self._app
-        unlabeled_count = sum(
-            1 for p in a.nav.all_paths if not a.store.has(a.store.path_to_key(p))
+        samples, keys = a.analysis.collect_samples(
+            a.nav, a.store, key_filter=lambda k: not a.store.has(k)
         )
-        if unlabeled_count == 0:
+        if not samples:
             messagebox.showinfo("Info", "目前沒有未標註的圖片。")
             return
-        self._start(unlabeled_only=True, count=unlabeled_count)
+        self._launch(samples, keys, scope="unlabeled ", full=False)
 
-    def _start(self, *, unlabeled_only: bool, count: int | None = None) -> None:
+    def _launch(
+        self,
+        samples: list[Sample],
+        keys: list[str],
+        *,
+        scope: str,
+        full: bool,
+    ) -> None:
         a = self._app
         if a.analysis.is_running:
             return
         a.analyze_btn.configure(state="disabled")
         a.analyze_unlabeled_btn.configure(state="disabled")
-        if count is None:
-            count = len(a.nav.all_paths)
-        scope = "unlabeled " if unlabeled_only else ""
-        a.analyze_status.configure(text=f"Analyzing {count} {scope}images...")
+        a.analyze_status.configure(text=f"Analyzing {len(samples)} {scope}images...")
+        self._just_ran_full = full
 
         a.analysis.start(
-            nav=a.nav,
-            store=a.store,
+            samples=samples,
+            keys=keys,
             on_complete=self._on_complete,
             on_error=self._on_error,
             root=a.root,
-            unlabeled_only=unlabeled_only,
         )
 
     def _on_complete(self) -> None:
         a = self._app
-        a.analyze_btn.configure(state="normal")
-        a.analyze_unlabeled_btn.configure(state="normal")
+        # 「僅未標註」跑完它涵蓋的圖片後就沒有事可做（兩種模式都會涵蓋未標註集合）。
+        a.analyze_unlabeled_btn.configure(state="disabled")
+        if self._just_ran_full:
+            # 完整模式跑完後，model_probs 已涵蓋所有圖片，「自動標註」自身也無事可做。
+            a.analyze_btn.configure(state="disabled")
+        else:
+            a.analyze_btn.configure(state="normal")
         a.analyze_status.configure(text="")
         a.filter_panel.set_suspicious_state("normal")
         a.refresh()

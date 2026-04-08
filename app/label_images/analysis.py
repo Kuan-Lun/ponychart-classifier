@@ -32,31 +32,38 @@ class AnalysisManager:
     def has_results(self) -> bool:
         return self.model_probs is not None
 
-    def start(
+    def collect_samples(
         self,
         nav: ImageNavigator,
         store: LabelStore,
-        on_complete: Callable[[], None],
-        on_error: Callable[[str], None],
-        root: tk.Tk,
-        unlabeled_only: bool = False,
-    ) -> None:
-        """啟動背景分析。
+        key_filter: Callable[[str], bool] | None = None,
+    ) -> tuple[list[Sample], list[str]]:
+        """走訪 ``nav.all_paths`` 並用 ``key_filter`` 篩出要分析的樣本。
 
-        若 ``unlabeled_only`` 為 True，只分析尚未手動標註的圖片，
-        節省時間並讓後續手動標註時能直接對照模型預測。
+        ``key_filter`` 為 None 時不過濾。回傳 ``(samples, keys)``，
+        呼叫端可由 ``len(samples)`` 取得待分析張數。
         """
-        if self.is_running:
-            return
-
         samples: list[Sample] = []
         keys: list[str] = []
         for p in nav.all_paths:
             key = store.path_to_key(p)
-            if unlabeled_only and store.has(key):
+            if key_filter is not None and not key_filter(key):
                 continue
             samples.append(Sample(str(p), store.get(key)))
             keys.append(key)
+        return samples, keys
+
+    def start(
+        self,
+        samples: list[Sample],
+        keys: list[str],
+        on_complete: Callable[[], None],
+        on_error: Callable[[str], None],
+        root: tk.Tk,
+    ) -> None:
+        """啟動背景分析。新預測一律合併進 ``model_probs``，不會覆蓋舊資料。"""
+        if self.is_running:
+            return
 
         self._result = None
         self._error = None
@@ -80,13 +87,12 @@ class AnalysisManager:
             if self._result is not None:
                 new_probs, new_thresholds = self._result
                 self._result = None
-                if unlabeled_only and self.model_probs is not None:
-                    # 部分分析：合併到現有結果中，保留先前未動的圖片預測。
+                if self.model_probs is None:
+                    self.model_probs = new_probs
+                else:
                     merged = dict(self.model_probs)
                     merged.update(new_probs)
                     self.model_probs = merged
-                else:
-                    self.model_probs = new_probs
                 self.model_thresholds = new_thresholds
                 on_complete()
 
