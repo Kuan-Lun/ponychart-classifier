@@ -81,6 +81,7 @@ class _LabelActions:
         if new_path != old_path:
             new_key = a.store.path_to_key(new_path)
             a.store.rename_key(key, new_key)
+            a.analysis.rename_key(key, new_key)
             a.nav.replace_path(old_path, new_path)
             key = new_key
 
@@ -184,12 +185,28 @@ class _AnalysisActions:
         self._app = app
 
     def start(self) -> None:
+        self._start(unlabeled_only=False)
+
+    def start_unlabeled_only(self) -> None:
+        a = self._app
+        unlabeled_count = sum(
+            1 for p in a.nav.all_paths if not a.store.has(a.store.path_to_key(p))
+        )
+        if unlabeled_count == 0:
+            messagebox.showinfo("Info", "目前沒有未標註的圖片。")
+            return
+        self._start(unlabeled_only=True, count=unlabeled_count)
+
+    def _start(self, *, unlabeled_only: bool, count: int | None = None) -> None:
         a = self._app
         if a.analysis.is_running:
             return
         a.analyze_btn.configure(state="disabled")
-        count = len(a.nav.all_paths)
-        a.analyze_status.configure(text=f"Analyzing {count} images...")
+        a.analyze_unlabeled_btn.configure(state="disabled")
+        if count is None:
+            count = len(a.nav.all_paths)
+        scope = "unlabeled " if unlabeled_only else ""
+        a.analyze_status.configure(text=f"Analyzing {count} {scope}images...")
 
         a.analysis.start(
             nav=a.nav,
@@ -197,10 +214,13 @@ class _AnalysisActions:
             on_complete=self._on_complete,
             on_error=self._on_error,
             root=a.root,
+            unlabeled_only=unlabeled_only,
         )
 
     def _on_complete(self) -> None:
         a = self._app
+        a.analyze_btn.configure(state="normal")
+        a.analyze_unlabeled_btn.configure(state="normal")
         a.analyze_status.configure(text="")
         a.filter_panel.set_suspicious_state("normal")
         a.refresh()
@@ -208,6 +228,7 @@ class _AnalysisActions:
     def _on_error(self, error: str) -> None:
         a = self._app
         a.analyze_btn.configure(state="normal")
+        a.analyze_unlabeled_btn.configure(state="normal")
         a.analyze_status.configure(text="")
         messagebox.showerror("Analysis Error", error)
 
@@ -298,6 +319,12 @@ class LabelApp:
             command=self.analysis_actions.start,
         )
         self.analyze_btn.pack(side="left", padx=(0, 4))
+        self.analyze_unlabeled_btn = tk.Button(
+            primary_frame,
+            text="自動標註(僅未標註)",
+            command=self.analysis_actions.start_unlabeled_only,
+        )
+        self.analyze_unlabeled_btn.pack(side="left", padx=(0, 4))
         self.analyze_status = tk.Label(primary_frame, text="", fg="#999")
         self.analyze_status.pack(side="left", padx=(0, 4))
 

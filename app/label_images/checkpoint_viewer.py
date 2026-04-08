@@ -33,24 +33,22 @@ def _load_checkpoint(path: Path) -> dict[str, Any]:
 
 
 def _extract_counts(ckpt: dict[str, Any]) -> dict[str, Any]:
-    """從 checkpoint 萃取圖片數量統計。"""
+    """從 checkpoint 萃取圖片數量統計。
+
+    三欄資料皆來自 labels.json 快照（完整訓練／上次存檔／當前），
+    避免掃描磁碟誤把未標註圖片計入。未標註數另外從 rawimage 根目錄
+    與 rawimage/unlabeled 兩個位置取得。
+    """
     from ponychart_classifier.training.constants import RAWIMAGE_DIR
     from ponychart_classifier.training.sampling import is_original, load_samples
 
     labels_full: dict[str, list[int]] = ckpt["labels_at_full_train"]
+    labels_last: dict[str, list[int]] = ckpt["labels_at_last_save"]
 
     samples = load_samples()
     labels_current = {
         str(Path(p).relative_to(RAWIMAGE_DIR)): labels for p, labels in samples
     }
-
-    all_files = [
-        f.name
-        for f in Path(RAWIMAGE_DIR).rglob("*")
-        if f.is_file() and f.suffix.lower() in (".png", ".jpg")
-    ]
-    n_cur_orig = sum(1 for f in all_files if is_original(f))
-    n_cur_crop = len(all_files) - n_cur_orig
 
     def count_orig_crop(
         labels: dict[str, list[int]],
@@ -59,21 +57,33 @@ def _extract_counts(ckpt: dict[str, Any]) -> dict[str, Any]:
         return n_o, len(labels) - n_o
 
     n_orig_full, n_crop_full = count_orig_crop(labels_full)
-    n_orig = ckpt.get("n_orig")
-    n_crop = ckpt.get("n_crop")
-    n_total_last = (n_orig or 0) + (n_crop or 0) if n_orig is not None else None
+    n_orig_last, n_crop_last = count_orig_crop(labels_last)
+    n_cur_orig, n_cur_crop = count_orig_crop(labels_current)
+
+    def _count_unlabeled(dir_: Path) -> int:
+        if not dir_.is_dir():
+            return 0
+        return sum(
+            1
+            for f in dir_.iterdir()
+            if f.is_file() and f.suffix.lower() in (".png", ".jpg")
+        )
+
+    n_unlabeled = _count_unlabeled(RAWIMAGE_DIR) + _count_unlabeled(
+        RAWIMAGE_DIR / "unlabeled"
+    )
 
     return {
         "orig_full": n_orig_full,
         "crop_full": n_crop_full,
-        "orig_last": n_orig,
-        "crop_last": n_crop,
+        "orig_last": n_orig_last,
+        "crop_last": n_crop_last,
         "orig_cur": n_cur_orig,
         "crop_cur": n_cur_crop,
         "total_full": len(labels_full),
-        "total_last": n_total_last,
-        "total_cur": n_cur_orig + n_cur_crop,
-        "unlabeled": len(all_files) - len(labels_current),
+        "total_last": len(labels_last),
+        "total_cur": len(labels_current),
+        "unlabeled": n_unlabeled,
     }
 
 

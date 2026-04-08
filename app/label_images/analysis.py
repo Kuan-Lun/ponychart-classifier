@@ -39,8 +39,13 @@ class AnalysisManager:
         on_complete: Callable[[], None],
         on_error: Callable[[str], None],
         root: tk.Tk,
+        unlabeled_only: bool = False,
     ) -> None:
-        """啟動背景分析。"""
+        """啟動背景分析。
+
+        若 ``unlabeled_only`` 為 True，只分析尚未手動標註的圖片，
+        節省時間並讓後續手動標註時能直接對照模型預測。
+        """
         if self.is_running:
             return
 
@@ -48,6 +53,8 @@ class AnalysisManager:
         keys: list[str] = []
         for p in nav.all_paths:
             key = store.path_to_key(p)
+            if unlabeled_only and store.has(key):
+                continue
             samples.append(Sample(str(p), store.get(key)))
             keys.append(key)
 
@@ -71,8 +78,16 @@ class AnalysisManager:
                 on_error(err)
                 return
             if self._result is not None:
-                self.model_probs, self.model_thresholds = self._result
+                new_probs, new_thresholds = self._result
                 self._result = None
+                if unlabeled_only and self.model_probs is not None:
+                    # 部分分析：合併到現有結果中，保留先前未動的圖片預測。
+                    merged = dict(self.model_probs)
+                    merged.update(new_probs)
+                    self.model_probs = merged
+                else:
+                    self.model_probs = new_probs
+                self.model_thresholds = new_thresholds
                 on_complete()
 
         root.after(200, poll)
@@ -108,6 +123,13 @@ class AnalysisManager:
         if self.model_probs is None:
             return None
         return self.model_probs.get(key)
+
+    def rename_key(self, old_key: str, new_key: str) -> None:
+        """同步圖片搬移後的 key 變更，避免遺失既有預測結果。"""
+        if self.model_probs is None:
+            return
+        if old_key in self.model_probs:
+            self.model_probs[new_key] = self.model_probs.pop(old_key)
 
 
 class AnalysisTable:
