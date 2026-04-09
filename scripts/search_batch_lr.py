@@ -1,28 +1,47 @@
 """
-Batch size 超參數搜尋（Stage 1）。
+Batch size 超參數搜尋（Stage 1）— 跨機器分別運行再合併比較。
+
+此腳本拆成兩種模式，方便把不同 batch size 派到不同設備上跑
+（例如：bs<=64 在本地，bs>=96 在 Colab）：
+
+1. 單跑一個 batch size 並把結果寫成 JSON：
+     uv run python scripts/search_batch_lr.py --run 32
+     uv run python scripts/search_batch_lr.py --run 64
+     uv run python scripts/search_batch_lr.py --run 96
+
+2. 讀取 results dir 內的 JSON 並印對照表：
+     uv run python scripts/search_batch_lr.py --report
+
+預設 results dir 是 ``scripts/batch_lr_results/``，可用 ``--results-dir``
+指定其他路徑。
 
 固定 lr_scale=1.0，掃不同 batch size，依 Linear Scaling Rule
-等比例調整 LR，找出最佳 batch size。
+等比例調整 LR（``linear_factor = batch / BATCH_SIZE``）。
 
-搜尋策略：
-  - batch_size: [32, 64, 96]
-  - lr_scale: 1.0 (固定，由 linear_factor = batch/BATCH_SIZE 補償)
+## 跨機器一致性
 
-兩層 scaling 必須正交：linear_factor 補償 batch size，
-lr_scale 留給 Stage 2 在贏的 batch 上微調線性規則的偏差。
+JSON 檔名包含「資料集 hash」(``batch{bs}__{hash12}.json``)，
+hash 是從所有 sample (path + labels) 計算出來的指紋。
+- 同一份 ``rawimage`` + ``labels.json`` → 同 hash → 同檔名 → 重跑會覆蓋舊版
+- 任何新增 / 刪除 / 標籤異動 → 不同 hash → 不同檔名 → 兩者並存
+- ``--report`` 偵測到 results dir 同時存在多個 hash 時會直接報錯，
+  避免不小心比較不同資料快照下的數字。
 
-共 4 組實驗，使用相同的 train/val split 確保公平比較。
-
-使用方式：
-  uv run python scripts/search_batch_lr.py
+train/val split 由 SEED + 樣本內容決定（``group_hash_split``），
+所以同一份資料在任何機器上都會切出相同的訓練/驗證集。
 """
 
 from __future__ import annotations
 
+import argparse
 import gc
+import json
 import logging
+import socket
 import time
 from dataclasses import dataclass
+from pathlib import Path
+from typing import TypedDict, cast
 
 import torch
 import torch.nn as nn
@@ -31,6 +50,7 @@ from ponychart_classifier.training import (
     BACKBONE,
     BATCH_SIZE,
     CLASS_NAMES,
+    HASH_PREFIX_LEN,
     INPUT_SIZE,
     LR_CLASSIFIER,
     LR_FEATURES,
@@ -46,16 +66,21 @@ from ponychart_classifier.training import (
     SEED,
     VAL_SIZE,
     WEIGHT_DECAY,
+    EnvDict,
     build_model,
+    describe_device,
     evaluate,
     get_device,
     get_performance_cpu_count,
     group_hash_split,
+    hash_samples,
+    load_all_json_results,
     load_samples_logged,
     log_section,
     make_dataloader,
     measure_training_memory,
     seed_all,
+    select_consistent_results,
     train_one_epoch,
 )
 from ponychart_classifier.training.dataset import (
@@ -71,16 +96,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Search grid – (batch_size, lr_scale) pairs
-# Stage 1：固定 lr_scale=1.0，掃 batch size。LR 由 linear_factor 自動補償。
-SEARCH_GRID: list[tuple[int, float]] = [
-    (
-        96,
-        1.0,
-    ),  # 1.5x baseline — run first to surface latent OOM / get wall-time upper bound
-    (64, 1.0),  # baseline (= constants.BATCH_SIZE)
-    (32, 1.0),  # smaller batch — more gradient noise / regularization
-]
+DEFAULT_RESULTS_DIR = Path(__file__).parent / "batch_lr_results"
+
+# Stage 1 固定 lr_scale=1.0；lr_scale 留給 Stage 2 在贏的 batch 上微調。
+LR_SCALE = 1.0
 
 # Base LRs from constants (single source of truth with train.py)
 BASE_LR_HEAD = LR_HEAD
@@ -88,22 +107,129 @@ BASE_LR_FEATURES = LR_FEATURES
 BASE_LR_CLASSIFIER = LR_CLASSIFIER
 
 
+# ---------------------------------------------------------------------------
+# Result types
+# ---------------------------------------------------------------------------
 @dataclass(frozen=True)
 class SearchResult:
-    """Result of a single hyperparameter search experiment."""
+    """Result of a single batch-size search experiment."""
 
-    best_f1: float
-    per_class_f1: list[float]
-    stopped_epoch: int
     batch_size: int
     lr_scale: float
     lr_head: float
     lr_features: float
     lr_classifier: float
+    best_f1: float
+    per_class_f1: list[float]
+    stopped_epoch: int
     time_s: float
-    run_idx: int
+    train_size: int
+    val_size: int
+    seed: int
+    backbone: str
+    data_hash: str
+    hostname: str
+    device: str
 
 
+# ---------------------------------------------------------------------------
+# JSON serialization
+# ---------------------------------------------------------------------------
+class SplitDict(TypedDict):
+    train_size: int
+    val_size: int
+
+
+class SearchResultDict(TypedDict):
+    batch_size: int
+    lr_scale: float
+    lr_head: float
+    lr_features: float
+    lr_classifier: float
+    best_f1: float
+    per_class_f1: list[float]
+    stopped_epoch: int
+    time_s: float
+    split: SplitDict
+    seed: int
+    backbone: str
+    data_hash: str
+    env: EnvDict
+
+
+def result_to_dict(result: SearchResult) -> SearchResultDict:
+    return SearchResultDict(
+        batch_size=result.batch_size,
+        lr_scale=result.lr_scale,
+        lr_head=result.lr_head,
+        lr_features=result.lr_features,
+        lr_classifier=result.lr_classifier,
+        best_f1=result.best_f1,
+        per_class_f1=list(result.per_class_f1),
+        stopped_epoch=result.stopped_epoch,
+        time_s=result.time_s,
+        split=SplitDict(
+            train_size=result.train_size,
+            val_size=result.val_size,
+        ),
+        seed=result.seed,
+        backbone=result.backbone,
+        data_hash=result.data_hash,
+        env=EnvDict(hostname=result.hostname, device=result.device),
+    )
+
+
+def result_from_dict(data: SearchResultDict) -> SearchResult:
+    split = data["split"]
+    env = data["env"]
+    return SearchResult(
+        batch_size=data["batch_size"],
+        lr_scale=data["lr_scale"],
+        lr_head=data["lr_head"],
+        lr_features=data["lr_features"],
+        lr_classifier=data["lr_classifier"],
+        best_f1=data["best_f1"],
+        per_class_f1=list(data["per_class_f1"]),
+        stopped_epoch=data["stopped_epoch"],
+        time_s=data["time_s"],
+        train_size=split["train_size"],
+        val_size=split["val_size"],
+        seed=data["seed"],
+        backbone=data["backbone"],
+        data_hash=data["data_hash"],
+        hostname=env["hostname"],
+        device=env["device"],
+    )
+
+
+def _parse_result_json(raw: str) -> SearchResultDict:
+    parsed = json.loads(raw)
+    if not isinstance(parsed, dict):
+        raise ValueError(f"Expected a JSON object, got {type(parsed).__name__}")
+    return cast(SearchResultDict, parsed)
+
+
+def result_filename(batch_size: int, data_hash: str) -> str:
+    """Return the canonical JSON filename for a (batch_size, data) pair."""
+    return f"batch{batch_size:03d}__{data_hash[:HASH_PREFIX_LEN]}.json"
+
+
+def save_result(result: SearchResult, results_dir: Path) -> Path:
+    """Write *result* to ``<results_dir>/batch{bs}__{hash12}.json``."""
+    results_dir.mkdir(parents=True, exist_ok=True)
+    out_path = results_dir / result_filename(result.batch_size, result.data_hash)
+    out_path.write_text(json.dumps(result_to_dict(result), indent=2))
+    return out_path
+
+
+def _parse_result_file(raw: str) -> SearchResult:
+    """Parse one JSON document into a :class:`SearchResult`."""
+    return result_from_dict(_parse_result_json(raw))
+
+
+# ---------------------------------------------------------------------------
+# Training
+# ---------------------------------------------------------------------------
 def run_experiment(
     train_ds: PonyChartDataset,
     val_ds: PonyChartDataset,
@@ -114,10 +240,11 @@ def run_experiment(
     lr_features: float,
     lr_classifier: float,
     backbone: str,
-    lr_scale: float,
-    run_idx: int,
-) -> SearchResult:
-    """Run one training experiment, return results."""
+) -> tuple[float, list[float], int, float]:
+    """Run one training experiment.
+
+    Returns ``(best_f1, best_per_class_f1, stopped_epoch, elapsed_s)``.
+    """
     t0 = time.monotonic()
     train_loader = make_dataloader(
         train_ds,
@@ -187,29 +314,28 @@ def run_experiment(
             stopped_epoch = epoch
             break
 
-    return SearchResult(
-        best_f1=best_f1,
-        per_class_f1=best_per_class,
-        stopped_epoch=stopped_epoch,
-        batch_size=batch_size,
-        lr_scale=lr_scale,
-        lr_head=lr_head,
-        lr_features=lr_features,
-        lr_classifier=lr_classifier,
-        time_s=time.monotonic() - t0,
-        run_idx=run_idx,
-    )
+    return best_f1, best_per_class, stopped_epoch, time.monotonic() - t0
 
 
-def main() -> None:
+# ---------------------------------------------------------------------------
+# Sub-commands
+# ---------------------------------------------------------------------------
+def cmd_run(batch_size: int, results_dir: Path) -> None:
+    """Train one batch_size config and persist the result to *results_dir*."""
+    if batch_size <= 0:
+        raise ValueError(f"batch_size must be positive, got {batch_size}")
+
     seed_all(SEED)
-
     device = get_device()
     num_workers = get_performance_cpu_count()
     logger.info("Device: %s  DataLoader workers: %d", device, num_workers)
 
-    # Load data (same split for all experiments)
     samples = load_samples_logged(logger)
+    data_hash = hash_samples(samples)
+    logger.info(
+        "Data fingerprint: %s (full=%s)", data_hash[:HASH_PREFIX_LEN], data_hash
+    )
+
     train_idx, val_idx = group_hash_split(samples, test_size=VAL_SIZE)
     train_samples = [samples[i] for i in train_idx]
     val_samples = [samples[i] for i in val_idx]
@@ -217,29 +343,32 @@ def main() -> None:
         "Train: %s  Val: %s", f"{len(train_samples):,}", f"{len(val_samples):,}"
     )
 
-    total_combos = len(SEARCH_GRID)
-    logger.info("")
-    logger.info("=" * 70)
-    logger.info(
-        "HYPERPARAMETER SEARCH: %d combinations",
-        total_combos,
-    )
+    linear_factor = batch_size / BATCH_SIZE
+    lr_head = BASE_LR_HEAD * linear_factor * LR_SCALE
+    lr_features = BASE_LR_FEATURES * linear_factor * LR_SCALE
+    lr_classifier = BASE_LR_CLASSIFIER * linear_factor * LR_SCALE
+
+    log_section(logger, "BATCH SIZE: %d", batch_size, width=70)
     logger.info("  Backbone:    %s", BACKBONE)
-    logger.info("  Grid:        %s", SEARCH_GRID)
+    logger.info("  lr_scale:    %.1fx  (linear_factor=%.3f)", LR_SCALE, linear_factor)
+    logger.info(
+        "  LRs:         head=%.1e  feat=%.1e  cls=%.1e",
+        lr_head,
+        lr_features,
+        lr_classifier,
+    )
     logger.info(
         "  Phase 1: %d epochs, Phase 2: %d epochs (patience=%d)",
         SEARCH_PHASE1_EPOCHS,
         SEARCH_PHASE2_EPOCHS,
         SEARCH_PATIENCE,
     )
-    logger.info("=" * 70)
-    logger.info("")
+    logger.info("  Data hash:   %s", data_hash[:HASH_PREFIX_LEN])
 
-    # Build datasets once (shared across all experiments)
-    max_batch = max(bs for bs, _ in SEARCH_GRID)
+    # Cache budget reflects this run only (single batch size).
     training_reserve = measure_training_memory(
         BACKBONE,
-        max_batch,
+        batch_size,
         INPUT_SIZE,
         device,
     )
@@ -263,63 +392,88 @@ def main() -> None:
         max_cached=val_budget,
     )
 
-    # Run experiments sequentially on device
-    results: list[SearchResult] = []
-    for run_idx, (batch_size, lr_scale) in enumerate(SEARCH_GRID, 1):
-        linear_factor = batch_size / BATCH_SIZE
-        lr_head = BASE_LR_HEAD * linear_factor * lr_scale
-        lr_features = BASE_LR_FEATURES * linear_factor * lr_scale
-        lr_classifier = BASE_LR_CLASSIFIER * linear_factor * lr_scale
+    seed_all(SEED)
+    best_f1, best_per_class, stopped_epoch, elapsed_s = run_experiment(
+        train_ds,
+        val_ds,
+        device,
+        num_workers,
+        batch_size,
+        lr_head,
+        lr_features,
+        lr_classifier,
+        BACKBONE,
+    )
 
-        logger.info(
-            "  [%d/%d] batch=%d  lr_scale=%.1fx  (head=%.1e  feat=%.1e  cls=%.1e)",
-            run_idx,
-            total_combos,
-            batch_size,
-            lr_scale,
-            lr_head,
-            lr_features,
-            lr_classifier,
+    # Best-effort cleanup so the run process exits with a small footprint.
+    gc.collect()
+    if device.type == "mps":
+        torch.mps.empty_cache()
+    elif device.type == "cuda":
+        torch.cuda.empty_cache()
+
+    result = SearchResult(
+        batch_size=batch_size,
+        lr_scale=LR_SCALE,
+        lr_head=lr_head,
+        lr_features=lr_features,
+        lr_classifier=lr_classifier,
+        best_f1=best_f1,
+        per_class_f1=best_per_class,
+        stopped_epoch=stopped_epoch,
+        time_s=elapsed_s,
+        train_size=len(train_samples),
+        val_size=len(val_samples),
+        seed=SEED,
+        backbone=BACKBONE,
+        data_hash=data_hash,
+        hostname=socket.gethostname(),
+        device=describe_device(device),
+    )
+
+    logger.info(
+        ">> batch=%d  F1=%.4f  stopped_epoch=%d  time=%.1fs",
+        batch_size,
+        best_f1,
+        stopped_epoch,
+        elapsed_s,
+    )
+
+    out_path = save_result(result, results_dir)
+    logger.info("Saved result to %s", out_path)
+
+
+def cmd_report(results_dir: Path) -> None:
+    """Print a comparison table from all JSON files in *results_dir*."""
+    raw_results = load_all_json_results(results_dir, _parse_result_file, logger)
+    if not raw_results:
+        msg = f"No results found in {results_dir}"
+        logger.error(msg)
+        raise FileNotFoundError(msg)
+
+    by_batch = select_consistent_results(
+        raw_results,
+        key=lambda r: r.batch_size,
+        key_label="batch_size",
+        logger=logger,
+    )
+    data_hash = next(iter(by_batch.values())).data_hash
+    backbones = {r.backbone for r in by_batch.values()}
+
+    log_section(logger, "BATCH SIZE SEARCH RESULTS")
+    logger.info("  Loaded %d result(s) from %s", len(by_batch), results_dir)
+    logger.info("  Data snapshot: %s", data_hash[:HASH_PREFIX_LEN])
+    if len(backbones) > 1:
+        logger.warning(
+            "  Mixed backbones in results dir: %s", ", ".join(sorted(backbones))
         )
-
-        seed_all(SEED)
-
-        result = run_experiment(
-            train_ds,
-            val_ds,
-            device,
-            num_workers,
-            batch_size,
-            lr_head,
-            lr_features,
-            lr_classifier,
-            BACKBONE,
-            lr_scale=lr_scale,
-            run_idx=run_idx,
-        )
-
-        # Flush MPS allocator cache so experiment memory is returned to OS
-        # before the next experiment allocates a new model.
-        gc.collect()
-        if device.type == "mps":
-            torch.mps.empty_cache()
-
-        results.append(result)
-        logger.info(
-            "    -> F1=%.4f  stopped_epoch=%d  time=%.1fs",
-            result.best_f1,
-            result.stopped_epoch,
-            result.time_s,
-        )
-
-    logger.info("")
+    else:
+        logger.info("  Backbone:      %s", next(iter(backbones)))
 
     # ── Results table sorted by F1 ──
-    results.sort(key=lambda r: r.best_f1, reverse=True)
+    sorted_by_f1 = sorted(by_batch.values(), key=lambda r: r.best_f1, reverse=True)
 
-    logger.info("=" * 90)
-    logger.info("RESULTS (sorted by best val Macro F1)")
-    logger.info("=" * 90)
+    logger.info("")
     logger.info(
         "  %-4s  %-6s  %-8s  %-10s  %-10s  %-10s  %-8s  %-6s  %-7s",
         "Rank",
@@ -333,7 +487,7 @@ def main() -> None:
         "Time",
     )
     logger.info("  " + "-" * 85)
-    for rank, r in enumerate(results, 1):
+    for rank, r in enumerate(sorted_by_f1, 1):
         logger.info(
             "  #%-3d  %-6d  %-8s  %-10.1e  %-10.1e  %-10.1e  %-8.4f  %-6d  %-7.1fs",
             rank,
@@ -347,10 +501,18 @@ def main() -> None:
             r.time_s,
         )
 
+    # Per-batch environment (so cross-machine time numbers are interpretable)
+    logger.info("")
+    logger.info("Run environment:")
+    for r in sorted(by_batch.values(), key=lambda r: r.batch_size):
+        logger.info(
+            "  batch=%-4d  host=%s  device=%s", r.batch_size, r.hostname, r.device
+        )
+
     # ── Per-class detail for all ──
     logger.info("")
     logger.info("Per-class F1 for all configs:")
-    for rank, r in enumerate(results, 1):
+    for rank, r in enumerate(sorted_by_f1, 1):
         logger.info(
             "  #%d (batch=%d, scale=%.1fx, F1=%.4f):",
             rank,
@@ -362,7 +524,7 @@ def main() -> None:
             logger.info("    %-20s  %.4f", name, r.per_class_f1[i])
 
     # ── Recommendation ──
-    best = results[0]
+    best = sorted_by_f1[0]
     log_section(logger, "RECOMMENDATION")
     logger.info("  Best config:")
     logger.info("    --batch-size %d", best.batch_size)
@@ -379,25 +541,75 @@ def main() -> None:
     )
     logger.info("")
 
-    # Compare with baseline (batch=BATCH_SIZE, scale=1.0)
-    baseline = next(
-        (r for r in results if r.batch_size == BATCH_SIZE and r.lr_scale == 1.0),
-        None,
-    )
-    if baseline and best is not baseline:
+    # Compare with baseline (batch=BATCH_SIZE)
+    baseline = by_batch.get(BATCH_SIZE)
+    if baseline is not None and best.batch_size != BATCH_SIZE:
         diff = best.best_f1 - baseline.best_f1
-        speedup = baseline.time_s / best.time_s if best.time_s > 0 else 0
+        # Time speedup is only meaningful if both runs were on the same device.
+        same_device = baseline.device == best.device
+        if same_device and best.time_s > 0:
+            speedup = baseline.time_s / best.time_s
+            logger.info(
+                "  vs baseline (batch=%d): F1 %+.4f, %.1fx speed",
+                BATCH_SIZE,
+                diff,
+                speedup,
+            )
+        else:
+            logger.info(
+                "  vs baseline (batch=%d): F1 %+.4f  "
+                "(time speedup hidden — runs were on different devices)",
+                BATCH_SIZE,
+                diff,
+            )
+    elif baseline is not None:
+        logger.info("  Baseline (batch=%d) is already the best config.", BATCH_SIZE)
+    else:
         logger.info(
-            "  vs baseline (batch=%d, 1.0x): F1 %+.4f, %.1fx speed",
+            "  Baseline (batch=%d) not in results dir — skipping comparison.",
             BATCH_SIZE,
-            diff,
-            speedup,
-        )
-    elif baseline:
-        logger.info(
-            "  Baseline (batch=%d, 1.0x) is already the best config.", BATCH_SIZE
         )
     logger.info("=" * 90)
+
+
+# ---------------------------------------------------------------------------
+# Entrypoint
+# ---------------------------------------------------------------------------
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description=(
+            "Search batch sizes one-at-a-time and merge results across "
+            "machines. Use --run to train one batch size (writes JSON), then "
+            "--report to print a comparison from all collected JSON files."
+        ),
+    )
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument(
+        "--run",
+        metavar="BATCH_SIZE",
+        type=int,
+        help="Train one batch size and save its result JSON.",
+    )
+    mode.add_argument(
+        "--report",
+        action="store_true",
+        help="Print a comparison from all result JSONs in --results-dir.",
+    )
+    parser.add_argument(
+        "--results-dir",
+        type=Path,
+        default=DEFAULT_RESULTS_DIR,
+        help=f"Where result JSONs live (default: {DEFAULT_RESULTS_DIR})",
+    )
+    return parser.parse_args()
+
+
+def main() -> None:
+    args = parse_args()
+    if args.run is not None:
+        cmd_run(args.run, args.results_dir)
+    else:
+        cmd_report(args.results_dir)
 
 
 if __name__ == "__main__":

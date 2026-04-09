@@ -47,6 +47,15 @@ from .dataset import (
     make_dataloader,
 )
 from .device import get_device, get_performance_cpu_count
+from .experiment_io import (
+    HASH_PREFIX_LEN,
+    EnvDict,
+    HasDataHash,
+    describe_device,
+    hash_samples,
+    load_all_json_results,
+    select_consistent_results,
+)
 from .export import export_onnx
 from .log_helpers import log_section
 from .model import (
@@ -102,7 +111,10 @@ __all__ = [
     "BATCH_SIZE",
     "BackboneConfig",
     "FeatureClassifierModel",
+    "EnvDict",
     "GroupSplit",
+    "HASH_PREFIX_LEN",
+    "HasDataHash",
     "HoldoutSplit",
     "EvalResult",
     "CLASS_NAMES",
@@ -150,6 +162,10 @@ __all__ = [
     "compute_cache_budget",
     "compute_class_rates",
     "compute_pos_weight",
+    "describe_device",
+    "hash_samples",
+    "load_all_json_results",
+    "select_consistent_results",
     "measure_training_memory",
     "evaluate",
     "export_onnx",

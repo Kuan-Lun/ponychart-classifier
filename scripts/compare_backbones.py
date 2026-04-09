@@ -28,7 +28,6 @@ hash 是從所有 sample (path + labels) 計算出來的指紋。
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import logging
 import socket
@@ -44,20 +43,26 @@ import torch.nn as nn
 from ponychart_classifier.training import (
     BACKBONE_REGISTRY,
     CLASS_NAMES,
+    HASH_PREFIX_LEN,
     HOLDOUT_TEST_SIZE,
     SEED,
     VAL_SIZE,
+    EnvDict,
     EvalResult,
     HoldoutSplit,
     Sample,
     build_cached_dataset,
+    describe_device,
     evaluate,
     export_onnx,
+    hash_samples,
+    load_all_json_results,
     load_samples_logged,
     log_section,
     make_dataloader,
     prepare_holdout_split,
     seed_all,
+    select_consistent_results,
     setup_device_and_workers,
     train_model,
 )
@@ -69,7 +74,6 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 DEFAULT_RESULTS_DIR = Path(__file__).parent / "backbone_results"
-HASH_PREFIX_LEN = 12  # short hash for filenames; 48 bits, ample for our scale
 
 
 # ---------------------------------------------------------------------------
@@ -101,26 +105,6 @@ BACKBONE_CONFIGS: dict[str, BackboneExperimentConfig] = {
         input_size=380, pre_resize=384, batch_size=64
     ),
 }
-
-
-# ---------------------------------------------------------------------------
-# Data fingerprinting
-# ---------------------------------------------------------------------------
-def hash_samples(samples: list[Sample]) -> str:
-    """Return a stable SHA-256 hex digest of the sample set.
-
-    Two machines that load the exact same ``rawimage`` + ``labels.json``
-    will produce the same hash. Any addition, deletion, or label change
-    flips the hash, which makes it safe to use as a "data snapshot ID"
-    for grouping experiment results.
-    """
-    h = hashlib.sha256()
-    for path, labels in sorted(samples):
-        h.update(path.encode("utf-8"))
-        h.update(b"\x00")
-        h.update(",".join(str(label) for label in labels).encode("utf-8"))
-        h.update(b"\n")
-    return h.hexdigest()
 
 
 # ---------------------------------------------------------------------------
@@ -168,13 +152,6 @@ class SplitDict(TypedDict):
     train_size: int
     val_size: int
     test_size: int
-
-
-class EnvDict(TypedDict):
-    """JSON shape of the run environment metadata."""
-
-    hostname: str
-    device: str
 
 
 class ExperimentDict(TypedDict):
@@ -288,35 +265,9 @@ def save_result(experiment: ExperimentResult, results_dir: Path) -> Path:
     return out_path
 
 
-def load_all_results(results_dir: Path) -> list[ExperimentResult]:
-    """Load every ``*.json`` in *results_dir* into ``ExperimentResult``s.
-
-    Raises :class:`FileNotFoundError` if *results_dir* is missing, or
-    :class:`RuntimeError` if any result file is unparseable. We deliberately
-    fail fast rather than skipping bad files: a partial report would silently
-    omit results and might push the reader to a wrong conclusion.
-    """
-    if not results_dir.is_dir():
-        msg = f"Results directory does not exist: {results_dir}"
-        logger.error(msg)
-        raise FileNotFoundError(msg)
-    results: list[ExperimentResult] = []
-    for path in sorted(results_dir.glob("*.json")):
-        try:
-            data = _parse_experiment_json(path.read_text())
-            experiment = experiment_from_dict(data)
-        except (json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
-            msg = (
-                f"Failed to load result file {path}: {exc}\n"
-                "  This may be a stale result from an older script version. "
-                "Delete it (or move it elsewhere) and re-run the corresponding "
-                "--run, then try --report again."
-            )
-            for line in msg.splitlines():
-                logger.error(line)
-            raise RuntimeError(msg) from exc
-        results.append(experiment)
-    return results
+def _parse_result_file(raw: str) -> ExperimentResult:
+    """Parse one JSON document into an :class:`ExperimentResult`."""
+    return experiment_from_dict(_parse_experiment_json(raw))
 
 
 # ---------------------------------------------------------------------------
@@ -340,15 +291,6 @@ def get_onnx_size_mb(model: nn.Module, input_size: int) -> float:
 def count_parameters(model: nn.Module) -> int:
     """Count total trainable parameters."""
     return sum(p.numel() for p in model.parameters())
-
-
-def describe_device(device: torch.device) -> str:
-    """Return a human-readable device label, e.g. ``cuda:0 (NVIDIA H100)``."""
-    device_type = str(device.type)
-    if device_type == "cuda":
-        idx = device.index if device.index is not None else 0
-        return f"cuda:{idx} ({torch.cuda.get_device_name(idx)})"
-    return device_type
 
 
 def run_experiment(
@@ -488,48 +430,6 @@ def cmd_run(backbone_name: str, results_dir: Path) -> None:
     logger.info("Saved result to %s", out_path)
 
 
-def _select_consistent_results(
-    results: list[ExperimentResult],
-) -> dict[str, ExperimentResult]:
-    """Group results by ``backbone_name`` after enforcing a single data hash.
-
-    Aborts the program if results in *results* come from more than one
-    data snapshot, or if any (backbone, hash) pair is duplicated.
-    """
-    hashes_to_backbones: dict[str, list[str]] = {}
-    for r in results:
-        hashes_to_backbones.setdefault(r.data_hash, []).append(r.backbone_name)
-
-    if len(hashes_to_backbones) > 1:
-        lines = [
-            f"Loaded results were trained on {len(hashes_to_backbones)} "
-            "different data snapshots — refusing to produce a misleading "
-            "comparison.",
-        ]
-        for h, names in sorted(hashes_to_backbones.items()):
-            lines.append(f"  {h[:HASH_PREFIX_LEN]}: {', '.join(sorted(names))}")
-        lines.append(
-            "Resolution: keep only the JSONs from one data snapshot in the "
-            "results dir, then re-run --report."
-        )
-        for line in lines:
-            logger.error(line)
-        raise RuntimeError("\n".join(lines))
-
-    by_backbone: dict[str, ExperimentResult] = {}
-    for r in results:
-        if r.backbone_name in by_backbone:
-            msg = (
-                f"Duplicate result for backbone {r.backbone_name!r} at the "
-                "same data hash. This shouldn't happen via --run; remove one "
-                "of the JSON files."
-            )
-            logger.error(msg)
-            raise RuntimeError(msg)
-        by_backbone[r.backbone_name] = r
-    return by_backbone
-
-
 def _ordered_backbones(loaded: dict[str, ExperimentResult]) -> list[str]:
     """Return loaded backbone names in canonical (config) order, then extras."""
     canonical = [name for name in BACKBONE_CONFIGS if name in loaded]
@@ -539,13 +439,18 @@ def _ordered_backbones(loaded: dict[str, ExperimentResult]) -> list[str]:
 
 def cmd_report(results_dir: Path) -> None:
     """Print a comparison table from all JSON files in *results_dir*."""
-    raw_results = load_all_results(results_dir)
+    raw_results = load_all_json_results(results_dir, _parse_result_file, logger)
     if not raw_results:
         msg = f"No results found in {results_dir}"
         logger.error(msg)
         raise FileNotFoundError(msg)
 
-    results = _select_consistent_results(raw_results)
+    results = select_consistent_results(
+        raw_results,
+        key=lambda r: r.backbone_name,
+        key_label="backbone",
+        logger=logger,
+    )
     ordered_names = _ordered_backbones(results)
     data_hash = next(iter(results.values())).data_hash
 
