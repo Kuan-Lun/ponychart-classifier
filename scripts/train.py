@@ -265,7 +265,7 @@ def main() -> None:
 
     # Export ONNX
     logger.info("Exporting ONNX...")
-    export_onnx(model, OUTPUT_ONNX)
+    export_onnx(model, OUTPUT_ONNX, input_size=INPUT_SIZE)
 
     # Recompute val_f1 on current dataset and update checkpoint
     recompute_checkpoint_val_f1(OUTPUT_CHECKPOINT, device, num_workers)

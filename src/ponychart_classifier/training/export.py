@@ -10,8 +10,6 @@ from pathlib import Path
 import torch
 import torch.nn as nn
 
-from .constants import INPUT_SIZE
-
 logger = logging.getLogger(__name__)
 
 # External loggers that emit verbose messages during ONNX export.
@@ -24,15 +22,25 @@ _NOISY_LOGGERS = (
 )
 
 
-def export_onnx(model: nn.Module, output_path: Path) -> None:
-    """Export a PyTorch model to ONNX format."""
+def export_onnx(
+    model: nn.Module,
+    output_path: Path,
+    *,
+    input_size: int,
+) -> None:
+    """Export a PyTorch model to ONNX format.
+
+    *input_size* controls the dummy input shape baked into the ONNX graph.
+    Callers must pass the same value used during training so the exported
+    graph matches the training-time input contract.
+    """
     import warnings
 
     import onnx
 
     model.eval()
     model_cpu = model.cpu()
-    dummy = torch.randn(1, 3, INPUT_SIZE, INPUT_SIZE)
+    dummy = torch.randn(1, 3, input_size, input_size)
     saved_levels: dict[str, int] = {}
     for name in _NOISY_LOGGERS:
         ext_logger = logging.getLogger(name)
