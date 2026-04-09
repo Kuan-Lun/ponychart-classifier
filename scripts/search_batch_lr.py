@@ -5,7 +5,7 @@ Batch size 超參數搜尋（Stage 1）。
 等比例調整 LR，找出最佳 batch size。
 
 搜尋策略：
-  - batch_size: [32, 64, 96, 128]
+  - batch_size: [32, 64, 96]
   - lr_scale: 1.0 (固定，由 linear_factor = batch/BATCH_SIZE 補償)
 
 兩層 scaling 必須正交：linear_factor 補償 batch size，
@@ -75,10 +75,9 @@ logger = logging.getLogger(__name__)
 # Stage 1：固定 lr_scale=1.0，掃 batch size。LR 由 linear_factor 自動補償。
 SEARCH_GRID: list[tuple[int, float]] = [
     (
-        128,
+        96,
         1.0,
-    ),  # 2x baseline — run first to surface latent OOM / get wall-time upper bound
-    (96, 1.0),  # 1.5x baseline
+    ),  # 1.5x baseline — run first to surface latent OOM / get wall-time upper bound
     (64, 1.0),  # baseline (= constants.BATCH_SIZE)
     (32, 1.0),  # smaller batch — more gradient noise / regularization
 ]
