@@ -40,7 +40,7 @@ from ponychart_classifier.training import (
     extract_original_test_samples,
     get_base_timestamp,
     is_original,
-    load_samples_or_exit,
+    load_samples_logged,
     log_section,
     make_test_loader,
     prepare_balanced_samples,
@@ -102,10 +102,20 @@ def _pearson_r(x: list[float], y: list[float]) -> float:
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
-def main() -> None:
+def main() -> int:
+    try:
+        _run()
+    except RuntimeError:
+        # Library/helper functions log the error at the raise site;
+        # the entry point only translates it to an exit code.
+        return 1
+    return 0
+
+
+def _run() -> None:
     rng = seed_all(SEED)
     device, num_workers = setup_device_and_workers(logger)
-    all_samples = load_samples_or_exit(logger)
+    all_samples = load_samples_logged(logger)
 
     # Split groups: test / val / train
     gsp = split_by_groups(all_samples, test_size=0.10, val_size=VAL_SIZE)
@@ -512,4 +522,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

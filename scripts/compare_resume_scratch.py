@@ -36,7 +36,7 @@ from ponychart_classifier.training import (
     build_groups,
     evaluate,
     extract_original_test_samples,
-    load_samples_or_exit,
+    load_samples_logged,
     log_section,
     make_test_loader,
     prepare_balanced_samples,
@@ -117,10 +117,20 @@ def find_crossover(
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
-def main() -> None:
+def main() -> int:
+    try:
+        _run()
+    except RuntimeError:
+        # Library/helper functions log the error at the raise site;
+        # the entry point only translates it to an exit code.
+        return 1
+    return 0
+
+
+def _run() -> None:
     seed_all(SEED)
     device, num_workers = setup_device_and_workers(logger)
-    all_samples = load_samples_or_exit(logger)
+    all_samples = load_samples_logged(logger)
 
     # ── Build group index ──
     groups = build_groups(all_samples)
@@ -402,4 +412,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

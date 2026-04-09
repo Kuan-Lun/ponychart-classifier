@@ -49,14 +49,20 @@ def setup_device_and_workers(
 # ---------------------------------------------------------------------------
 # Sample loading
 # ---------------------------------------------------------------------------
-def load_samples_or_exit(
+def load_samples_logged(
     logger: logging.Logger,
 ) -> list[Sample]:
-    """Load samples, log count, and raise ``SystemExit`` if empty."""
+    """Load samples, log count, and raise ``RuntimeError`` if empty.
+
+    The error is logged at the raise site so callers (typically a script's
+    ``main()``) can simply translate the exception to an exit code without
+    re-logging the same message.
+    """
     all_samples = load_samples()
     if not all_samples:
-        logger.error("No samples found. Check rawimage/ and rawimage/labels.json.")
-        raise SystemExit(1)
+        msg = "No samples found. Check rawimage/ and rawimage/labels.json."
+        logger.error(msg)
+        raise RuntimeError(msg)
     logger.info("Total samples loaded: %d", len(all_samples))
     return all_samples
 

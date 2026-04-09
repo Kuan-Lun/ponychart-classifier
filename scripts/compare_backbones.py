@@ -32,7 +32,6 @@ import hashlib
 import json
 import logging
 import socket
-import sys
 import tempfile
 import time
 from dataclasses import dataclass
@@ -54,7 +53,7 @@ from ponychart_classifier.training import (
     build_cached_dataset,
     evaluate,
     export_onnx,
-    load_samples_or_exit,
+    load_samples_logged,
     log_section,
     make_dataloader,
     prepare_holdout_split,
@@ -71,15 +70,6 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_RESULTS_DIR = Path(__file__).parent / "backbone_results"
 HASH_PREFIX_LEN = 12  # short hash for filenames; 48 bits, ample for our scale
-
-
-class CompareBackbonesError(Exception):
-    """A user-facing error from this script.
-
-    Library functions raise this (or its subclasses) instead of calling
-    ``sys.exit`` so they remain composable; ``main`` catches it at the
-    boundary and translates it to a non-zero exit code.
-    """
 
 
 # ---------------------------------------------------------------------------
@@ -301,25 +291,30 @@ def save_result(experiment: ExperimentResult, results_dir: Path) -> Path:
 def load_all_results(results_dir: Path) -> list[ExperimentResult]:
     """Load every ``*.json`` in *results_dir* into ``ExperimentResult``s.
 
-    Raises :class:`CompareBackbonesError` on a missing directory or any
-    unparseable JSON file. We deliberately fail fast rather than skipping
-    bad files: a partial report would silently omit results and might
-    push the reader to a wrong conclusion.
+    Raises :class:`FileNotFoundError` if *results_dir* is missing, or
+    :class:`RuntimeError` if any result file is unparseable. We deliberately
+    fail fast rather than skipping bad files: a partial report would silently
+    omit results and might push the reader to a wrong conclusion.
     """
     if not results_dir.is_dir():
-        raise CompareBackbonesError(f"Results directory does not exist: {results_dir}")
+        msg = f"Results directory does not exist: {results_dir}"
+        logger.error(msg)
+        raise FileNotFoundError(msg)
     results: list[ExperimentResult] = []
     for path in sorted(results_dir.glob("*.json")):
         try:
             data = _parse_experiment_json(path.read_text())
             experiment = experiment_from_dict(data)
         except (json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
-            raise CompareBackbonesError(
+            msg = (
                 f"Failed to load result file {path}: {exc}\n"
                 "  This may be a stale result from an older script version. "
                 "Delete it (or move it elsewhere) and re-run the corresponding "
                 "--run, then try --report again."
-            ) from exc
+            )
+            for line in msg.splitlines():
+                logger.error(line)
+            raise RuntimeError(msg) from exc
         results.append(experiment)
     return results
 
@@ -458,15 +453,17 @@ def cmd_run(backbone_name: str, results_dir: Path) -> None:
     """Train one backbone and persist the result to *results_dir*."""
     if backbone_name not in BACKBONE_CONFIGS:
         available = ", ".join(BACKBONE_CONFIGS.keys())
-        raise CompareBackbonesError(
+        msg = (
             f"Backbone {backbone_name!r} not configured. Add it to "
             f"BACKBONE_CONFIGS first. Currently configured: {available}"
         )
+        logger.error(msg)
+        raise ValueError(msg)
     config = BACKBONE_CONFIGS[backbone_name]
 
     rng = seed_all(SEED)
     device, num_workers = setup_device_and_workers(logger)
-    all_samples = load_samples_or_exit(logger)
+    all_samples = load_samples_logged(logger)
     data_hash = hash_samples(all_samples)
     logger.info(
         "Data fingerprint: %s (full=%s)", data_hash[:HASH_PREFIX_LEN], data_hash
@@ -515,16 +512,20 @@ def _select_consistent_results(
             "Resolution: keep only the JSONs from one data snapshot in the "
             "results dir, then re-run --report."
         )
-        raise CompareBackbonesError("\n".join(lines))
+        for line in lines:
+            logger.error(line)
+        raise RuntimeError("\n".join(lines))
 
     by_backbone: dict[str, ExperimentResult] = {}
     for r in results:
         if r.backbone_name in by_backbone:
-            raise CompareBackbonesError(
+            msg = (
                 f"Duplicate result for backbone {r.backbone_name!r} at the "
                 "same data hash. This shouldn't happen via --run; remove one "
                 "of the JSON files."
             )
+            logger.error(msg)
+            raise RuntimeError(msg)
         by_backbone[r.backbone_name] = r
     return by_backbone
 
@@ -540,7 +541,9 @@ def cmd_report(results_dir: Path) -> None:
     """Print a comparison table from all JSON files in *results_dir*."""
     raw_results = load_all_results(results_dir)
     if not raw_results:
-        raise CompareBackbonesError(f"No results found in {results_dir}")
+        msg = f"No results found in {results_dir}"
+        logger.error(msg)
+        raise FileNotFoundError(msg)
 
     results = _select_consistent_results(raw_results)
     ordered_names = _ordered_backbones(results)
@@ -698,20 +701,19 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def main() -> None:
+def main() -> int:
     args = parse_args()
     try:
         if args.run is not None:
             cmd_run(args.run, args.results_dir)
         else:
             cmd_report(args.results_dir)
-    except CompareBackbonesError as exc:
-        # Library functions raise; the entry point is the only place that
-        # decides how a user-facing error maps to process state.
-        for line in str(exc).splitlines():
-            logger.error(line)
-        sys.exit(1)
+    except (ValueError, FileNotFoundError, RuntimeError):
+        # Library/cmd functions log the error at the raise site;
+        # the entry point only translates it to an exit code.
+        return 1
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

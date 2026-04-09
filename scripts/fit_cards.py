@@ -167,8 +167,9 @@ def cmd_fit(args: argparse.Namespace) -> None:
     c1, c2, c3 = args.counts
     n = c1 + c2 + c3
     if n == 0:
-        print("Error: total count is 0.", file=sys.stderr)
-        sys.exit(1)
+        msg = "Error: total count is 0."
+        print(msg, file=sys.stderr)
+        raise ValueError(msg)
 
     obs = (c1, c2, c3)
     obs_prop = (c1 / n, c2 / n, c3 / n)
@@ -196,8 +197,9 @@ def cmd_fit(args: argparse.Namespace) -> None:
 def cmd_predict(args: argparse.Namespace) -> None:
     p = args.p
     if not 0 <= p < 1:
-        print("Error: p must be in [0, 1).", file=sys.stderr)
-        sys.exit(1)
+        msg = "Error: p must be in [0, 1)."
+        print(msg, file=sys.stderr)
+        raise ValueError(msg)
 
     p1, p2, p3 = theoretical_probs(p)
 
@@ -310,17 +312,23 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main() -> None:
+def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
 
-    if args.command == "fit":
-        cmd_fit(args)
-    elif args.command == "predict":
-        cmd_predict(args)
-    elif args.command == "scan":
-        cmd_scan(args)
+    try:
+        if args.command == "fit":
+            cmd_fit(args)
+        elif args.command == "predict":
+            cmd_predict(args)
+        elif args.command == "scan":
+            cmd_scan(args)
+    except ValueError:
+        # cmd_* functions print the error at the raise site;
+        # the entry point only translates it to an exit code.
+        return 1
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

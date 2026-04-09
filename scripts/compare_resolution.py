@@ -30,7 +30,7 @@ from ponychart_classifier.training import (
     EvalResult,
     evaluate,
     get_transforms,
-    load_samples_or_exit,
+    load_samples_logged,
     log_section,
     make_dataloader,
     prepare_holdout_split_logged,
@@ -62,10 +62,20 @@ class ResolutionResult:
     train_time_s: float
 
 
-def main() -> None:
+def main() -> int:
+    try:
+        _run()
+    except RuntimeError:
+        # Library/helper functions log the error at the raise site;
+        # the entry point only translates it to an exit code.
+        return 1
+    return 0
+
+
+def _run() -> None:
     rng = seed_all(SEED)
     device, num_workers = setup_device_and_workers(logger)
-    all_samples = load_samples_or_exit(logger)
+    all_samples = load_samples_logged(logger)
 
     # ── Split groups: test / val / train ──
     split = prepare_holdout_split_logged(
@@ -211,4 +221,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

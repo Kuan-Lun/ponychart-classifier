@@ -20,7 +20,6 @@ from __future__ import annotations
 import argparse
 import logging
 import statistics
-import sys
 import tempfile
 import time
 from dataclasses import dataclass
@@ -141,7 +140,9 @@ def run_benchmark(
     """
     if backbone_name not in BACKBONE_REGISTRY:
         available = ", ".join(BACKBONE_REGISTRY.keys())
-        raise ValueError(f"Unknown backbone {backbone_name!r}. Available: {available}")
+        msg = f"Unknown backbone {backbone_name!r}. Available: {available}"
+        logger.error(msg)
+        raise ValueError(msg)
 
     logger.info("--- %s @ %d ---", backbone_name, input_size)
     onnx_path = export_to_temp_onnx(backbone_name, input_size)
@@ -269,7 +270,7 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def main() -> None:
+def main() -> int:
     args = parse_args()
     threads: int | None = args.threads if args.threads > 0 else None
 
@@ -294,14 +295,14 @@ def main() -> None:
                     intra_op_threads=threads,
                 )
             )
-    except ValueError as exc:
-        # Library functions raise; the entry point is the only place that
-        # decides how a user-facing error maps to process state.
-        logger.error("%s", exc)
-        sys.exit(1)
+    except ValueError:
+        # Library functions log the error at the raise site;
+        # the entry point only translates it to an exit code.
+        return 1
 
     print_comparison(results)
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

@@ -24,7 +24,7 @@ from ponychart_classifier.training import (
     SEED,
     VAL_SIZE,
     evaluate,
-    load_samples_or_exit,
+    load_samples_logged,
     log_section,
     make_test_loader,
     prepare_holdout_split_logged,
@@ -36,7 +36,7 @@ from ponychart_classifier.training import (
 logger = logging.getLogger(__name__)
 
 
-def main() -> None:
+def main() -> int:
     argparse.ArgumentParser(
         description="Evaluate model F1 on originals-only holdout test set"
     ).parse_args()
@@ -46,9 +46,19 @@ def main() -> None:
         format="%(asctime)s [%(levelname)s] %(message)s",
     )
 
+    try:
+        _run()
+    except RuntimeError:
+        # Library/helper functions log the error at the raise site;
+        # the entry point only translates it to an exit code.
+        return 1
+    return 0
+
+
+def _run() -> None:
     rng = seed_all(SEED)
     device, num_workers = setup_device_and_workers(logger)
-    all_samples = load_samples_or_exit(logger)
+    all_samples = load_samples_logged(logger)
 
     # ── Split into train / val / test ──
     split = prepare_holdout_split_logged(
@@ -106,4 +116,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

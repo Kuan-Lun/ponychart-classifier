@@ -48,6 +48,7 @@ from ponychart_classifier.training import (
     group_hash_split,
     is_original,
     load_samples,
+    load_samples_logged,
     prepare_balanced_samples,
     recompute_checkpoint_val_f1,
     seed_all,
@@ -67,7 +68,7 @@ def _sample_path_to_key(filepath: str) -> str:
         return os.path.basename(filepath)
 
 
-def main() -> None:
+def main() -> int:
     parser = argparse.ArgumentParser(description="PonyChart multi-label training")
     parser.add_argument(
         "--from-scratch",
@@ -81,14 +82,20 @@ def main() -> None:
         format="%(asctime)s [%(levelname)s] %(message)s",
     )
 
+    try:
+        return _run(args)
+    except RuntimeError:
+        # Library/helper functions log the error at the raise site;
+        # the entry point only translates it to an exit code.
+        return 1
+
+
+def _run(args: argparse.Namespace) -> int:
     device, num_workers = setup_device_and_workers(logger)
     seed_all(SEED)
 
     # Data
-    samples = load_samples()
-    if not samples:
-        logger.error("No samples found. Check rawimage/ and rawimage/labels.json.")
-        raise SystemExit(1)
+    samples = load_samples_logged(logger)
 
     orig_samples, crop_samples = separate_orig_crop(samples)
     orig_rates = compute_class_rates(orig_samples)
@@ -271,7 +278,8 @@ def main() -> None:
     recompute_checkpoint_val_f1(OUTPUT_CHECKPOINT, device, num_workers)
 
     logger.info("Done!")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

@@ -71,7 +71,7 @@ from .sampling import (
 )
 from .script_utils import (  # noqa: F401
     extract_original_test_samples,
-    load_samples_or_exit,
+    load_samples_logged,
     log_per_class_table,
     make_test_loader,
     prepare_holdout_split_logged,
@@ -173,7 +173,7 @@ __all__ = [
     "train_model",
     "train_one_epoch",
     "extract_original_test_samples",
-    "load_samples_or_exit",
+    "load_samples_logged",
     "log_per_class_table",
     "make_test_loader",
     "prepare_holdout_split_logged",

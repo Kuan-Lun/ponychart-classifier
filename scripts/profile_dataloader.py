@@ -24,7 +24,7 @@ from ponychart_classifier.training import (
     get_device,
     get_performance_cpu_count,
     group_hash_split,
-    load_samples_or_exit,
+    load_samples_logged,
     make_dataloader,
     seed_all,
 )
@@ -127,14 +127,24 @@ def profile_training(
     }
 
 
-def main() -> None:
+def main() -> int:
+    try:
+        _run()
+    except RuntimeError:
+        # Library/helper functions log the error at the raise site;
+        # the entry point only translates it to an exit code.
+        return 1
+    return 0
+
+
+def _run() -> None:
     seed_all(SEED)
 
     device = get_device()
     num_workers = get_performance_cpu_count()
     logger.info("Device: %s  Workers: %d  Batch: %d", device, num_workers, BATCH_SIZE)
 
-    samples = load_samples_or_exit(logger)
+    samples = load_samples_logged(logger)
     train_idx, val_idx = group_hash_split(samples, test_size=VAL_SIZE)
     train_samples = [samples[i] for i in train_idx]
     logger.info("Train samples: %d", len(train_samples))
@@ -286,4 +296,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
