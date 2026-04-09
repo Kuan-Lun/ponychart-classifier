@@ -11,10 +11,10 @@ authors = [{ name = "Kuan-Lun Wang" }]
 license = { text = "GNU Affero General Public License v3" }
 requires-python = ">=3.11,<3.14"
 dependencies = [
-    "numpy>=2.4.3",
+    "certifi>=2026.2.25; sys_platform == 'darwin'",
+    "numpy>=2.4.4",
     "opencv-python>=4.13.0.92",
     "onnxruntime>=1.24.4",
-    "certifi>=2026.2.25; sys_platform == 'darwin'",
 ]
 
 classifiers = [
