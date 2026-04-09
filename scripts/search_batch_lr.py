@@ -1,14 +1,17 @@
 """
-Learning rate 超參數搜尋。
+Batch size 超參數搜尋（Stage 1）。
 
-固定 batch_size=64，測試不同 LR 倍率，
-找出能加速收斂且不降低 F1 的最佳 LR。
+固定 lr_scale=1.0，掃不同 batch size，依 Linear Scaling Rule
+等比例調整 LR，找出最佳 batch size。
 
 搜尋策略：
-  - batch_size: 64 (固定)
-  - lr_scale: [0.5, 1.0, 1.5, 2.0, 3.0]
+  - batch_size: [32, 64, 96, 128]
+  - lr_scale: 1.0 (固定，由 linear_factor = batch/BATCH_SIZE 補償)
 
-共 5 組實驗，使用相同的 train/val split 確保公平比較。
+兩層 scaling 必須正交：linear_factor 補償 batch size，
+lr_scale 留給 Stage 2 在贏的 batch 上微調線性規則的偏差。
+
+共 4 組實驗，使用相同的 train/val split 確保公平比較。
 
 使用方式：
   uv run python scripts/search_batch_lr.py
@@ -69,13 +72,15 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Search grid – (batch_size, lr_scale) pairs
-# 固定 batch_size=64，搜尋不同 LR 倍率
+# Stage 1：固定 lr_scale=1.0，掃 batch size。LR 由 linear_factor 自動補償。
 SEARCH_GRID: list[tuple[int, float]] = [
-    (64, 0.5),  # 0.5x LR (more conservative)
-    (64, 1.0),  # baseline
-    (64, 1.5),  # 1.5x LR
-    (64, 2.0),  # 2x LR
-    (64, 3.0),  # 3x LR (aggressive)
+    (
+        128,
+        1.0,
+    ),  # 2x baseline — run first to surface latent OOM / get wall-time upper bound
+    (96, 1.0),  # 1.5x baseline
+    (64, 1.0),  # baseline (= constants.BATCH_SIZE)
+    (32, 1.0),  # smaller batch — more gradient noise / regularization
 ]
 
 # Base LRs from constants (single source of truth with train.py)
@@ -278,7 +283,7 @@ def _run() -> None:
         lr_classifier = BASE_LR_CLASSIFIER * linear_factor * lr_scale
 
         logger.info(
-            "  [%d/%d] batch=%d  lr_scale=%s  " "(head=%.1e  feat=%.1e  cls=%.1e)",
+            "  [%d/%d] batch=%d  lr_scale=%.1fx  (head=%.1e  feat=%.1e  cls=%.1e)",
             run_idx,
             total_combos,
             batch_size,
@@ -341,7 +346,7 @@ def _run() -> None:
     logger.info("  " + "-" * 85)
     for rank, r in enumerate(results, 1):
         logger.info(
-            "  #%-3d  %-6d  %-8s  %-10.1e  %-10.1e  %-10.1e" "  %-8.4f  %-6d  %-7.1fs",
+            "  #%-3d  %-6d  %-8s  %-10.1e  %-10.1e  %-10.1e  %-8.4f  %-6d  %-7.1fs",
             rank,
             r.batch_size,
             f"{r.lr_scale:.1f}x",
