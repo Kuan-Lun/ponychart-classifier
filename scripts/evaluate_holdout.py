@@ -36,7 +36,7 @@ from ponychart_classifier.training import (
 logger = logging.getLogger(__name__)
 
 
-def main() -> int:
+def main() -> None:
     argparse.ArgumentParser(
         description="Evaluate model F1 on originals-only holdout test set"
     ).parse_args()
@@ -46,13 +46,7 @@ def main() -> int:
         format="%(asctime)s [%(levelname)s] %(message)s",
     )
 
-    try:
-        _run()
-    except RuntimeError:
-        # Library/helper functions log the error at the raise site;
-        # the entry point only translates it to an exit code.
-        return 1
-    return 0
+    _run()
 
 
 def _run() -> None:
@@ -116,4 +110,4 @@ def _run() -> None:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()

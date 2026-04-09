@@ -42,17 +42,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def main() -> int:
-    try:
-        _run()
-    except RuntimeError:
-        # Library/helper functions log the error at the raise site;
-        # the entry point only translates it to an exit code.
-        return 1
-    return 0
-
-
-def _run() -> None:
+def main() -> None:
     rng = seed_all(SEED)
     device, num_workers = setup_device_and_workers(logger)
     all_samples = load_samples_logged(logger)
@@ -193,4 +183,4 @@ def _run() -> None:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()

@@ -701,19 +701,13 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def main() -> int:
+def main() -> None:
     args = parse_args()
-    try:
-        if args.run is not None:
-            cmd_run(args.run, args.results_dir)
-        else:
-            cmd_report(args.results_dir)
-    except (ValueError, FileNotFoundError, RuntimeError):
-        # Library/cmd functions log the error at the raise site;
-        # the entry point only translates it to an exit code.
-        return 1
-    return 0
+    if args.run is not None:
+        cmd_run(args.run, args.results_dir)
+    else:
+        cmd_report(args.results_dir)
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()

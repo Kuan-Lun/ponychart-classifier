@@ -312,23 +312,17 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main() -> int:
+def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
 
-    try:
-        if args.command == "fit":
-            cmd_fit(args)
-        elif args.command == "predict":
-            cmd_predict(args)
-        elif args.command == "scan":
-            cmd_scan(args)
-    except ValueError:
-        # cmd_* functions print the error at the raise site;
-        # the entry point only translates it to an exit code.
-        return 1
-    return 0
+    if args.command == "fit":
+        cmd_fit(args)
+    elif args.command == "predict":
+        cmd_predict(args)
+    elif args.command == "scan":
+        cmd_scan(args)
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()

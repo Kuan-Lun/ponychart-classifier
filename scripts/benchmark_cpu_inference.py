@@ -270,7 +270,7 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def main() -> int:
+def main() -> None:
     args = parse_args()
     threads: int | None = args.threads if args.threads > 0 else None
 
@@ -282,27 +282,21 @@ def main() -> int:
         threads if threads is not None else "auto",
     )
 
-    try:
-        results: list[BenchmarkResult] = []
-        for name in args.backbone:
-            input_size = args.input_size or BACKBONE_INPUT_SIZE.get(name, INPUT_SIZE)
-            results.append(
-                run_benchmark(
-                    name,
-                    input_size=input_size,
-                    warmup=args.warmup,
-                    iters=args.iters,
-                    intra_op_threads=threads,
-                )
+    results: list[BenchmarkResult] = []
+    for name in args.backbone:
+        input_size = args.input_size or BACKBONE_INPUT_SIZE.get(name, INPUT_SIZE)
+        results.append(
+            run_benchmark(
+                name,
+                input_size=input_size,
+                warmup=args.warmup,
+                iters=args.iters,
+                intra_op_threads=threads,
             )
-    except ValueError:
-        # Library functions log the error at the raise site;
-        # the entry point only translates it to an exit code.
-        return 1
+        )
 
     print_comparison(results)
-    return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()

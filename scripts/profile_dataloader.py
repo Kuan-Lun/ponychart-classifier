@@ -127,17 +127,7 @@ def profile_training(
     }
 
 
-def main() -> int:
-    try:
-        _run()
-    except RuntimeError:
-        # Library/helper functions log the error at the raise site;
-        # the entry point only translates it to an exit code.
-        return 1
-    return 0
-
-
-def _run() -> None:
+def main() -> None:
     seed_all(SEED)
 
     device = get_device()
@@ -296,4 +286,4 @@ def _run() -> None:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()

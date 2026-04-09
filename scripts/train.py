@@ -68,7 +68,7 @@ def _sample_path_to_key(filepath: str) -> str:
         return os.path.basename(filepath)
 
 
-def main() -> int:
+def main() -> None:
     parser = argparse.ArgumentParser(description="PonyChart multi-label training")
     parser.add_argument(
         "--from-scratch",
@@ -82,15 +82,10 @@ def main() -> int:
         format="%(asctime)s [%(levelname)s] %(message)s",
     )
 
-    try:
-        return _run(args)
-    except RuntimeError:
-        # Library/helper functions log the error at the raise site;
-        # the entry point only translates it to an exit code.
-        return 1
+    _run(args)
 
 
-def _run(args: argparse.Namespace) -> int:
+def _run(args: argparse.Namespace) -> None:
     device, num_workers = setup_device_and_workers(logger)
     seed_all(SEED)
 
@@ -278,8 +273,7 @@ def _run(args: argparse.Namespace) -> int:
     recompute_checkpoint_val_f1(OUTPUT_CHECKPOINT, device, num_workers)
 
     logger.info("Done!")
-    return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()
