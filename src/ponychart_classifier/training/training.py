@@ -189,7 +189,7 @@ def train_model(
     experiment_name: str,
     *,
     backbone: str = BACKBONE,
-    train_transform: transforms.Compose | None = None,
+    train_transform: transforms.Compose,
     batch_size: int = BATCH_SIZE,
     phase1_epochs: int = PHASE1_EPOCHS,
     phase2_epochs: int = PHASE2_EPOCHS,

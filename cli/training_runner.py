@@ -21,6 +21,7 @@ from typing import TypedDict
 
 import torch
 import torch.nn as nn
+from torchvision import transforms
 
 from ponychart_classifier.training import (
     HASH_PREFIX_LEN,
@@ -183,6 +184,7 @@ def run_training_experiment(
     input_size: int,
     pre_resize: int,
     batch_size: int,
+    train_transform: transforms.Compose,
 ) -> TrainingMeasurements:
     """Train a model, evaluate on test set, and measure ONNX export.
 
@@ -201,6 +203,7 @@ def run_training_experiment(
         num_workers,
         run_label,
         backbone=backbone,
+        train_transform=train_transform,
         input_size=input_size,
         pre_resize=pre_resize,
         batch_size=batch_size,

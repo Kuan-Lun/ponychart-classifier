@@ -29,6 +29,7 @@ from ponychart_classifier.training import (
     build_groups,
     evaluate,
     extract_original_test_samples,
+    get_transforms,
     load_samples_logged,
     log_section,
     make_test_loader,
@@ -199,6 +200,7 @@ def main() -> None:
             device,
             num_workers,
             name,
+            train_transform=get_transforms(is_train=True),
             backbone=BACKBONE,
             resume_state_dict=prev_state_dict,
         )

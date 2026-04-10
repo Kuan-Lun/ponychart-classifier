@@ -26,6 +26,7 @@ from ponychart_classifier.training import (
     VAL_SIZE,
     compute_pos_weight,
     evaluate,
+    get_transforms,
     load_samples_logged,
     log_section,
     make_test_loader,
@@ -64,6 +65,7 @@ def main() -> None:
         device,
         num_workers,
         "A: Baseline (no pos_weight)",
+        train_transform=get_transforms(is_train=True),
         backbone=BACKBONE,
         verbose=True,
     )
@@ -76,6 +78,7 @@ def main() -> None:
         device,
         num_workers,
         "B: With pos_weight",
+        train_transform=get_transforms(is_train=True),
         backbone=BACKBONE,
         pos_weight=pw,
         verbose=True,

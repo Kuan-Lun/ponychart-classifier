@@ -45,6 +45,7 @@ from ponychart_classifier.training import (
     compute_class_rates,
     export_onnx,
     get_base_timestamp,
+    get_transforms,
     group_hash_split,
     is_original,
     load_samples,
@@ -199,6 +200,7 @@ def _run(args: argparse.Namespace) -> None:
         device,
         num_workers,
         "PonyChart Training",
+        train_transform=get_transforms(is_train=True),
         verbose=True,
         resume_from=resume_from,
     )

@@ -36,6 +36,7 @@ from ponychart_classifier.training import (
     build_groups,
     evaluate,
     extract_original_test_samples,
+    get_transforms,
     load_samples_logged,
     log_section,
     make_test_loader,
@@ -158,6 +159,7 @@ def main() -> None:
         device,
         num_workers,
         "Baseline (100% from scratch)",
+        train_transform=get_transforms(is_train=True),
         backbone=BACKBONE,
     )
     scratch_result = evaluate(
@@ -207,6 +209,7 @@ def main() -> None:
             device,
             num_workers,
             f"Base {pct}% from scratch",
+            train_transform=get_transforms(is_train=True),
             backbone=BACKBONE,
         )
         base_state_dict = copy.deepcopy(base_train_result.model.state_dict())
@@ -218,6 +221,7 @@ def main() -> None:
             device,
             num_workers,
             f"Resume from {pct}% checkpoint",
+            train_transform=get_transforms(is_train=True),
             backbone=BACKBONE,
             resume_state_dict=base_state_dict,
         )

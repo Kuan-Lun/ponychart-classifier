@@ -35,6 +35,7 @@ from ponychart_classifier.training import (
     BACKBONE_REGISTRY,
     CLASS_NAMES,
     HASH_PREFIX_LEN,
+    get_transforms,
     load_all_json_results,
     log_section,
     select_consistent_results,
@@ -104,6 +105,7 @@ class CompareBackbonesCLI(ExperimentCLI):
             input_size=config.input_size,
             pre_resize=config.pre_resize,
             batch_size=config.batch_size,
+            train_transform=get_transforms(is_train=True, input_size=config.input_size),
         )
 
         self.logger.info(

@@ -24,6 +24,7 @@ from ponychart_classifier.training import (
     SEED,
     VAL_SIZE,
     evaluate,
+    get_transforms,
     load_samples_logged,
     log_section,
     make_test_loader,
@@ -67,6 +68,7 @@ def _run() -> None:
         device,
         num_workers,
         "Holdout Evaluation",
+        train_transform=get_transforms(is_train=True),
         backbone=BACKBONE,
         verbose=True,
     )

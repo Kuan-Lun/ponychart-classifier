@@ -49,14 +49,14 @@ ponychart-classifier/
 │   ├── compare_resolution/            # 輸入解析度比較
 │   ├── compare_backbones/             # Backbone 架構比較
 │   ├── search_batch_lr/               # Batch size / LR 超參數搜尋
-│   └── benchmark_cpu_inference/       # CPU 推論延遲 benchmark
+│   ├── benchmark_cpu_inference/       # CPU 推論延遲 benchmark
+│   └── analyze_augmentations/         # 資料增強 ablation study
 ├── scripts/                           # 開發用腳本 (不隨套件發佈)
 │   ├── train.py                       # 模型訓練腳本
 │   ├── compare_crops.py               # 裁切圖片效果分析
 │   ├── compare_pos_weight.py          # pos_weight 效果比較
 │   ├── compare_resume_scratch.py      # Resume vs from-scratch 分析
 │   ├── evaluate_holdout.py            # Holdout 評估
-│   ├── analyze_augmentations.py       # 資料增強 ablation study
 │   ├── analyze_distribution.py        # 標籤分布互動式視覺化 (Flask)
 │   ├── learning_curve.py              # Learning curve 分析 + power-law 外推
 │   └── profile_dataloader.py          # DataLoader 效能分析
@@ -206,7 +206,8 @@ uv run --extra train python -m cli.compare_backbones --report
 uv run python scripts/compare_crops.py
 
 # 資料增強 ablation study
-uv run python scripts/analyze_augmentations.py
+uv run --extra train python -m cli.analyze_augmentations --run hflip
+uv run --extra train python -m cli.analyze_augmentations --report
 
 # 標籤分布互動式視覺化 (Flask web UI)
 uv run python scripts/analyze_distribution.py

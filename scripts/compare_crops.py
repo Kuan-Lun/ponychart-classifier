@@ -39,6 +39,7 @@ from ponychart_classifier.training import (
     evaluate,
     extract_original_test_samples,
     get_base_timestamp,
+    get_transforms,
     is_original,
     load_samples_logged,
     log_section,
@@ -174,6 +175,7 @@ def main() -> None:
         device,
         num_workers,
         "A: Originals + biased crops",
+        train_transform=get_transforms(is_train=True),
         backbone=BACKBONE,
     )
     model_a, thresholds_a = train_result_a.model, train_result_a.thresholds
@@ -184,6 +186,7 @@ def main() -> None:
         device,
         num_workers,
         "B: Originals only (baseline)",
+        train_transform=get_transforms(is_train=True),
         backbone=BACKBONE,
     )
     model_b, thresholds_b = train_result_b.model, train_result_b.thresholds
@@ -194,6 +197,7 @@ def main() -> None:
         device,
         num_workers,
         "C: Originals + balanced crops",
+        train_transform=get_transforms(is_train=True),
         backbone=BACKBONE,
     )
     model_c, thresholds_c = train_result_c.model, train_result_c.thresholds

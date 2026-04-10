@@ -41,6 +41,7 @@ from ponychart_classifier.training import (
     BATCH_SIZE,
     CLASS_NAMES,
     HASH_PREFIX_LEN,
+    get_transforms,
     load_all_json_results,
     log_section,
     select_consistent_results,
@@ -110,6 +111,7 @@ class CompareResolutionCLI(ExperimentCLI):
             input_size=config.input_size,
             pre_resize=config.pre_resize,
             batch_size=BATCH_SIZE,
+            train_transform=get_transforms(is_train=True, input_size=config.input_size),
         )
 
         self.logger.info(
