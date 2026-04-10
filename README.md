@@ -43,12 +43,16 @@ ponychart-classifier/
 │           ├── log_helpers.py         # 日誌輔助
 │           ├── script_utils.py        # 腳本共用工具
 │           └── export.py              # ONNX 匯出
+├── cli/                               # CLI 工具 (python -m cli.<name>)
+│   ├── experiment.py                  # ExperimentCLI 抽象基底 (Template Method)
+│   ├── training_runner.py             # 可組合的訓練管線
+│   ├── compare_resolution/            # 輸入解析度比較
+│   ├── compare_backbones/             # Backbone 架構比較
+│   └── benchmark_cpu_inference/       # CPU 推論延遲 benchmark
 ├── scripts/                           # 開發用腳本 (不隨套件發佈)
 │   ├── train.py                       # 模型訓練腳本
-│   ├── compare_backbones.py           # Backbone 架構比較
 │   ├── compare_crops.py               # 裁切圖片效果分析
 │   ├── compare_pos_weight.py          # pos_weight 效果比較
-│   ├── compare_resolution.py          # 輸入解析度比較
 │   ├── compare_resume_scratch.py      # Resume vs from-scratch 分析
 │   ├── evaluate_holdout.py            # Holdout 評估
 │   ├── analyze_augmentations.py       # 資料增強 ablation study
@@ -193,8 +197,9 @@ uv run python scripts/train.py --from-scratch
 分析腳本使用 `training/constants.py` 中的超參數設定：
 
 ```bash
-# 比較四種 backbone 的效果
-uv run python scripts/compare_backbones.py
+# 比較不同 backbone 的效果
+uv run --extra train python -m cli.compare_backbones --run efficientnet_b0
+uv run --extra train python -m cli.compare_backbones --report
 
 # 分析裁切圖片的影響
 uv run python scripts/compare_crops.py
