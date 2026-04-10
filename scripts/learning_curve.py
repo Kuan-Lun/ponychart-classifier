@@ -23,6 +23,7 @@ from ponychart_classifier.training import (
     BATCH_SIZE,
     CLASS_NAMES,
     HOLDOUT_TEST_SIZE,
+    RETRAIN_NEW_DATA_RATIO,
     SEED,
     VAL_SIZE,
     EvalResult,
@@ -46,7 +47,11 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-DATA_FRACTIONS = [0.40, 0.55, 0.70, 0.80, 0.85, 0.90, 0.95, 1.00]
+# 每一步的樣本數都比上一步多出「剛好超過 RETRAIN_NEW_DATA_RATIO」，
+# 讓 sequential resume 的每個 fraction 都會觸發 from-scratch retrain。
+# 額外加 0.002 的 margin 吸收浮點誤差與 nested_subsample_groups 的 ceil() rounding。
+_FRACTION_STEP = 1.0 + RETRAIN_NEW_DATA_RATIO + 0.002
+DATA_FRACTIONS = sorted(1.0 / _FRACTION_STEP**k for k in range(10))
 
 
 @dataclass(frozen=True)
