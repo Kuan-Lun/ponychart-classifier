@@ -10,7 +10,7 @@
 2. 讀取 results dir 內的 JSON 並印對照表：
      uv run --extra train python -m cli.compare_resolution --report
 
-預設 results dir 是 ``cli/compare_resolution/resolution_results/``，
+預設 results dir 是 ``results/compare_resolution/``，
 可用 ``--results-dir`` 指定其他路徑。
 
 ## 跨機器一致性
@@ -32,196 +32,27 @@ hash 是從所有 sample (path + labels) 計算出來的指紋。
 
 from __future__ import annotations
 
-import json
-from dataclasses import dataclass
 from pathlib import Path
-from typing import TypedDict, cast
 
 from cli.experiment import RESULTS_ROOT, ExperimentCLI
-from cli.training_runner import (
-    SplitDict,
-    TestResultDict,
-    TrainingMeasurements,
-    TrainingSetup,
-    eval_result_from_dict,
-    eval_result_to_dict,
-    prepare_training_setup,
-    run_training_experiment,
-)
+from cli.training_runner import prepare_training_setup, run_training_experiment
 from ponychart_classifier.training import (
     BACKBONE,
     BATCH_SIZE,
     CLASS_NAMES,
     HASH_PREFIX_LEN,
-    SEED,
-    EnvDict,
-    EvalResult,
     load_all_json_results,
     log_section,
     select_consistent_results,
 )
 
-# ---------------------------------------------------------------------------
-# Resolution configs — ordered from highest to lowest so OOM surfaces early
-# ---------------------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class ResolutionConfig:
-    """Per-resolution training/eval settings."""
-
-    pre_resize: int
-    input_size: int
-
-
-RESOLUTION_CONFIGS: dict[str, ResolutionConfig] = {
-    "448": ResolutionConfig(pre_resize=512, input_size=448),
-    "380": ResolutionConfig(pre_resize=448, input_size=380),
-    "320": ResolutionConfig(pre_resize=384, input_size=320),
-    "288": ResolutionConfig(pre_resize=320, input_size=288),
-    "224": ResolutionConfig(pre_resize=256, input_size=224),
-}
-
-
-# ---------------------------------------------------------------------------
-# Result types
-# ---------------------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class ExperimentResult:
-    """Results from a single resolution experiment."""
-
-    label: str
-    pre_resize: int
-    input_size: int
-    test_result: EvalResult
-    thresholds: list[float]
-    param_count: int
-    onnx_size_mb: float
-    train_time_s: float
-    train_size: int
-    val_size: int
-    test_size: int
-    seed: int
-    data_hash: str
-    hostname: str
-    device: str
-
-
-# ---------------------------------------------------------------------------
-# JSON serialization
-# ---------------------------------------------------------------------------
-
-
-class ExperimentDict(TypedDict):
-    label: str
-    pre_resize: int
-    input_size: int
-    param_count: int
-    onnx_size_mb: float
-    train_time_s: float
-    thresholds: list[float]
-    test_result: TestResultDict
-    split: SplitDict
-    seed: int
-    data_hash: str
-    env: EnvDict
-
-
-def experiment_to_dict(exp: ExperimentResult) -> ExperimentDict:
-    return ExperimentDict(
-        label=exp.label,
-        pre_resize=exp.pre_resize,
-        input_size=exp.input_size,
-        param_count=exp.param_count,
-        onnx_size_mb=exp.onnx_size_mb,
-        train_time_s=exp.train_time_s,
-        thresholds=list(exp.thresholds),
-        test_result=eval_result_to_dict(exp.test_result),
-        split=SplitDict(
-            train_size=exp.train_size,
-            val_size=exp.val_size,
-            test_size=exp.test_size,
-        ),
-        seed=exp.seed,
-        data_hash=exp.data_hash,
-        env=EnvDict(hostname=exp.hostname, device=exp.device),
-    )
-
-
-def experiment_from_dict(data: ExperimentDict) -> ExperimentResult:
-    split = data["split"]
-    env = data["env"]
-    return ExperimentResult(
-        label=data["label"],
-        pre_resize=data["pre_resize"],
-        input_size=data["input_size"],
-        test_result=eval_result_from_dict(data["test_result"]),
-        thresholds=list(data["thresholds"]),
-        param_count=data["param_count"],
-        onnx_size_mb=data["onnx_size_mb"],
-        train_time_s=data["train_time_s"],
-        train_size=split["train_size"],
-        val_size=split["val_size"],
-        test_size=split["test_size"],
-        seed=data["seed"],
-        data_hash=data["data_hash"],
-        hostname=env["hostname"],
-        device=env["device"],
-    )
-
-
-def _parse_experiment_json(raw: str) -> ExperimentDict:
-    parsed = json.loads(raw)
-    if not isinstance(parsed, dict):
-        raise ValueError(f"Expected a JSON object, got {type(parsed).__name__}")
-    return cast(ExperimentDict, parsed)
-
-
-def result_filename(label: str, data_hash: str) -> str:
-    return f"{label}px__{data_hash[:HASH_PREFIX_LEN]}.json"
-
-
-def save_result(exp: ExperimentResult, results_dir: Path) -> Path:
-    results_dir.mkdir(parents=True, exist_ok=True)
-    out_path = results_dir / result_filename(exp.label, exp.data_hash)
-    out_path.write_text(json.dumps(experiment_to_dict(exp), indent=2))
-    return out_path
-
-
-def _parse_result_file(raw: str) -> ExperimentResult:
-    return experiment_from_dict(_parse_experiment_json(raw))
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
-def _measurements_to_result(
-    label: str,
-    config: ResolutionConfig,
-    m: TrainingMeasurements,
-    setup: TrainingSetup,
-) -> ExperimentResult:
-    return ExperimentResult(
-        label=label,
-        pre_resize=config.pre_resize,
-        input_size=config.input_size,
-        test_result=m.test_result,
-        thresholds=m.thresholds,
-        param_count=m.param_count,
-        onnx_size_mb=m.onnx_size_mb,
-        train_time_s=m.train_time_s,
-        train_size=len(setup.split.train),
-        val_size=len(setup.split.val),
-        test_size=len(setup.split.test),
-        seed=SEED,
-        data_hash=setup.data_hash,
-        hostname=m.hostname,
-        device=m.device_label,
-    )
+from .configs import RESOLUTION_CONFIGS
+from .result import (
+    ExperimentResult,
+    measurements_to_result,
+    parse_result_file,
+    save_result,
+)
 
 
 def _ordered_labels(loaded: dict[str, ExperimentResult]) -> list[str]:
@@ -229,11 +60,6 @@ def _ordered_labels(loaded: dict[str, ExperimentResult]) -> list[str]:
     canonical = [lbl for lbl in RESOLUTION_CONFIGS if lbl in loaded]
     extras = sorted(set(loaded) - set(canonical))
     return canonical + extras
-
-
-# ---------------------------------------------------------------------------
-# CLI
-# ---------------------------------------------------------------------------
 
 
 class CompareResolutionCLI(ExperimentCLI):
@@ -295,14 +121,12 @@ class CompareResolutionCLI(ExperimentCLI):
             measurements.train_time_s,
         )
 
-        experiment = _measurements_to_result(key, config, measurements, setup)
+        experiment = measurements_to_result(key, config, measurements, setup)
         out_path = save_result(experiment, results_dir)
         self.logger.info("Saved result to %s", out_path)
 
     def format_report(self, results_dir: Path) -> None:
-        raw_results = load_all_json_results(
-            results_dir, _parse_result_file, self.logger
-        )
+        raw_results = load_all_json_results(results_dir, parse_result_file, self.logger)
         if not raw_results:
             msg = f"No results found in {results_dir}"
             self.logger.error(msg)
