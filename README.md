@@ -72,7 +72,7 @@ ponychart-classifier/
 ## 標籤對照
 
 | 編號 | 角色 |
-|------|------|
+| ---- | ---- |
 | 1 | Twilight Sparkle |
 | 2 | Rarity |
 | 3 | Fluttershy |
@@ -167,7 +167,7 @@ uv run python scripts/train.py --from-scratch
 所有超參數集中於 `src/ponychart_classifier/training/constants.py`，修改後對所有腳本生效：
 
 | 參數 | 預設值 | 說明 |
-|------|--------|------|
+| ---- | ------ | ---- |
 | `BACKBONE` | `efficientnet_b0` | 見下方支援的 backbone |
 | `BATCH_SIZE` | 64 | 批次大小 |
 | `SEED` | 42 | 隨機種子 |
@@ -184,7 +184,7 @@ uv run python scripts/train.py --from-scratch
 ## 支援的 Backbone
 
 | Backbone | 參數量 | ONNX 大小 | 說明 |
-|----------|--------|-----------|------|
+| -------- | ------ | --------- | ---- |
 | `mobilenet_v3_small` | 2.5M | ~4MB | 輕量快速 |
 | `mobilenet_v3_large` | 5.4M | ~9MB | 精度最高 |
 | `efficientnet_b0` | 5.3M | ~11MB | 預設，精度接近 Large，但訓練較慢 |
