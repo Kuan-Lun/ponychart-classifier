@@ -4,7 +4,7 @@ Shared infrastructure for CLIs that train one config at a time on
 different machines and merge the results from JSON files. Used by
 ``cli.compare_backbones`` (keyed by backbone name),
 ``cli.compare_resolution`` (keyed by input size), and
-``scripts/search_batch_lr.py`` (keyed by batch size).
+``cli.search_batch_lr`` (keyed by batch size).
 
 Responsibilities:
 

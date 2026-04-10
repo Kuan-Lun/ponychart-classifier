@@ -10,7 +10,7 @@ PonyChart 多標籤分類訓練腳本。
   uv run python scripts/train.py
 
 訓練超參數集中於 common/constants.py，
-可透過分析工具（search_batch_lr, learning_curve 等）決定最佳設定後修改。
+可透過分析工具（cli.search_batch_lr, learning_curve 等）決定最佳設定後修改。
 """
 
 from __future__ import annotations

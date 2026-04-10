@@ -4,7 +4,7 @@ PonyChart 角色辨識模型，用於自動辨識 HentaiVerse 戰鬥中出現的
 
 ## 目錄結構
 
-```
+```text
 ponychart-classifier/
 ├── app/
 │   └── label_images/                  # 圖片標註工具 (Tkinter GUI)
@@ -48,6 +48,7 @@ ponychart-classifier/
 │   ├── training_runner.py             # 可組合的訓練管線
 │   ├── compare_resolution/            # 輸入解析度比較
 │   ├── compare_backbones/             # Backbone 架構比較
+│   ├── search_batch_lr/               # Batch size / LR 超參數搜尋
 │   └── benchmark_cpu_inference/       # CPU 推論延遲 benchmark
 ├── scripts/                           # 開發用腳本 (不隨套件發佈)
 │   ├── train.py                       # 模型訓練腳本
@@ -58,7 +59,6 @@ ponychart-classifier/
 │   ├── analyze_augmentations.py       # 資料增強 ablation study
 │   ├── analyze_distribution.py        # 標籤分布互動式視覺化 (Flask)
 │   ├── learning_curve.py              # Learning curve 分析 + power-law 外推
-│   ├── search_batch_lr.py             # LR 超參數搜尋
 │   └── profile_dataloader.py          # DataLoader 效能分析
 ├── rawimage/                          # 訓練用原始圖片 (PNG)
 │   ├── labels.json                    # 標註資料 {"1/twilight/filename.png": [1,3]}
@@ -158,6 +158,7 @@ uv run python scripts/train.py --from-scratch
 ### Resume 訓練
 
 新增圖片並標註後，直接執行 `train.py` 即可。腳本會自動偵測 `checkpoint.pt`：
+
 - **有 checkpoint**: 載入之前的模型權重，跳過 Phase 1 (head-only)，直接進入 Phase 2 fine-tuning，收斂更快
 - **無 checkpoint**: 從 ImageNet 預訓練權重開始完整兩階段訓練
 
@@ -214,7 +215,8 @@ uv run python scripts/analyze_distribution.py
 uv run python scripts/learning_curve.py
 
 # LR 超參數搜尋
-uv run python scripts/search_batch_lr.py
+uv run --extra train python -m cli.search_batch_lr --run 64
+uv run --extra train python -m cli.search_batch_lr --report
 ```
 
 ## 模型架構
