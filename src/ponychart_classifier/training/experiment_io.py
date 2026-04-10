@@ -1,8 +1,9 @@
 """Cross-machine experiment result I/O.
 
-Shared infrastructure for scripts that train one config at a time on
-different machines and merge the results from JSON files. Used by both
-``scripts/compare_backbones.py`` (keyed by backbone name) and
+Shared infrastructure for CLIs that train one config at a time on
+different machines and merge the results from JSON files. Used by
+``cli.compare_backbones`` (keyed by backbone name),
+``cli.compare_resolution`` (keyed by input size), and
 ``scripts/search_batch_lr.py`` (keyed by batch size).
 
 Responsibilities:
