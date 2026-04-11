@@ -8,16 +8,14 @@ from tkinter import messagebox, simpledialog
 from ponychart_classifier.training.sampling import Sample
 
 from .analysis import AnalysisManager, AnalysisTable
-from .checkpoint_viewer import DataStatusViewer, ModelInfoViewer
 from .constants import IMAGE_SUBDIR, LABEL_FILE, LABEL_MAP
-from .distribution_viewer import DistributionViewer
+from .data_viewer import DataOverviewViewer, ModelInfoViewer, ValF1Viewer
 from .file_actions import FileActions
 from .file_ops import is_raw_image, organize_single
 from .filter_panel import FilterPanel
 from .image_viewer import ImageViewer
 from .label_store import LabelStore
 from .navigator import ImageNavigator
-from .val_f1_viewer import ValF1Viewer
 
 
 class _KeyHandler:
@@ -304,9 +302,8 @@ class LabelApp:
 
         # Model analysis & checkpoint viewer
         self.analysis = AnalysisManager()
-        self._data_status_viewer = DataStatusViewer(root)
+        self._data_overview_viewer = DataOverviewViewer(root, self.store)
         self._model_info_viewer = ModelInfoViewer(root)
-        self._distribution_viewer = DistributionViewer(root, self.store)
         self._val_f1_viewer = ValF1Viewer(root)
         self._build_action_buttons(root)
         self._analysis_table = AnalysisTable(root)
@@ -364,14 +361,8 @@ class LabelApp:
 
         tk.Button(
             info_frame,
-            text="角色分布",
-            command=self._distribution_viewer.show,
-        ).pack(side="left", padx=(0, 16))
-
-        tk.Button(
-            info_frame,
-            text="資料狀態",
-            command=self._data_status_viewer.show,
+            text="資料概況",
+            command=self._data_overview_viewer.show,
         ).pack(side="left", padx=(0, 16))
 
         tk.Button(

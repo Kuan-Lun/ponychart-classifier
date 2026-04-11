@@ -11,10 +11,9 @@ ponychart-classifier/
 │       ├── __main__.py                # 進入點
 │       ├── app.py                     # LabelApp 主應用
 │       ├── analysis.py                # 模型分析 (背景推論)
-│       ├── checkpoint_viewer.py       # Checkpoint 資訊檢視
 │       ├── constants.py               # GUI 常數
 │       ├── crop_handler.py            # 裁切處理
-│       ├── distribution_viewer.py     # 角色分布統計檢視
+│       ├── data_viewer.py             # 資料概況 / 模型資訊 / 分析結果視窗
 │       ├── file_actions.py            # 批次檔案操作
 │       ├── file_ops.py                # 檔案操作
 │       ├── filter_builder.py          # 篩選條件建構
