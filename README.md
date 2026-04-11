@@ -13,7 +13,13 @@ ponychart-classifier/
 │       ├── analysis.py                # 模型分析 (背景推論)
 │       ├── constants.py               # GUI 常數
 │       ├── crop_handler.py            # 裁切處理
-│       ├── data_viewer.py             # 資料概況 / 模型資訊 / 分析結果視窗
+│       ├── data_viewer/                # 資料概況 / 模型資訊 / 分析結果視窗
+│       │   ├── __init__.py             # public viewers re-export
+│       │   ├── viewers.py              # _BaseViewer 及三個 public viewer
+│       │   ├── extractors.py           # checkpoint 載入與資料萃取
+│       │   ├── stats.py                # 原圖樣本聚合統計
+│       │   ├── widgets.py              # Tk 排版 helper
+│       │   └── sections/               # 可組合的 Section（Protocol + 8 個實作）
 │       ├── file_actions.py            # 批次檔案操作
 │       ├── file_ops.py                # 檔案操作
 │       ├── filter_builder.py          # 篩選條件建構
