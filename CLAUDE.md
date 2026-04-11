@@ -24,6 +24,12 @@ uv run mypy src/ app/
 # Linting
 uv run ruff check src/ app/
 
+# Rebuild venv from scratch — use when the venv is corrupted, e.g. after a
+# Python version upgrade and tools like black/mypy fail with
+# `ModuleNotFoundError: No module named '..._mypyc'`. Destructive: wipes
+# .venv, uv.lock, and all caches before recreating with [train,dev] extras.
+./scripts/rebuild-env.sh
+
 ```
 
 There is no test suite. Quality is enforced via MyPy (strict mode) and Ruff.

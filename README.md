@@ -95,6 +95,17 @@ uv pip install ponychart-classifier
 uv pip install -e ".[train]"
 ```
 
+### 環境損毀時重建
+
+Python 版本升級後若 `uv run black` / `uv run mypy` 等工具出現
+`ModuleNotFoundError: No module named '..._mypyc'` 這類錯誤，代表
+mypyc 編譯的 extension 找不到內部模組，執行下列指令把 `.venv`
+與所有快取重建：
+
+```bash
+./scripts/rebuild-env.sh
+```
+
 ## 使用方式
 
 ```python
