@@ -1,9 +1,10 @@
 """檔案操作：整理、去重、hash、清理空資料夾。"""
 
 import hashlib
-import re
 import shutil
 from pathlib import Path
+
+from ponychart_classifier.training.sampling import is_original
 
 from .constants import CONFLICT_SUBDIR, IMAGE_DIR, LABEL_DIR_NAMES, UNLABELED_SUBDIR
 
@@ -94,4 +95,4 @@ def cleanup_empty_dirs(base: Path) -> None:
 
 def is_raw_image(p: Path) -> bool:
     """判斷是否為原始圖片（pony_chart_YYYYMMDD_HHMMSS，無額外後綴）。"""
-    return bool(re.fullmatch(r"pony_chart_\d{8}_\d{6}", p.stem))
+    return is_original(p.name)

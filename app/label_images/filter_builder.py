@@ -1,12 +1,15 @@
 """篩選函式的組合建構。"""
 
-import re
 from collections.abc import Callable
 from pathlib import Path
 
 from ponychart_classifier.model_spec import select_predictions
 from ponychart_classifier.training.constants import VAL_SIZE
-from ponychart_classifier.training.sampling import Sample
+from ponychart_classifier.training.sampling import (
+    Sample,
+    extract_raw_stem,
+    get_base_timestamp,
+)
 from ponychart_classifier.training.splitting import group_hash_split
 
 from .file_ops import is_raw_image
@@ -74,7 +77,7 @@ def build_filter_fn(
         ]
         train_idx, _ = group_hash_split(samples, test_size=VAL_SIZE)
         train_base_timestamps = {
-            "_".join(Path(samples[i].path).stem.split("_")[:4]) for i in train_idx
+            get_base_timestamp(Path(samples[i].path).name) for i in train_idx
         }
 
     # 預計算已有裁切圖的 raw stem 集合
@@ -83,9 +86,9 @@ def build_filter_fn(
         raw_stems_with_crops = set()
         for p in all_paths:
             if not is_raw_image(p):
-                m = re.match(r"(pony_chart_\d{8}_\d{6})", p.stem)
-                if m:
-                    raw_stems_with_crops.add(m.group(1))
+                stem = extract_raw_stem(p.name)
+                if stem:
+                    raw_stems_with_crops.add(stem)
 
     # 預計算裁切標籤不符的 raw stem 集合
     crop_mismatch_stems: set[str] | None = None
@@ -93,13 +96,13 @@ def build_filter_fn(
         crop_label_union: dict[str, set[int]] = {}
         raw_stem_to_path: dict[str, Path] = {}
         for p in all_paths:
-            m = re.match(r"(pony_chart_\d{8}_\d{6})", p.stem)
-            if not m:
+            stem = extract_raw_stem(p.name)
+            if not stem:
                 continue
-            raw_stem = m.group(1)
             if is_raw_image(p):
-                raw_stem_to_path[raw_stem] = p
+                raw_stem_to_path[stem] = p
                 continue
+            raw_stem = stem
             key = store.path_to_key(p)
             crop_labels = store.get(key)
             if crop_labels:
@@ -139,7 +142,7 @@ def build_filter_fn(
         if unlabeled_only and store.has(store.path_to_key(p)):
             return False
         if train_base_timestamps is not None:
-            base_ts = "_".join(p.stem.split("_")[:4])
+            base_ts = get_base_timestamp(p.name)
             if base_ts not in train_base_timestamps:
                 return False
         if crop_mismatch_stems is not None:

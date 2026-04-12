@@ -25,7 +25,8 @@ from .constants import (
 
 logger = logging.getLogger(__name__)
 
-ORIG_PATTERN = re.compile(r"^pony_chart_\d{8}_\d{6}\.png$")
+_ORIG_STEM_RE = re.compile(r"^pony_chart_\d{8}_\d{6}$")
+_RAW_STEM_RE = re.compile(r"(pony_chart_\d{8}_\d{6})")
 
 
 class Sample(NamedTuple):
@@ -39,8 +40,16 @@ class Sample(NamedTuple):
 # File helpers
 # ---------------------------------------------------------------------------
 def is_original(filename: str) -> bool:
-    """Check if a filename matches the original image pattern."""
-    return bool(ORIG_PATTERN.match(filename))
+    """Check if a filename (with or without extension) is an original image."""
+    stem = os.path.splitext(filename)[0]
+    return bool(_ORIG_STEM_RE.match(stem))
+
+
+def extract_raw_stem(filename: str) -> str | None:
+    """Extract pony_chart_YYYYMMDD_HHMMSS from any variant, or None."""
+    stem = os.path.splitext(filename)[0]
+    m = _RAW_STEM_RE.match(stem)
+    return m.group(1) if m else None
 
 
 def separate_orig_crop(
