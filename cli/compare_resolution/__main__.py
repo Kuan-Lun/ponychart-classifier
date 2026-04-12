@@ -1,11 +1,14 @@
 """
-比較不同輸入解析度對訓練效果的影響。
+比較不同輸入解析度（以倍率縮放）對訓練效果的影響。
+
+以 production INPUT_SIZE / PRE_RESIZE 為基準，乘以倍率得到實驗尺寸。
+修改 model_spec.py 的 production 設定後，所有倍率自動對應新尺寸。
 
 此 CLI 拆成兩種模式，方便把不同解析度派到不同設備上跑：
 
 1. 單跑一種解析度並把結果寫成 JSON：
-     uv run --extra train python -m cli.compare_resolution --run 320
-     uv run --extra train python -m cli.compare_resolution --run 448
+     uv run --extra train python -m cli.compare_resolution --run 1.00x
+     uv run --extra train python -m cli.compare_resolution --run 1.40x
 
 2. 讀取 results dir 內的 JSON 並印對照表：
      uv run --extra train python -m cli.compare_resolution --report
@@ -15,19 +18,12 @@
 
 ## 跨機器一致性
 
-JSON 檔名包含「資料集 hash」(``<input_size>px__<hash12>.json``)，
+JSON 檔名包含「資料集 hash」(``<label>__<hash12>.json``)，
 hash 是從所有 sample (path + labels) 計算出來的指紋。
 - 同一份 ``rawimage`` + ``labels.json`` → 同 hash → 同檔名 → 重跑會覆蓋舊版
 - 任何新增 / 刪除 / 標籤異動 → 不同 hash → 不同檔名 → 兩者並存
 - ``--report`` 偵測到 results dir 同時存在多個 hash 時會直接報錯，
   避免不小心比較不同資料快照下的數字。
-
-測試五種 (PRE_RESIZE, INPUT_SIZE) 組合：
-  224: PRE_RESIZE=256, INPUT_SIZE=224
-  288: PRE_RESIZE=320, INPUT_SIZE=288
-  320: PRE_RESIZE=384, INPUT_SIZE=320  (current production)
-  380: PRE_RESIZE=448, INPUT_SIZE=380
-  448: PRE_RESIZE=512, INPUT_SIZE=448
 """
 
 from __future__ import annotations
@@ -63,6 +59,10 @@ def _ordered_labels(loaded: dict[str, ExperimentResult]) -> list[str]:
     return canonical + extras
 
 
+def _fmt_size(size: tuple[int, int]) -> str:
+    return f"{size[0]}x{size[1]}"
+
+
 class CompareResolutionCLI(ExperimentCLI):
     def experiment_name(self) -> str:
         return (
@@ -92,10 +92,11 @@ class CompareResolutionCLI(ExperimentCLI):
 
         log_section(
             self.logger,
-            "RESOLUTION: %spx  (PRE_RESIZE=%s  INPUT_SIZE=%s)",
+            "RESOLUTION: %s  (scale=%.2f  PRE_RESIZE=%s  INPUT_SIZE=%s)",
             key,
-            config.pre_resize,
-            config.input_size,
+            config.scale,
+            _fmt_size(config.pre_resize.hw()),
+            _fmt_size(config.input_size.hw()),
             width=70,
         )
         self.logger.info("  Data hash: %s", setup.data_hash[:HASH_PREFIX_LEN])
@@ -106,7 +107,7 @@ class CompareResolutionCLI(ExperimentCLI):
             test_samples=setup.split.test,
             device=setup.device,
             num_workers=setup.num_workers,
-            run_label=f"{key}px",
+            run_label=key,
             backbone=BACKBONE,
             input_size=config.input_size,
             pre_resize=config.pre_resize,
@@ -115,7 +116,7 @@ class CompareResolutionCLI(ExperimentCLI):
         )
 
         self.logger.info(
-            ">> %spx: test Macro F1=%.4f  params=%dK  ONNX=%.1fMB  time=%.0fs",
+            ">> %s: test Macro F1=%.4f  params=%dK  ONNX=%.1fMB  time=%.0fs",
             key,
             measurements.test_result.macro_f1,
             measurements.param_count // 1000,
@@ -149,30 +150,33 @@ class CompareResolutionCLI(ExperimentCLI):
 
         self.logger.info("")
         self.logger.info(
-            "  %-12s  %-12s  %-12s  %-10s  %-10s  %-10s  %-10s",
-            "Resolution",
+            "  %-10s  %-7s  %-12s  %-12s  %-8s  %-10s  %-10s  %-10s  %-10s",
+            "Config",
+            "Scale",
             "PRE_RESIZE",
             "INPUT_SIZE",
+            "Pixels",
             "Macro F1",
             "Params",
             "ONNX Size",
             "Time",
         )
-        self.logger.info("  " + "-" * 82)
+        self.logger.info("  " + "-" * 105)
 
-        baseline_label = ordered[-1]  # smallest resolution as baseline
-        baseline_f1 = results[baseline_label].test_result.macro_f1
+        best_lbl = max(ordered, key=lambda lbl: results[lbl].test_result.macro_f1)
+        best_f1 = results[best_lbl].test_result.macro_f1
 
         for lbl in ordered:
             r = results[lbl]
             f1 = r.test_result.macro_f1
-            pre_str = f"{r.pre_resize.height}x{r.pre_resize.width}"
-            inp_str = f"{r.input_size.height}x{r.input_size.width}"
+            pixels = r.input_size.height * r.input_size.width
             self.logger.info(
-                "  %-12s  %-12s  %-12s  %-10.4f  %-10s  %-10s  %s",
-                f"{lbl}px",
-                pre_str,
-                inp_str,
+                "  %-10s  %-7.2f  %-12s  %-12s  %-8s  %-10.4f  %-10s  %-10s  %s",
+                lbl,
+                r.scale,
+                _fmt_size(r.pre_resize.hw()),
+                _fmt_size(r.input_size.hw()),
+                f"{pixels // 1000}K",
                 f1,
                 f"{r.param_count / 1e6:.1f}M",
                 f"{r.onnx_size_mb:.1f}MB",
@@ -184,16 +188,14 @@ class CompareResolutionCLI(ExperimentCLI):
         self.logger.info("Run environment:")
         for lbl in ordered:
             r = results[lbl]
-            self.logger.info(
-                "  %-12s  host=%s  device=%s", f"{lbl}px", r.hostname, r.device
-            )
+            self.logger.info("  %-10s  host=%s  device=%s", lbl, r.hostname, r.device)
 
         # Per-class F1
         self.logger.info("")
         self.logger.info("Per-class F1:")
         header = f"  {'Class':<20s}"
         for lbl in ordered:
-            header += f"  {lbl + 'px':<14s}"
+            header += f"  {lbl:<14s}"
         self.logger.info(header)
         self.logger.info("  " + "-" * (20 + 16 * len(ordered)))
 
@@ -208,8 +210,11 @@ class CompareResolutionCLI(ExperimentCLI):
         self.logger.info("")
         self.logger.info("Per-class Precision / Recall:")
         for lbl in ordered:
-            self.logger.info("  %spx:", lbl)
-            tr = results[lbl].test_result
+            r = results[lbl]
+            self.logger.info(
+                "  %s (%.2fx, %s):", lbl, r.scale, _fmt_size(r.input_size.hw())
+            )
+            tr = r.test_result
             for i, cls_name in enumerate(CLASS_NAMES):
                 self.logger.info(
                     "    %-20s  P=%.4f  R=%.4f  F1=%.4f",
@@ -221,9 +226,7 @@ class CompareResolutionCLI(ExperimentCLI):
 
         # Summary
         log_section(self.logger, "SUMMARY")
-        best_lbl = max(ordered, key=lambda lbl: results[lbl].test_result.macro_f1)
-        best_f1 = results[best_lbl].test_result.macro_f1
-        self.logger.info("  Best resolution: %spx (Macro F1=%.4f)", best_lbl, best_f1)
+        self.logger.info("  Best resolution: %s (Macro F1=%.4f)", best_lbl, best_f1)
 
         self.logger.info("")
         for lbl in ordered:
@@ -231,28 +234,30 @@ class CompareResolutionCLI(ExperimentCLI):
             f1 = r.test_result.macro_f1
             diff = f1 - best_f1
             if lbl == best_lbl:
-                self.logger.info("  * %spx: F1=%.4f (BEST)", lbl, f1)
+                self.logger.info("  * %s: F1=%.4f (BEST)", lbl, f1)
             else:
-                self.logger.info("    %spx: F1=%.4f (%+.4f vs best)", lbl, f1, diff)
+                self.logger.info("    %s: F1=%.4f (%+.4f vs best)", lbl, f1, diff)
 
-        delta_vs_baseline = best_f1 - baseline_f1
-        self.logger.info("")
-        if best_lbl == baseline_label:
-            self.logger.info(
-                "  結論: 提高解析度沒有帶來改善，維持 %spx", baseline_label
-            )
-        elif delta_vs_baseline > 0.005:
-            self.logger.info(
-                "  結論: %spx 有顯著改善 (%+.4f F1)，建議更新 constants.py",
-                best_lbl,
-                delta_vs_baseline,
-            )
-        else:
-            self.logger.info(
-                "  結論: %spx 改善有限 (%+.4f F1)，考量訓練時間後不建議更換",
-                best_lbl,
-                delta_vs_baseline,
-            )
+        # Compare against 1.00x baseline
+        baseline_lbl = "1.00x"
+        if baseline_lbl in results:
+            baseline_f1 = results[baseline_lbl].test_result.macro_f1
+            delta_vs_baseline = best_f1 - baseline_f1
+            self.logger.info("")
+            if best_lbl == baseline_lbl:
+                self.logger.info("  結論: 放大縮小解析度沒有帶來改善，維持 1.00x")
+            elif delta_vs_baseline > 0.005:
+                self.logger.info(
+                    "  結論: %s 有顯著改善 (%+.4f F1)，建議更新 constants.py",
+                    best_lbl,
+                    delta_vs_baseline,
+                )
+            else:
+                self.logger.info(
+                    "  結論: %s 改善有限 (%+.4f F1)，考量訓練時間後不建議更換",
+                    best_lbl,
+                    delta_vs_baseline,
+                )
         self.logger.info("=" * 80)
 
 

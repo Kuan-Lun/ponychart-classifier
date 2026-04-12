@@ -1,35 +1,44 @@
-"""Resolution experiment configurations."""
+"""Resolution experiment configurations.
+
+Configs are defined as scale factors relative to the production
+``INPUT_SIZE`` / ``PRE_RESIZE`` in :mod:`ponychart_classifier.model_spec`.
+Changing the production constants automatically updates what each scale
+means — no hardcoded pixel sizes to keep in sync.
+"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ponychart_classifier.model_spec import ImageSize
+from ponychart_classifier.model_spec import INPUT_SIZE, PRE_RESIZE, ImageSize
 
 
 @dataclass(frozen=True)
 class ResolutionConfig:
     """Per-resolution training/eval settings."""
 
+    scale: float
     pre_resize: ImageSize
     input_size: ImageSize
 
 
+def _scaled(base: ImageSize, scale: float) -> ImageSize:
+    """Scale an ``ImageSize`` by *scale*, rounding to the nearest int."""
+    return ImageSize(round(base.height * scale), round(base.width * scale))
+
+
+def _build_configs(scales: list[float]) -> dict[str, ResolutionConfig]:
+    """Build configs from a list of scale factors (highest first for OOM)."""
+    configs: dict[str, ResolutionConfig] = {}
+    for s in scales:
+        label = f"{s:.2f}x"
+        configs[label] = ResolutionConfig(
+            scale=s,
+            pre_resize=_scaled(PRE_RESIZE, s),
+            input_size=_scaled(INPUT_SIZE, s),
+        )
+    return configs
+
+
 # Ordered from highest to lowest so OOM surfaces early.
-RESOLUTION_CONFIGS: dict[str, ResolutionConfig] = {
-    "448": ResolutionConfig(
-        pre_resize=ImageSize(512, 512), input_size=ImageSize(448, 448)
-    ),
-    "380": ResolutionConfig(
-        pre_resize=ImageSize(448, 448), input_size=ImageSize(380, 380)
-    ),
-    "320": ResolutionConfig(
-        pre_resize=ImageSize(384, 384), input_size=ImageSize(320, 320)
-    ),
-    "288": ResolutionConfig(
-        pre_resize=ImageSize(320, 320), input_size=ImageSize(288, 288)
-    ),
-    "224": ResolutionConfig(
-        pre_resize=ImageSize(256, 256), input_size=ImageSize(224, 224)
-    ),
-}
+RESOLUTION_CONFIGS = _build_configs([1.40, 1.20, 1.00, 0.85, 0.70])
