@@ -12,8 +12,8 @@ PonyChart Classifier is a multi-label image classifier for HentaiVerse PonyChart
 # Install (runtime only)
 uv pip install .
 
-# Install for development (with training dependencies)
-uv pip install -e ".[train]"
+# Install for development (training + dev tools)
+uv pip install -e ".[train,dev]"
 
 # Label images (Tkinter GUI)
 uv run python -m app.label_images
@@ -32,7 +32,12 @@ uv run ruff check src/ app/
 
 ```
 
-There is no test suite. Quality is enforced via MyPy (strict mode) and Ruff.
+Quality is enforced via MyPy (strict mode), Ruff, and pytest.
+
+```bash
+# Run tests
+uv run pytest tests/
+```
 
 ## Project Structure
 
