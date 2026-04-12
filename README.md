@@ -13,13 +13,22 @@ ponychart-classifier/
 │       ├── analysis.py                # 模型分析 (背景推論)
 │       ├── constants.py               # GUI 常數
 │       ├── crop_handler.py            # 裁切處理
-│       ├── data_viewer/                # 資料概況 / 模型資訊 / 分析結果視窗
-│       │   ├── __init__.py             # public viewers re-export
-│       │   ├── viewers.py              # _BaseViewer 及三個 public viewer
-│       │   ├── extractors.py           # checkpoint 載入與資料萃取
-│       │   ├── stats.py                # 原圖樣本聚合統計
-│       │   ├── widgets.py              # Tk 排版 helper
-│       │   └── sections/               # 可組合的 Section（Protocol + 8 個實作）
+│       ├── data_viewer/               # 資料概況 / 模型資訊 / 分析結果視窗
+│       │   ├── __init__.py            # public viewers re-export
+│       │   ├── viewers.py             # _BaseViewer 及三個 public viewer
+│       │   ├── extractors.py          # checkpoint 載入與資料萃取
+│       │   ├── stats.py               # 原圖樣本聚合統計
+│       │   ├── widgets.py             # Tk 排版 helper
+│       │   └── sections/              # 可組合的 Section（Protocol + 實作）
+│       │       ├── __init__.py
+│       │       ├── changes.py         # 資料變更摘要
+│       │       ├── distribution_test.py # 分布檢定
+│       │       ├── hyperparams.py     # 超參數顯示
+│       │       ├── image_counts.py    # 圖片數量統計
+│       │       ├── model_arch.py      # 模型架構資訊
+│       │       ├── notice.py          # 通知訊息
+│       │       ├── split_counts.py    # 資料分割統計
+│       │       └── val_f1.py          # 驗證 F1 分數
 │       ├── file_actions.py            # 批次檔案操作
 │       ├── file_ops.py                # 檔案操作
 │       ├── filter_builder.py          # 篩選條件建構
@@ -33,8 +42,16 @@ ponychart-classifier/
 │       ├── model_spec.py              # 推論常數 + PredictionResult / ClassThresholds
 │       ├── inference.py               # PonyChartClassifier (ONNX 推論)
 │       ├── _http.py                   # SSL-aware URL opener
+│       ├── py.typed                   # PEP 561 type marker
 │       ├── model.onnx                 # 隨套件發佈的 ONNX 模型
 │       ├── thresholds.json            # 隨套件發佈的分類閾值
+│       ├── stats/                     # 多項分布適合度檢定
+│       │   ├── __init__.py            # 公開 API re-export
+│       │   ├── asymptotic.py          # 漸近檢定 (chi-square / G-test)
+│       │   ├── exact.py               # 精確檢定 (全排列枚舉)
+│       │   ├── gof.py                 # 統一入口 goodness_of_fit_test()
+│       │   ├── result.py              # GoFTestResult 資料類別
+│       │   └── statistics.py          # 檢定統計量 (Pearson / G / logpmf)
 │       └── training/                  # 訓練函式庫
 │           ├── __init__.py            # Re-export 所有 symbol
 │           ├── constants.py           # 常數與訓練超參數 (single source of truth)
@@ -47,27 +64,39 @@ ponychart-classifier/
 │           ├── splitting.py           # Hash-based group splitting
 │           ├── log_helpers.py         # 日誌輔助
 │           ├── script_utils.py        # 腳本共用工具
+│           ├── experiment_io.py       # 跨機器實驗結果 I/O
 │           └── export.py              # ONNX 匯出
 ├── cli/                               # CLI 工具 (python -m cli.<name>)
 │   ├── experiment.py                  # ExperimentCLI 抽象基底 (Template Method)
 │   ├── training_runner.py             # 可組合的訓練管線
 │   ├── compare_resolution/            # 輸入解析度比較
 │   ├── compare_backbones/             # Backbone 架構比較
+│   ├── compare_aspect_ratio/          # 長寬比 (正方形 vs 長方形) 比較
 │   ├── search_batch_lr/               # Batch size / LR 超參數搜尋
 │   ├── benchmark_cpu_inference/       # CPU 推論延遲 benchmark
 │   └── analyze_augmentations/         # 資料增強 ablation study
+├── tests/                             # 測試套件 (pytest)
+│   ├── test_stats.py                  # stats 模組整合測試
+│   └── stats/                         # stats 模組單元測試
+│       ├── test_compositions.py
+│       ├── test_convergence.py
+│       ├── test_gof_advanced.py
+│       ├── test_gof_basic.py
+│       └── test_helpers.py
 ├── scripts/                           # 開發用腳本 (不隨套件發佈)
 │   ├── train.py                       # 模型訓練腳本
+│   ├── rebuild-env.sh                 # 重建 .venv 與快取
 │   ├── compare_crops.py               # 裁切圖片效果分析
 │   ├── compare_pos_weight.py          # pos_weight 效果比較
 │   ├── compare_resume_scratch.py      # Resume vs from-scratch 分析
 │   ├── evaluate_holdout.py            # Holdout 評估
-│   ├── analyze_distribution.py        # 標籤分布互動式視覺化 (Flask)
+│   ├── fit_cards.py                   # PonyChart 角色分布模型擬合
 │   ├── learning_curve.py              # Learning curve 分析 + power-law 外推
 │   └── profile_dataloader.py          # DataLoader 效能分析
 ├── rawimage/                          # 訓練用原始圖片 (PNG)
 │   ├── labels.json                    # 標註資料 {"1/twilight/filename.png": [1,3]}
 │   └── checkpoint.pt                  # PyTorch checkpoint (resume 訓練用)
+├── results/                           # CLI 實驗結果 JSON 輸出目錄
 ├── mypy.ini                           # MyPy strict 設定
 ├── pyproject.toml
 ├── uv.lock
@@ -224,9 +253,6 @@ uv run python scripts/compare_crops.py
 # 資料增強 ablation study
 uv run --extra train python -m cli.analyze_augmentations --run hflip
 uv run --extra train python -m cli.analyze_augmentations --report
-
-# 標籤分布互動式視覺化 (Flask web UI)
-uv run python scripts/analyze_distribution.py
 
 # Learning curve 分析 (估算增加資料的邊際效益)
 uv run python scripts/learning_curve.py
