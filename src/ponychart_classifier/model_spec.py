@@ -40,8 +40,8 @@ class ImageSize:
         return (self.width, self.height)
 
 
-INPUT_SIZE = ImageSize(320, 320)
-PRE_RESIZE = ImageSize(384, 384)
+INPUT_SIZE = ImageSize(238, 431)
+PRE_RESIZE = ImageSize(270, 495)
 
 
 MAX_K = 3
