@@ -9,7 +9,6 @@ from ponychart_classifier.training.constants import VAL_SIZE
 from ponychart_classifier.training.sampling import Sample
 from ponychart_classifier.training.splitting import group_hash_split
 
-from .constants import IMAGE_DIR
 from .file_ops import is_raw_image
 from .label_store import LabelStore
 
@@ -92,20 +91,25 @@ def build_filter_fn(
     crop_mismatch_stems: set[str] | None = None
     if config.crop_mismatch:
         crop_label_union: dict[str, set[int]] = {}
+        raw_stem_to_path: dict[str, Path] = {}
         for p in all_paths:
-            if is_raw_image(p):
-                continue
             m = re.match(r"(pony_chart_\d{8}_\d{6})", p.stem)
             if not m:
                 continue
             raw_stem = m.group(1)
+            if is_raw_image(p):
+                raw_stem_to_path[raw_stem] = p
+                continue
             key = store.path_to_key(p)
             crop_labels = store.get(key)
             if crop_labels:
                 crop_label_union.setdefault(raw_stem, set()).update(crop_labels)
         crop_mismatch_stems = set()
         for raw_stem, union_labels in crop_label_union.items():
-            raw_key = store.path_to_key(Path(IMAGE_DIR / f"{raw_stem}.png"))
+            raw_path = raw_stem_to_path.get(raw_stem)
+            if raw_path is None:
+                continue
+            raw_key = store.path_to_key(raw_path)
             raw_labels = set(store.get(raw_key))
             if not union_labels.issubset(raw_labels):
                 crop_mismatch_stems.add(raw_stem)
