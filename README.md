@@ -238,28 +238,67 @@ uv run python scripts/train.py --from-scratch
 所有 backbone 都使用 ImageNet 預訓練權重 + transfer learning。
 推論端使用 ONNX Runtime，backbone 更換後只需重新匯出 `model.onnx`，推論程式碼不需改動。
 
-## 分析腳本
+## CLI 實驗模組
 
-分析腳本使用 `training/constants.py` 中的超參數設定：
+CLI 模組支援 `--run` / `--report` 兩階段：先逐一訓練，再合併比較。
+所有實驗使用 `training/constants.py` 中的超參數設定。
 
 ```bash
 # 比較不同 backbone 的效果
 uv run --extra train python -m cli.compare_backbones --run efficientnet_b0
 uv run --extra train python -m cli.compare_backbones --report
 
-# 分析裁切圖片的影響
-uv run python scripts/compare_crops.py
-
-# 資料增強 ablation study
+# 資料增強 ablation study (hflip, vflip, rot15, rot45, rot90, current, none)
 uv run --extra train python -m cli.analyze_augmentations --run hflip
 uv run --extra train python -m cli.analyze_augmentations --report
 
-# Learning curve 分析 (估算增加資料的邊際效益)
-uv run python scripts/learning_curve.py
+# 比較輸入解析度 (以生產 INPUT_SIZE 的倍率表示)
+uv run --extra train python -m cli.compare_resolution --run 1.00x
+uv run --extra train python -m cli.compare_resolution --report
 
-# LR 超參數搜尋
+# 比較正方形 vs 原始長寬比訓練
+uv run --extra train python -m cli.compare_aspect_ratio --run square_320
+uv run --extra train python -m cli.compare_aspect_ratio --report
+
+# Batch size / LR 超參數搜尋 (Linear Scaling Rule)
 uv run --extra train python -m cli.search_batch_lr --run 64
 uv run --extra train python -m cli.search_batch_lr --report
+
+# CPU 推論延遲 benchmark (不需 train 依賴)
+uv run python -m cli.benchmark_cpu_inference --run efficientnet_b0
+uv run python -m cli.benchmark_cpu_inference --report
+```
+
+## 分析腳本
+
+獨立腳本，一次執行完成全部分析。
+
+```bash
+# 訓練
+uv run --extra train python scripts/train.py              # 自動偵測 resume / from-scratch
+uv run --extra train python scripts/train.py --from-scratch
+
+# 裁切圖片三組實驗 (原圖+偏差裁切 / 純原圖 / 原圖+平衡裁切)
+uv run --extra train python scripts/compare_crops.py
+
+# pos_weight A/B 測試
+uv run --extra train python scripts/compare_pos_weight.py
+
+# Resume vs from-scratch 交叉點分析 (校正 RETRAIN_NEW_DATA_RATIO)
+uv run --extra train python scripts/compare_resume_scratch.py
+
+# Holdout 評估 (80/20 timestamp split)
+uv run --extra train python scripts/evaluate_holdout.py
+
+# Learning curve (power-law 外推，估算增加資料的邊際效益)
+uv run --extra train python scripts/learning_curve.py
+
+# DataLoader profiling (找出 data loading vs GPU 瓶頸)
+uv run --extra train python scripts/profile_dataloader.py
+
+# 卡牌機率模型擬合 (純數學，不需 train 依賴)
+uv run python scripts/fit_cards.py fit 120 45 10
+uv run python scripts/fit_cards.py predict 0.35 --n 1000
 ```
 
 ## 模型架構
