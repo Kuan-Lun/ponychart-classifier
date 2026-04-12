@@ -35,7 +35,6 @@ class ExperimentResult:
     """Results from a single aspect-ratio experiment."""
 
     label: str
-    pre_resize: ImageSize
     input_size: ImageSize
     description: str
     test_result: EvalResult
@@ -59,7 +58,6 @@ class ExperimentResult:
 
 class ExperimentDict(TypedDict):
     label: str
-    pre_resize: list[int]
     input_size: list[int]
     description: str
     param_count: int
@@ -76,7 +74,6 @@ class ExperimentDict(TypedDict):
 def experiment_to_dict(exp: ExperimentResult) -> ExperimentDict:
     return ExperimentDict(
         label=exp.label,
-        pre_resize=list(exp.pre_resize.hw()),
         input_size=list(exp.input_size.hw()),
         description=exp.description,
         param_count=exp.param_count,
@@ -104,7 +101,6 @@ def experiment_from_dict(data: ExperimentDict) -> ExperimentResult:
     env = data["env"]
     return ExperimentResult(
         label=data["label"],
-        pre_resize=_to_image_size(data["pre_resize"]),
         input_size=_to_image_size(data["input_size"]),
         description=data["description"],
         test_result=eval_result_from_dict(data["test_result"]),
@@ -152,7 +148,6 @@ def measurements_to_result(
 ) -> ExperimentResult:
     return ExperimentResult(
         label=label,
-        pre_resize=config.pre_resize,
         input_size=config.input_size,
         description=config.description,
         test_result=m.test_result,

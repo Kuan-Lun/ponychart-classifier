@@ -104,8 +104,7 @@ class CompareAspectRatioCLI(ExperimentCLI):
             width=70,
         )
         self.logger.info(
-            "  PRE_RESIZE=%s  INPUT_SIZE=%s  pixels=%dK",
-            _fmt_size(config.pre_resize),
+            "  INPUT_SIZE=%s  pixels=%dK",
             _fmt_size(config.input_size),
             _pixel_count(config.input_size) // 1000,
         )
@@ -120,9 +119,8 @@ class CompareAspectRatioCLI(ExperimentCLI):
             run_label=key,
             backbone=BACKBONE,
             input_size=config.input_size,
-            pre_resize=config.pre_resize,
             batch_size=BATCH_SIZE,
-            train_transform=get_transforms(is_train=True, input_size=config.input_size),
+            train_transform=get_transforms(is_train=True),
         )
 
         self.logger.info(
@@ -161,9 +159,8 @@ class CompareAspectRatioCLI(ExperimentCLI):
         # Main comparison table
         self.logger.info("")
         self.logger.info(
-            "  %-18s  %-12s  %-12s  %-8s  %-10s  %-10s  %-10s  %-10s",
+            "  %-18s  %-12s  %-8s  %-10s  %-10s  %-10s  %-10s",
             "Config",
-            "PRE_RESIZE",
             "INPUT_SIZE",
             "Pixels",
             "Macro F1",
@@ -171,14 +168,13 @@ class CompareAspectRatioCLI(ExperimentCLI):
             "ONNX Size",
             "Time",
         )
-        self.logger.info("  " + "-" * 100)
+        self.logger.info("  " + "-" * 88)
 
         for lbl in ordered:
             r = results[lbl]
             self.logger.info(
-                "  %-18s  %-12s  %-12s  %-8s  %-10.4f  %-10s  %-10s  %s",
+                "  %-18s  %-12s  %-8s  %-10.4f  %-10s  %-10s  %s",
                 lbl,
-                _fmt_size(r.pre_resize),
                 _fmt_size(r.input_size),
                 f"{_pixel_count(r.input_size) // 1000}K",
                 r.test_result.macro_f1,
@@ -269,7 +265,7 @@ class CompareAspectRatioCLI(ExperimentCLI):
             if delta > 0.005:
                 self.logger.info(
                     "  結論: 長方形有顯著改善 (%+.4f F1)，"
-                    "建議更新 model_spec.py 的 INPUT_SIZE/PRE_RESIZE",
+                    "建議更新 model_spec.py 的 INPUT_SIZE",
                     delta,
                 )
             elif delta < -0.005:

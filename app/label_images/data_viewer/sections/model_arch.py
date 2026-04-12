@@ -22,7 +22,6 @@ class ModelArchSection:
         m = self._m
         kv_row(f, "Backbone", str(m["backbone"]))
         kv_row(f, "Input size", str(m["input_size"]))
-        kv_row(f, "Pre-resize", str(m["pre_resize"]))
         kv_row(f, "Classes", str(m["num_classes"]))
         kv_row(f, "Parameters", f"{m['n_params']:,}")
         kv_row(f, "State dict keys", f"{m['n_keys']:,}")

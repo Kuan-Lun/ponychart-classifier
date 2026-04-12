@@ -10,7 +10,6 @@ from ponychart_classifier.model_spec import (  # noqa: F401
     IMAGENET_STD,
     INPUT_SIZE,
     NUM_CLASSES,
-    PRE_RESIZE,
     ImageSize,
 )
 
@@ -21,7 +20,6 @@ __all__ = [
     "INPUT_SIZE",
     "ImageSize",
     "NUM_CLASSES",
-    "PRE_RESIZE",
 ]
 
 PACKAGE_DIR = Path(__file__).resolve().parent.parent  # src/ponychart_classifier/

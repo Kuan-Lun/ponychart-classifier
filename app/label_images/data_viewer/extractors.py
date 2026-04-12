@@ -166,7 +166,6 @@ def extract_model(ckpt: dict[str, Any]) -> dict[str, Any]:
     return {
         "backbone": backbone_name,
         "input_size": ckpt.get("input_size", "N/A"),
-        "pre_resize": ckpt.get("pre_resize", "N/A"),
         "num_classes": ckpt.get("num_classes", "N/A"),
         "n_params": n_params,
         "n_keys": len(state_dict),

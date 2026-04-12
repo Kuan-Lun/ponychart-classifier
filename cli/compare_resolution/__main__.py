@@ -1,8 +1,8 @@
 """
 比較不同輸入解析度（以倍率縮放）對訓練效果的影響。
 
-以 production INPUT_SIZE / PRE_RESIZE 為基準，乘以倍率得到實驗尺寸。
-修改 model_spec.py 的 production 設定後，所有倍率自動對應新尺寸。
+以 production INPUT_SIZE 為基準，乘以倍率得到實驗尺寸。
+修改 model_spec.py 的 INPUT_SIZE 後，所有倍率自動對應新尺寸。
 
 此 CLI 拆成兩種模式，方便把不同解析度派到不同設備上跑：
 
@@ -92,10 +92,9 @@ class CompareResolutionCLI(ExperimentCLI):
 
         log_section(
             self.logger,
-            "RESOLUTION: %s  (scale=%.2f  PRE_RESIZE=%s  INPUT_SIZE=%s)",
+            "RESOLUTION: %s  (scale=%.2f  INPUT_SIZE=%s)",
             key,
             config.scale,
-            _fmt_size(config.pre_resize.hw()),
             _fmt_size(config.input_size.hw()),
             width=70,
         )
@@ -110,9 +109,8 @@ class CompareResolutionCLI(ExperimentCLI):
             run_label=key,
             backbone=BACKBONE,
             input_size=config.input_size,
-            pre_resize=config.pre_resize,
             batch_size=BATCH_SIZE,
-            train_transform=get_transforms(is_train=True, input_size=config.input_size),
+            train_transform=get_transforms(is_train=True),
         )
 
         self.logger.info(
@@ -150,10 +148,9 @@ class CompareResolutionCLI(ExperimentCLI):
 
         self.logger.info("")
         self.logger.info(
-            "  %-10s  %-7s  %-12s  %-12s  %-8s  %-10s  %-10s  %-10s  %-10s",
+            "  %-10s  %-7s  %-12s  %-8s  %-10s  %-10s  %-10s  %-10s",
             "Config",
             "Scale",
-            "PRE_RESIZE",
             "INPUT_SIZE",
             "Pixels",
             "Macro F1",
@@ -161,7 +158,7 @@ class CompareResolutionCLI(ExperimentCLI):
             "ONNX Size",
             "Time",
         )
-        self.logger.info("  " + "-" * 105)
+        self.logger.info("  " + "-" * 90)
 
         best_lbl = max(ordered, key=lambda lbl: results[lbl].test_result.macro_f1)
         best_f1 = results[best_lbl].test_result.macro_f1
@@ -171,10 +168,9 @@ class CompareResolutionCLI(ExperimentCLI):
             f1 = r.test_result.macro_f1
             pixels = r.input_size.height * r.input_size.width
             self.logger.info(
-                "  %-10s  %-7.2f  %-12s  %-12s  %-8s  %-10.4f  %-10s  %-10s  %s",
+                "  %-10s  %-7.2f  %-12s  %-8s  %-10.4f  %-10s  %-10s  %s",
                 lbl,
                 r.scale,
-                _fmt_size(r.pre_resize.hw()),
                 _fmt_size(r.input_size.hw()),
                 f"{pixels // 1000}K",
                 f1,

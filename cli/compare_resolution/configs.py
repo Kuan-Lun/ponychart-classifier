@@ -1,8 +1,8 @@
 """Resolution experiment configurations.
 
 Configs are defined as scale factors relative to the production
-``INPUT_SIZE`` / ``PRE_RESIZE`` in :mod:`ponychart_classifier.model_spec`.
-Changing the production constants automatically updates what each scale
+``INPUT_SIZE`` in :mod:`ponychart_classifier.model_spec`.
+Changing the production constant automatically updates what each scale
 means — no hardcoded pixel sizes to keep in sync.
 """
 
@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ponychart_classifier.model_spec import INPUT_SIZE, PRE_RESIZE, ImageSize
+from ponychart_classifier.model_spec import INPUT_SIZE, ImageSize
 
 
 @dataclass(frozen=True)
@@ -18,7 +18,6 @@ class ResolutionConfig:
     """Per-resolution training/eval settings."""
 
     scale: float
-    pre_resize: ImageSize
     input_size: ImageSize
 
 
@@ -34,7 +33,6 @@ def _build_configs(scales: list[float]) -> dict[str, ResolutionConfig]:
         label = f"{s:.2f}x"
         configs[label] = ResolutionConfig(
             scale=s,
-            pre_resize=_scaled(PRE_RESIZE, s),
             input_size=_scaled(INPUT_SIZE, s),
         )
     return configs

@@ -41,7 +41,6 @@ class ImageSize:
 
 
 INPUT_SIZE = ImageSize(238, 431)
-PRE_RESIZE = ImageSize(270, 495)
 
 
 MAX_K = 3

@@ -160,8 +160,7 @@ class TrainingMeasurements:
     """Raw measurements from a single training experiment.
 
     The caller maps these into its own experiment-specific result type
-    (which may carry additional config fields like ``pre_resize`` or
-    ``backbone_name``).
+    (which may carry additional config fields like ``backbone_name``).
     """
 
     test_result: EvalResult
@@ -183,7 +182,6 @@ def run_training_experiment(
     run_label: str,
     backbone: str,
     input_size: ImageSize,
-    pre_resize: ImageSize,
     batch_size: int,
     train_transform: transforms.Compose,
 ) -> TrainingMeasurements:
@@ -206,7 +204,6 @@ def run_training_experiment(
         backbone=backbone,
         train_transform=train_transform,
         input_size=input_size,
-        pre_resize=pre_resize,
         batch_size=batch_size,
     )
     train_time = time.monotonic() - t0
@@ -216,8 +213,7 @@ def run_training_experiment(
     test_ds = build_cached_dataset(
         test_samples,
         is_train=False,
-        input_size=input_size,
-        pre_resize=pre_resize,
+        image_size=input_size,
     )
     test_loader = make_dataloader(
         test_ds,

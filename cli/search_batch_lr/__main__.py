@@ -49,7 +49,6 @@ from ponychart_classifier.training import (
     LR_CLASSIFIER,
     LR_FEATURES,
     LR_HEAD,
-    PRE_RESIZE,
     SEARCH_PATIENCE,
     SEARCH_PHASE1_EPOCHS,
     SEARCH_PHASE2_EPOCHS,
@@ -149,7 +148,7 @@ class SearchBatchLrCLI(ExperimentCLI):
             device,
         )
         total_budget = compute_cache_budget(
-            PRE_RESIZE,
+            INPUT_SIZE,
             n_datasets=2,
             training_reserve=training_reserve,
         )

@@ -38,7 +38,6 @@ from ponychart_classifier.training import (
     CLASS_NAMES,
     HASH_PREFIX_LEN,
     INPUT_SIZE,
-    PRE_RESIZE,
     load_all_json_results,
     log_section,
     select_consistent_results,
@@ -106,7 +105,6 @@ class AnalyzeAugmentationsCLI(ExperimentCLI):
             run_label=key,
             backbone=BACKBONE,
             input_size=INPUT_SIZE,
-            pre_resize=PRE_RESIZE,
             batch_size=BATCH_SIZE,
             train_transform=train_tf,
         )

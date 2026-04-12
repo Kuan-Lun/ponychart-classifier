@@ -36,7 +36,6 @@ class ExperimentResult:
 
     label: str
     scale: float
-    pre_resize: ImageSize
     input_size: ImageSize
     test_result: EvalResult
     thresholds: list[float]
@@ -60,7 +59,6 @@ class ExperimentResult:
 class ExperimentDict(TypedDict):
     label: str
     scale: float
-    pre_resize: list[int]
     input_size: list[int]
     param_count: int
     onnx_size_mb: float
@@ -77,7 +75,6 @@ def experiment_to_dict(exp: ExperimentResult) -> ExperimentDict:
     return ExperimentDict(
         label=exp.label,
         scale=exp.scale,
-        pre_resize=list(exp.pre_resize.hw()),
         input_size=list(exp.input_size.hw()),
         param_count=exp.param_count,
         onnx_size_mb=exp.onnx_size_mb,
@@ -105,7 +102,6 @@ def experiment_from_dict(data: ExperimentDict) -> ExperimentResult:
     return ExperimentResult(
         label=data["label"],
         scale=data["scale"],
-        pre_resize=_to_image_size(data["pre_resize"]),
         input_size=_to_image_size(data["input_size"]),
         test_result=eval_result_from_dict(data["test_result"]),
         thresholds=list(data["thresholds"]),
@@ -153,7 +149,6 @@ def measurements_to_result(
     return ExperimentResult(
         label=label,
         scale=config.scale,
-        pre_resize=config.pre_resize,
         input_size=config.input_size,
         test_result=m.test_result,
         thresholds=m.thresholds,

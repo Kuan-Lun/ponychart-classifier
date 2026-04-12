@@ -19,7 +19,6 @@ from .model_spec import (
     IMAGENET_MEAN,
     IMAGENET_STD,
     INPUT_SIZE,
-    PRE_RESIZE,
     ClassThresholds,
     PredictionResult,
     select_predictions,
@@ -159,14 +158,8 @@ class PonyChartClassifier:
 
     def _preprocess(self, bgr: np.ndarray[Any, Any]) -> np.ndarray[Any, Any]:
         """BGR image -> NCHW float32 tensor (matching training transforms)."""
-        resized = cv.resize(bgr, PRE_RESIZE.wh(), interpolation=cv.INTER_AREA)
-        offset_h = (PRE_RESIZE.height - INPUT_SIZE.height) // 2
-        offset_w = (PRE_RESIZE.width - INPUT_SIZE.width) // 2
-        cropped = resized[
-            offset_h : offset_h + INPUT_SIZE.height,
-            offset_w : offset_w + INPUT_SIZE.width,
-        ]
-        rgb = cv.cvtColor(cropped, cv.COLOR_BGR2RGB).astype(np.float32) / 255.0
+        resized = cv.resize(bgr, INPUT_SIZE.wh(), interpolation=cv.INTER_AREA)
+        rgb = cv.cvtColor(resized, cv.COLOR_BGR2RGB).astype(np.float32) / 255.0
         normalized = (rgb - _IMAGENET_MEAN) / _IMAGENET_STD
         # HWC -> CHW -> NCHW
         return normalized.transpose(2, 0, 1)[np.newaxis, ...].astype(np.float32)

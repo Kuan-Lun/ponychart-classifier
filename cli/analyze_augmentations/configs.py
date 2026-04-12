@@ -10,7 +10,6 @@ from torchvision import transforms
 from ponychart_classifier.training import (
     IMAGENET_MEAN,
     IMAGENET_STD,
-    INPUT_SIZE,
 )
 
 
@@ -55,7 +54,6 @@ def build_train_transform(cfg: AugConfig) -> transforms.Compose:
     return transforms.Compose(
         [
             *spatial,
-            transforms.RandomCrop(INPUT_SIZE.hw()),
             transforms.ColorJitter(
                 brightness=0.15, contrast=0.15, saturation=0.10, hue=0.02
             ),

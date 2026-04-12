@@ -31,7 +31,6 @@ from .constants import (
     PHASE1_PATIENCE,
     PHASE2_EPOCHS,
     PHASE2_PATIENCE,
-    PRE_RESIZE,
     SCHEDULER_FACTOR,
     SCHEDULER_MIN_LR,
     SCHEDULER_PATIENCE,
@@ -202,7 +201,6 @@ def train_model(
     lr_features: float = LR_FEATURES,
     lr_classifier: float = LR_CLASSIFIER,
     pos_weight: torch.Tensor | None = None,
-    pre_resize: ImageSize = PRE_RESIZE,
     input_size: ImageSize = INPUT_SIZE,
 ) -> TrainResult:
     """Train a model end-to-end.
@@ -246,8 +244,7 @@ def train_model(
         device=device,
         num_workers=num_workers,
         training_reserve=training_reserve,
-        pre_resize=pre_resize,
-        input_size=input_size,
+        image_size=input_size,
         train_transform=train_transform,
     )
 

@@ -87,9 +87,8 @@ class CompareBackbonesCLI(ExperimentCLI):
         backbone_meta = BACKBONE_REGISTRY[key]
         log_section(self.logger, "BACKBONE: %s", backbone_meta.description, width=70)
         self.logger.info(
-            "  Resolution: input=%s  pre_resize=%s  batch_size=%d",
+            "  Resolution: input=%s  batch_size=%d",
             config.input_size,
-            config.pre_resize,
             config.batch_size,
         )
         self.logger.info("  Data hash: %s", setup.data_hash[:HASH_PREFIX_LEN])
@@ -103,9 +102,8 @@ class CompareBackbonesCLI(ExperimentCLI):
             run_label=key,
             backbone=key,
             input_size=config.input_size,
-            pre_resize=config.pre_resize,
             batch_size=config.batch_size,
-            train_transform=get_transforms(is_train=True, input_size=config.input_size),
+            train_transform=get_transforms(is_train=True),
         )
 
         self.logger.info(

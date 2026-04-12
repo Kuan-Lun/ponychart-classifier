@@ -4,25 +4,23 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ponychart_classifier.model_spec import INPUT_SIZE, PRE_RESIZE, ImageSize
+from ponychart_classifier.model_spec import INPUT_SIZE, ImageSize
 
 
 @dataclass(frozen=True)
 class BackboneExperimentConfig:
     """Per-backbone training/eval settings for the comparison run.
 
-    *batch_size* is per-backbone because larger backbones (e.g. EfficientNet-B4)
-    may need a smaller batch to fit in GPU memory; the comparison therefore
-    is not strictly batch-equivalent, which mirrors the real deployment
-    trade-off.
+    *batch_size* is per-backbone because larger backbones may need a
+    smaller batch to fit in GPU memory; the comparison therefore is not
+    strictly batch-equivalent, which mirrors the real deployment trade-off.
 
-    Defaults for *input_size* and *pre_resize* come from the production
-    constants in :mod:`ponychart_classifier.model_spec` so they stay in
-    sync automatically.
+    Default for *input_size* comes from the production constant in
+    :mod:`ponychart_classifier.model_spec` so it stays in sync
+    automatically.
     """
 
     input_size: ImageSize = INPUT_SIZE
-    pre_resize: ImageSize = PRE_RESIZE
     batch_size: int = 64
 
 

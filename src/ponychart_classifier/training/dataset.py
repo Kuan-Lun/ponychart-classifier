@@ -11,13 +11,7 @@ from PIL import Image
 from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
 
-from .constants import (
-    IMAGENET_MEAN,
-    IMAGENET_STD,
-    INPUT_SIZE,
-    PRE_RESIZE,
-    ImageSize,
-)
+from .constants import IMAGENET_MEAN, IMAGENET_STD, INPUT_SIZE, ImageSize
 from .sampling import Sample, labels_to_binary
 
 TensorBatch = tuple[torch.Tensor, torch.Tensor]
@@ -28,9 +22,9 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Cache budget
 # ---------------------------------------------------------------------------
-def _estimate_image_bytes(pre_resize: ImageSize) -> int:
+def _estimate_image_bytes(image_size: ImageSize) -> int:
     """Estimate memory per cached PIL RGB image (pixels + object overhead)."""
-    return pre_resize.height * pre_resize.width * 3 + 1024
+    return image_size.height * image_size.width * 3 + 1024
 
 
 # Reserve = min(total * 20%, available * 25%) to keep the system responsive.
@@ -39,7 +33,7 @@ _RESERVE_AVAIL_FRACTION = 0.25
 
 
 def compute_cache_budget(
-    pre_resize: ImageSize,
+    image_size: ImageSize,
     n_datasets: int = 2,
     training_reserve: int = 0,
 ) -> int:
@@ -53,7 +47,7 @@ def compute_cache_budget(
     workers (even with the ``spawn`` start method) access the same pages
     without per-worker duplication.
     """
-    per_image = _estimate_image_bytes(pre_resize)
+    per_image = _estimate_image_bytes(image_size)
     mem = psutil.virtual_memory()
     reserve = min(
         int(mem.total * _RESERVE_TOTAL_FRACTION),
@@ -95,15 +89,15 @@ class PonyChartDataset(Dataset[TensorBatch]):
         self,
         samples: list[Sample],
         transform: transforms.Compose | None = None,
-        pre_resize: ImageSize = PRE_RESIZE,
+        image_size: ImageSize = INPUT_SIZE,
         max_cached: int | None = None,
     ) -> None:
         self.samples = samples
         self.transform = transform
-        self._pre_resize = pre_resize
+        self._image_size = image_size
 
         if max_cached is None:
-            max_cached = compute_cache_budget(pre_resize, n_datasets=1)
+            max_cached = compute_cache_budget(image_size, n_datasets=1)
         n_cache = min(max_cached, len(samples))
 
         self._n_cached = n_cache
@@ -111,12 +105,12 @@ class PonyChartDataset(Dataset[TensorBatch]):
         if n_cache > 0:
             self._cache = torch.empty(
                 n_cache,
-                pre_resize.height,
-                pre_resize.width,
+                image_size.height,
+                image_size.width,
                 3,
                 dtype=torch.uint8,
             )
-            pil_size = pre_resize.wh()
+            pil_size = image_size.wh()
             for i in range(n_cache):
                 path = samples[i].path
                 img = Image.open(path).convert("RGB")
@@ -137,7 +131,7 @@ class PonyChartDataset(Dataset[TensorBatch]):
             return Image.fromarray(self._cache[idx].numpy())
         path = self.samples[idx].path
         img = Image.open(path).convert("RGB")
-        return img.resize(self._pre_resize.wh(), Image.Resampling.BOX)
+        return img.resize(self._image_size.wh(), Image.Resampling.BOX)
 
     def __len__(self) -> int:
         return len(self.samples)
@@ -154,10 +148,13 @@ class PonyChartDataset(Dataset[TensorBatch]):
 # ---------------------------------------------------------------------------
 # Transforms
 # ---------------------------------------------------------------------------
-def get_transforms(
-    is_train: bool, input_size: ImageSize = INPUT_SIZE
-) -> transforms.Compose:
-    """Return the default augmentation pipeline."""
+def get_transforms(is_train: bool) -> transforms.Compose:
+    """Return the default augmentation pipeline.
+
+    Spatial augmentation is handled entirely by :class:`~transforms.RandomAffine`
+    (rotation, translation, scale).  Images are resized directly to
+    ``INPUT_SIZE`` with no intermediate crop step.
+    """
     if is_train:
         return transforms.Compose(
             [
@@ -166,7 +163,6 @@ def get_transforms(
                 transforms.RandomAffine(
                     degrees=90, translate=(0.05, 0.05), scale=(0.9, 1.1)
                 ),
-                transforms.RandomCrop(input_size.hw()),
                 transforms.ColorJitter(
                     brightness=0.15, contrast=0.15, saturation=0.10, hue=0.02
                 ),
@@ -178,7 +174,6 @@ def get_transforms(
         )
     return transforms.Compose(
         [
-            transforms.CenterCrop(input_size.hw()),
             transforms.ToTensor(),
             transforms.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD),
         ]
@@ -193,8 +188,7 @@ def build_cached_dataset(
     *,
     is_train: bool = False,
     max_cached: int | None = None,
-    pre_resize: ImageSize = PRE_RESIZE,
-    input_size: ImageSize = INPUT_SIZE,
+    image_size: ImageSize = INPUT_SIZE,
     transform: transforms.Compose | None = None,
 ) -> PonyChartDataset:
     """Build a :class:`PonyChartDataset` with cache-budget awareness.
@@ -209,11 +203,11 @@ def build_cached_dataset(
     across multiple datasets).
     """
     if transform is None:
-        transform = get_transforms(is_train=is_train, input_size=input_size)
+        transform = get_transforms(is_train=is_train)
     return PonyChartDataset(
         samples,
         transform,
-        pre_resize=pre_resize,
+        image_size=image_size,
         max_cached=max_cached,
     )
 
@@ -229,8 +223,7 @@ def build_data_pipeline(
     device: torch.device,
     num_workers: int,
     training_reserve: int = 0,
-    pre_resize: ImageSize = PRE_RESIZE,
-    input_size: ImageSize = INPUT_SIZE,
+    image_size: ImageSize = INPUT_SIZE,
     train_transform: transforms.Compose | None = None,
     val_transform: transforms.Compose | None = None,
 ) -> tuple[
@@ -247,7 +240,7 @@ def build_data_pipeline(
     Returns ``(train_loader, val_loader)``.
     """
     total_budget = compute_cache_budget(
-        pre_resize,
+        image_size,
         n_datasets=2,
         training_reserve=training_reserve,
     )
@@ -259,16 +252,14 @@ def build_data_pipeline(
         train_samples,
         is_train=True,
         max_cached=train_budget,
-        pre_resize=pre_resize,
-        input_size=input_size,
+        image_size=image_size,
         transform=train_transform,
     )
     val_ds = build_cached_dataset(
         val_samples,
         is_train=False,
         max_cached=val_budget,
-        pre_resize=pre_resize,
-        input_size=input_size,
+        image_size=image_size,
         transform=val_transform,
     )
 

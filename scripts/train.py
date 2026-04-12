@@ -36,7 +36,6 @@ from ponychart_classifier.training import (
     OUTPUT_CHECKPOINT,
     OUTPUT_ONNX,
     OUTPUT_THRESHOLDS,
-    PRE_RESIZE,
     RAWIMAGE_DIR,
     RETRAIN_NEW_DATA_RATIO,
     SEED,
@@ -111,7 +110,6 @@ def _run(args: argparse.Namespace) -> None:
         arch_keys = {
             "backbone": BACKBONE,
             "input_size": INPUT_SIZE,
-            "pre_resize": PRE_RESIZE,
             "num_classes": NUM_CLASSES,
         }
         required_keys = list(arch_keys) + [
@@ -245,7 +243,6 @@ def _run(args: argparse.Namespace) -> None:
             # Model architecture (mismatch -> from-scratch)
             "backbone": BACKBONE,
             "input_size": INPUT_SIZE,
-            "pre_resize": PRE_RESIZE,
             "num_classes": NUM_CLASSES,
             # Split config (val_size increase -> from-scratch)
             "val_size": VAL_SIZE,
