@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from ponychart_classifier.model_spec import ImageSize
+
 
 @dataclass(frozen=True)
 class BackboneExperimentConfig:
@@ -15,8 +17,8 @@ class BackboneExperimentConfig:
     deployment trade-off.
     """
 
-    input_size: int
-    pre_resize: int
+    input_size: ImageSize
+    pre_resize: ImageSize
     batch_size: int
 
 
@@ -25,9 +27,9 @@ class BackboneExperimentConfig:
 # exists in BACKBONE_REGISTRY.
 BACKBONE_CONFIGS: dict[str, BackboneExperimentConfig] = {
     "efficientnet_b0": BackboneExperimentConfig(
-        input_size=320, pre_resize=384, batch_size=64
+        input_size=ImageSize(320, 320), pre_resize=ImageSize(384, 384), batch_size=64
     ),
     "efficientnet_b4": BackboneExperimentConfig(
-        input_size=380, pre_resize=384, batch_size=64
+        input_size=ImageSize(380, 380), pre_resize=ImageSize(384, 384), batch_size=64
     ),
 }

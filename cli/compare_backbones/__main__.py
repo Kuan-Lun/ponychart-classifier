@@ -87,7 +87,7 @@ class CompareBackbonesCLI(ExperimentCLI):
         backbone_meta = BACKBONE_REGISTRY[key]
         log_section(self.logger, "BACKBONE: %s", backbone_meta.description, width=70)
         self.logger.info(
-            "  Resolution: input=%d  pre_resize=%d  batch_size=%d",
+            "  Resolution: input=%s  pre_resize=%s  batch_size=%d",
             config.input_size,
             config.pre_resize,
             config.batch_size,
@@ -109,7 +109,7 @@ class CompareBackbonesCLI(ExperimentCLI):
         )
 
         self.logger.info(
-            ">> %s @ %d: test Macro F1=%.4f  params=%dK  ONNX=%.1fMB  time=%.0fs",
+            ">> %s @ %s: test Macro F1=%.4f  params=%dK  ONNX=%.1fMB  time=%.0fs",
             key,
             config.input_size,
             measurements.test_result.macro_f1,
@@ -159,10 +159,11 @@ class CompareBackbonesCLI(ExperimentCLI):
             r = results[name]
             tr = r.test_result
             thr_str = " ".join(f"{t:.2f}" for t in r.thresholds)
+            inp_str = f"{r.input_size.height}x{r.input_size.width}"
             self.logger.info(
-                "  %-22s  %-8d  %-10.4f  %-10s  %-10s  %-10s  %s",
+                "  %-22s  %-8s  %-10.4f  %-10s  %-10s  %-10s  %s",
                 name,
-                r.input_size,
+                inp_str,
                 tr.macro_f1,
                 f"{r.param_count / 1e6:.1f}M",
                 f"{r.onnx_size_mb:.1f}MB",

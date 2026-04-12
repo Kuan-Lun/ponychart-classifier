@@ -1,4 +1,4 @@
-"""ExperimentResult type and JSON serialization for resolution experiments."""
+"""ExperimentResult type and JSON serialization for aspect-ratio experiments."""
 
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ from ponychart_classifier.training import (
     ImageSize,
 )
 
-from .configs import ResolutionConfig
+from .configs import AspectRatioConfig
 
 # ---------------------------------------------------------------------------
 # Result type
@@ -32,11 +32,12 @@ from .configs import ResolutionConfig
 
 @dataclass(frozen=True)
 class ExperimentResult:
-    """Results from a single resolution experiment."""
+    """Results from a single aspect-ratio experiment."""
 
     label: str
     pre_resize: ImageSize
     input_size: ImageSize
+    description: str
     test_result: EvalResult
     thresholds: list[float]
     param_count: int
@@ -60,6 +61,7 @@ class ExperimentDict(TypedDict):
     label: str
     pre_resize: list[int]
     input_size: list[int]
+    description: str
     param_count: int
     onnx_size_mb: float
     train_time_s: float
@@ -76,6 +78,7 @@ def experiment_to_dict(exp: ExperimentResult) -> ExperimentDict:
         label=exp.label,
         pre_resize=list(exp.pre_resize.hw()),
         input_size=list(exp.input_size.hw()),
+        description=exp.description,
         param_count=exp.param_count,
         onnx_size_mb=exp.onnx_size_mb,
         train_time_s=exp.train_time_s,
@@ -103,6 +106,7 @@ def experiment_from_dict(data: ExperimentDict) -> ExperimentResult:
         label=data["label"],
         pre_resize=_to_image_size(data["pre_resize"]),
         input_size=_to_image_size(data["input_size"]),
+        description=data["description"],
         test_result=eval_result_from_dict(data["test_result"]),
         thresholds=list(data["thresholds"]),
         param_count=data["param_count"],
@@ -126,7 +130,7 @@ def _parse_experiment_json(raw: str) -> ExperimentDict:
 
 
 def result_filename(label: str, data_hash: str) -> str:
-    return f"{label}px__{data_hash[:HASH_PREFIX_LEN]}.json"
+    return f"{label}__{data_hash[:HASH_PREFIX_LEN]}.json"
 
 
 def save_result(exp: ExperimentResult, results_dir: Path) -> Path:
@@ -142,7 +146,7 @@ def parse_result_file(raw: str) -> ExperimentResult:
 
 def measurements_to_result(
     label: str,
-    config: ResolutionConfig,
+    config: AspectRatioConfig,
     m: TrainingMeasurements,
     setup: TrainingSetup,
 ) -> ExperimentResult:
@@ -150,6 +154,7 @@ def measurements_to_result(
         label=label,
         pre_resize=config.pre_resize,
         input_size=config.input_size,
+        description=config.description,
         test_result=m.test_result,
         thresholds=m.thresholds,
         param_count=m.param_count,

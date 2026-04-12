@@ -30,6 +30,7 @@ from ponychart_classifier.training import (
     VAL_SIZE,
     EvalResult,
     HoldoutSplit,
+    ImageSize,
     Sample,
     build_cached_dataset,
     describe_device,
@@ -49,7 +50,7 @@ from ponychart_classifier.training import (
 # ------------------------------------------------------------------
 
 
-def get_onnx_size_mb(model: nn.Module, input_size: int) -> float:
+def get_onnx_size_mb(model: nn.Module, input_size: ImageSize) -> float:
     """Export *model* to a temp ONNX file and return its size in MB."""
     with tempfile.NamedTemporaryFile(suffix=".onnx", delete=False) as f:
         tmp_path = Path(f.name)
@@ -181,8 +182,8 @@ def run_training_experiment(
     num_workers: int,
     run_label: str,
     backbone: str,
-    input_size: int,
-    pre_resize: int,
+    input_size: ImageSize,
+    pre_resize: ImageSize,
     batch_size: int,
     train_transform: transforms.Compose,
 ) -> TrainingMeasurements:

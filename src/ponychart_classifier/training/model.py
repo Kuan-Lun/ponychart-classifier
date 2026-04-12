@@ -14,7 +14,7 @@ import torch
 import torch.nn as nn
 from torchvision import models
 
-from .constants import NUM_CLASSES
+from .constants import NUM_CLASSES, ImageSize
 
 logger = logging.getLogger(__name__)
 
@@ -146,7 +146,7 @@ def _get_rss_bytes() -> int:
 def measure_training_memory(
     backbone: str,
     batch_size: int,
-    input_size: int,
+    input_size: ImageSize,
     device: torch.device,
 ) -> int:
     """Measure system RAM needed for training via a dry-run forward+backward.
@@ -164,7 +164,7 @@ def measure_training_memory(
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
     criterion = torch.nn.BCEWithLogitsLoss()
 
-    dummy = torch.randn(batch_size, 3, input_size, input_size, device=device)
+    dummy = torch.randn(batch_size, 3, *input_size.hw(), device=device)
     target = torch.zeros(batch_size, NUM_CLASSES, device=device)
 
     # Measure after forward (peak: weights + optimizer states + activations)

@@ -11,7 +11,13 @@ from PIL import Image
 from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
 
-from .constants import IMAGENET_MEAN, IMAGENET_STD, INPUT_SIZE, PRE_RESIZE
+from .constants import (
+    IMAGENET_MEAN,
+    IMAGENET_STD,
+    INPUT_SIZE,
+    PRE_RESIZE,
+    ImageSize,
+)
 from .sampling import Sample, labels_to_binary
 
 TensorBatch = tuple[torch.Tensor, torch.Tensor]
@@ -22,9 +28,9 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Cache budget
 # ---------------------------------------------------------------------------
-def _estimate_image_bytes(pre_resize: int) -> int:
+def _estimate_image_bytes(pre_resize: ImageSize) -> int:
     """Estimate memory per cached PIL RGB image (pixels + object overhead)."""
-    return pre_resize * pre_resize * 3 + 1024
+    return pre_resize.height * pre_resize.width * 3 + 1024
 
 
 # Reserve = min(total * 20%, available * 25%) to keep the system responsive.
@@ -33,7 +39,7 @@ _RESERVE_AVAIL_FRACTION = 0.25
 
 
 def compute_cache_budget(
-    pre_resize: int,
+    pre_resize: ImageSize,
     n_datasets: int = 2,
     training_reserve: int = 0,
 ) -> int:
@@ -89,7 +95,7 @@ class PonyChartDataset(Dataset[TensorBatch]):
         self,
         samples: list[Sample],
         transform: transforms.Compose | None = None,
-        pre_resize: int = PRE_RESIZE,
+        pre_resize: ImageSize = PRE_RESIZE,
         max_cached: int | None = None,
     ) -> None:
         self.samples = samples
@@ -105,15 +111,16 @@ class PonyChartDataset(Dataset[TensorBatch]):
         if n_cache > 0:
             self._cache = torch.empty(
                 n_cache,
-                pre_resize,
-                pre_resize,
+                pre_resize.height,
+                pre_resize.width,
                 3,
                 dtype=torch.uint8,
             )
+            pil_size = pre_resize.wh()
             for i in range(n_cache):
                 path = samples[i].path
                 img = Image.open(path).convert("RGB")
-                img = img.resize((pre_resize, pre_resize), Image.Resampling.BOX)
+                img = img.resize(pil_size, Image.Resampling.BOX)
                 self._cache[i] = torch.from_numpy(np.array(img))
             self._cache.share_memory_()  # type: ignore[no-untyped-call]
         else:
@@ -130,7 +137,7 @@ class PonyChartDataset(Dataset[TensorBatch]):
             return Image.fromarray(self._cache[idx].numpy())
         path = self.samples[idx].path
         img = Image.open(path).convert("RGB")
-        return img.resize((self._pre_resize, self._pre_resize), Image.Resampling.BOX)
+        return img.resize(self._pre_resize.wh(), Image.Resampling.BOX)
 
     def __len__(self) -> int:
         return len(self.samples)
@@ -147,7 +154,9 @@ class PonyChartDataset(Dataset[TensorBatch]):
 # ---------------------------------------------------------------------------
 # Transforms
 # ---------------------------------------------------------------------------
-def get_transforms(is_train: bool, input_size: int = INPUT_SIZE) -> transforms.Compose:
+def get_transforms(
+    is_train: bool, input_size: ImageSize = INPUT_SIZE
+) -> transforms.Compose:
     """Return the default augmentation pipeline."""
     if is_train:
         return transforms.Compose(
@@ -157,7 +166,7 @@ def get_transforms(is_train: bool, input_size: int = INPUT_SIZE) -> transforms.C
                 transforms.RandomAffine(
                     degrees=90, translate=(0.05, 0.05), scale=(0.9, 1.1)
                 ),
-                transforms.RandomCrop((input_size, input_size)),
+                transforms.RandomCrop(input_size.hw()),
                 transforms.ColorJitter(
                     brightness=0.15, contrast=0.15, saturation=0.10, hue=0.02
                 ),
@@ -169,7 +178,7 @@ def get_transforms(is_train: bool, input_size: int = INPUT_SIZE) -> transforms.C
         )
     return transforms.Compose(
         [
-            transforms.CenterCrop((input_size, input_size)),
+            transforms.CenterCrop(input_size.hw()),
             transforms.ToTensor(),
             transforms.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD),
         ]
@@ -184,8 +193,8 @@ def build_cached_dataset(
     *,
     is_train: bool = False,
     max_cached: int | None = None,
-    pre_resize: int = PRE_RESIZE,
-    input_size: int = INPUT_SIZE,
+    pre_resize: ImageSize = PRE_RESIZE,
+    input_size: ImageSize = INPUT_SIZE,
     transform: transforms.Compose | None = None,
 ) -> PonyChartDataset:
     """Build a :class:`PonyChartDataset` with cache-budget awareness.
@@ -220,8 +229,8 @@ def build_data_pipeline(
     device: torch.device,
     num_workers: int,
     training_reserve: int = 0,
-    pre_resize: int = PRE_RESIZE,
-    input_size: int = INPUT_SIZE,
+    pre_resize: ImageSize = PRE_RESIZE,
+    input_size: ImageSize = INPUT_SIZE,
     train_transform: transforms.Compose | None = None,
     val_transform: transforms.Compose | None = None,
 ) -> tuple[

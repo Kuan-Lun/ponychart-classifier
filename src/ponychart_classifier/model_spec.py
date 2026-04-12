@@ -17,8 +17,32 @@ CLASS_NAMES = [
 IMAGENET_MEAN = [0.485, 0.456, 0.406]
 IMAGENET_STD = [0.229, 0.224, 0.225]
 
-INPUT_SIZE = 320
-PRE_RESIZE = 384
+
+@dataclasses.dataclass(frozen=True)
+class ImageSize:
+    """Image dimensions in ``(height, width)`` order.
+
+    Follows the PyTorch / torchvision convention.  Use :meth:`hw` when a
+    plain ``(height, width)`` tuple is needed (e.g. ``torch.randn``,
+    ``torchvision.transforms``), and :meth:`wh` at the PIL / OpenCV
+    boundary where ``(width, height)`` is expected.
+    """
+
+    height: int
+    width: int
+
+    def hw(self) -> tuple[int, int]:
+        """Return ``(height, width)`` — for PyTorch / torchvision."""
+        return (self.height, self.width)
+
+    def wh(self) -> tuple[int, int]:
+        """Return ``(width, height)`` — for PIL / OpenCV."""
+        return (self.width, self.height)
+
+
+INPUT_SIZE = ImageSize(320, 320)
+PRE_RESIZE = ImageSize(384, 384)
+
 
 MAX_K = 3
 

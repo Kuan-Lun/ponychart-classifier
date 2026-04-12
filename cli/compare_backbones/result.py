@@ -21,6 +21,7 @@ from ponychart_classifier.training import (
     SEED,
     EnvDict,
     EvalResult,
+    ImageSize,
 )
 
 from .configs import BackboneExperimentConfig
@@ -41,8 +42,8 @@ class ExperimentResult:
     param_count: int
     onnx_size_mb: float
     train_time_s: float
-    input_size: int
-    pre_resize: int
+    input_size: ImageSize
+    pre_resize: ImageSize
     batch_size: int
     train_size: int
     val_size: int
@@ -61,8 +62,8 @@ class ExperimentResult:
 class ExperimentDict(TypedDict):
     backbone_name: str
     description: str
-    input_size: int
-    pre_resize: int
+    input_size: list[int]
+    pre_resize: list[int]
     batch_size: int
     param_count: int
     onnx_size_mb: float
@@ -79,8 +80,8 @@ def experiment_to_dict(experiment: ExperimentResult) -> ExperimentDict:
     return ExperimentDict(
         backbone_name=experiment.backbone_name,
         description=experiment.description,
-        input_size=experiment.input_size,
-        pre_resize=experiment.pre_resize,
+        input_size=list(experiment.input_size.hw()),
+        pre_resize=list(experiment.pre_resize.hw()),
         batch_size=experiment.batch_size,
         param_count=experiment.param_count,
         onnx_size_mb=experiment.onnx_size_mb,
@@ -98,6 +99,10 @@ def experiment_to_dict(experiment: ExperimentResult) -> ExperimentDict:
     )
 
 
+def _to_image_size(v: list[int]) -> ImageSize:
+    return ImageSize(v[0], v[1])
+
+
 def experiment_from_dict(data: ExperimentDict) -> ExperimentResult:
     split = data["split"]
     env = data["env"]
@@ -109,8 +114,8 @@ def experiment_from_dict(data: ExperimentDict) -> ExperimentResult:
         param_count=data["param_count"],
         onnx_size_mb=data["onnx_size_mb"],
         train_time_s=data["train_time_s"],
-        input_size=data["input_size"],
-        pre_resize=data["pre_resize"],
+        input_size=_to_image_size(data["input_size"]),
+        pre_resize=_to_image_size(data["pre_resize"]),
         batch_size=data["batch_size"],
         train_size=split["train_size"],
         val_size=split["val_size"],

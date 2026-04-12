@@ -36,6 +36,7 @@ from .constants import (
     SEED,
     VAL_SIZE,
     WEIGHT_DECAY,
+    ImageSize,
 )
 from .dataset import (
     PonyChartDataset,
@@ -123,6 +124,7 @@ __all__ = [
     "IMAGENET_MEAN",
     "IMAGENET_STD",
     "INPUT_SIZE",
+    "ImageSize",
     "LABEL_SMOOTHING",
     "LABELS_FILE",
     "LR_CLASSIFIER",

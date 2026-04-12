@@ -11,6 +11,7 @@ from pathlib import Path
 
 import numpy as np
 
+from ponychart_classifier.model_spec import ImageSize
 from ponychart_classifier.training import (
     BACKBONE_REGISTRY,
     build_model,
@@ -20,7 +21,7 @@ from ponychart_classifier.training import (
 from .result import BenchmarkResult
 
 
-def export_to_temp_onnx(backbone_name: str, input_size: int) -> Path:
+def export_to_temp_onnx(backbone_name: str, input_size: ImageSize) -> Path:
     """Build a fresh model and export it to a temp ONNX file."""
     model = build_model(backbone=backbone_name, pretrained=False)
     model.eval()
@@ -38,7 +39,7 @@ def cleanup_onnx(onnx_path: Path) -> None:
 
 def benchmark_onnx(
     onnx_path: Path,
-    input_size: int,
+    input_size: ImageSize,
     *,
     warmup: int,
     iters: int,
@@ -57,7 +58,7 @@ def benchmark_onnx(
     )
     input_name = session.get_inputs()[0].name
     rng = np.random.default_rng(0)
-    dummy = rng.standard_normal((1, 3, input_size, input_size), dtype=np.float32)
+    dummy = rng.standard_normal((1, 3, *input_size.hw()), dtype=np.float32)
 
     for _ in range(warmup):
         session.run(None, {input_name: dummy})
@@ -79,7 +80,7 @@ def benchmark_onnx(
 def run_benchmark(
     backbone_name: str,
     *,
-    input_size: int,
+    input_size: ImageSize,
     warmup: int,
     iters: int,
     intra_op_threads: int | None,
@@ -92,7 +93,7 @@ def run_benchmark(
         logger.error(msg)
         raise ValueError(msg)
 
-    logger.info("--- %s @ %d ---", backbone_name, input_size)
+    logger.info("--- %s @ %s ---", backbone_name, input_size)
     onnx_path = export_to_temp_onnx(backbone_name, input_size)
     try:
         size_mb = onnx_path.stat().st_size / (1024 * 1024)
@@ -148,10 +149,11 @@ def print_comparison(results: list[BenchmarkResult], logger: logging.Logger) -> 
     )
     logger.info("  " + "-" * 84)
     for r in results:
+        inp_str = f"{r.input_size.height}x{r.input_size.width}"
         logger.info(
-            "  %-22s  %-6d  %-9s  %-9s  %-9s  %-9s  %-9s",
+            "  %-22s  %-6s  %-9s  %-9s  %-9s  %-9s  %-9s",
             r.backbone_name,
-            r.input_size,
+            inp_str,
             f"{r.onnx_size_mb:.1f}MB",
             f"{r.mean_ms:.1f}ms",
             f"{r.p50_ms:.1f}ms",

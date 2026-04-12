@@ -7,13 +7,15 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TypedDict, cast
 
+from ponychart_classifier.model_spec import ImageSize
+
 
 @dataclass(frozen=True)
 class BenchmarkResult:
     """Latency stats for one backbone."""
 
     backbone_name: str
-    input_size: int
+    input_size: ImageSize
     onnx_size_mb: float
     n_iters: int
     warmup: int
@@ -27,7 +29,7 @@ class BenchmarkResult:
 
 class BenchmarkResultDict(TypedDict):
     backbone_name: str
-    input_size: int
+    input_size: list[int]
     onnx_size_mb: float
     n_iters: int
     warmup: int
@@ -42,7 +44,7 @@ class BenchmarkResultDict(TypedDict):
 def result_to_dict(r: BenchmarkResult) -> BenchmarkResultDict:
     return BenchmarkResultDict(
         backbone_name=r.backbone_name,
-        input_size=r.input_size,
+        input_size=list(r.input_size.hw()),
         onnx_size_mb=r.onnx_size_mb,
         n_iters=r.n_iters,
         warmup=r.warmup,
@@ -55,10 +57,14 @@ def result_to_dict(r: BenchmarkResult) -> BenchmarkResultDict:
     )
 
 
+def _to_image_size(v: list[int]) -> ImageSize:
+    return ImageSize(v[0], v[1])
+
+
 def result_from_dict(data: BenchmarkResultDict) -> BenchmarkResult:
     return BenchmarkResult(
         backbone_name=data["backbone_name"],
-        input_size=data["input_size"],
+        input_size=_to_image_size(data["input_size"]),
         onnx_size_mb=data["onnx_size_mb"],
         n_iters=data["n_iters"],
         warmup=data["warmup"],

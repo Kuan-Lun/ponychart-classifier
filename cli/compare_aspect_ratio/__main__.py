@@ -1,33 +1,29 @@
 """
-比較不同輸入解析度對訓練效果的影響。
+比較不同長寬比（正方形 vs 長方形）對訓練效果的影響。
 
-此 CLI 拆成兩種模式，方便把不同解析度派到不同設備上跑：
+PonyChart 原圖為 1004x554 (~1.813:1)，目前 production 將其壓縮為正方形。
+此 CLI 評估保留原始長寬比是否能改善分類效果。
 
-1. 單跑一種解析度並把結果寫成 JSON：
-     uv run --extra train python -m cli.compare_resolution --run 320
-     uv run --extra train python -m cli.compare_resolution --run 448
+此 CLI 拆成兩種模式，方便把不同設定派到不同設備上跑：
+
+1. 單跑一種設定並把結果寫成 JSON：
+     uv run --extra train python -m cli.compare_aspect_ratio --run square_320
+     uv run --extra train python -m cli.compare_aspect_ratio --run rect_238x431
 
 2. 讀取 results dir 內的 JSON 並印對照表：
-     uv run --extra train python -m cli.compare_resolution --report
+     uv run --extra train python -m cli.compare_aspect_ratio --report
 
-預設 results dir 是 ``results/compare_resolution/``，
+預設 results dir 是 ``results/compare_aspect_ratio/``，
 可用 ``--results-dir`` 指定其他路徑。
 
 ## 跨機器一致性
 
-JSON 檔名包含「資料集 hash」(``<input_size>px__<hash12>.json``)，
+JSON 檔名包含「資料集 hash」(``<label>__<hash12>.json``)，
 hash 是從所有 sample (path + labels) 計算出來的指紋。
 - 同一份 ``rawimage`` + ``labels.json`` → 同 hash → 同檔名 → 重跑會覆蓋舊版
 - 任何新增 / 刪除 / 標籤異動 → 不同 hash → 不同檔名 → 兩者並存
 - ``--report`` 偵測到 results dir 同時存在多個 hash 時會直接報錯，
   避免不小心比較不同資料快照下的數字。
-
-測試五種 (PRE_RESIZE, INPUT_SIZE) 組合：
-  224: PRE_RESIZE=256, INPUT_SIZE=224
-  288: PRE_RESIZE=320, INPUT_SIZE=288
-  320: PRE_RESIZE=384, INPUT_SIZE=320  (current production)
-  380: PRE_RESIZE=448, INPUT_SIZE=380
-  448: PRE_RESIZE=512, INPUT_SIZE=448
 """
 
 from __future__ import annotations
@@ -36,6 +32,7 @@ from pathlib import Path
 
 from cli.experiment import RESULTS_ROOT, ExperimentCLI
 from cli.training_runner import prepare_training_setup, run_training_experiment
+from ponychart_classifier.model_spec import ImageSize
 from ponychart_classifier.training import (
     BACKBONE,
     BATCH_SIZE,
@@ -47,7 +44,7 @@ from ponychart_classifier.training import (
     select_consistent_results,
 )
 
-from .configs import RESOLUTION_CONFIGS
+from .configs import ASPECT_RATIO_CONFIGS
 from .result import (
     ExperimentResult,
     measurements_to_result,
@@ -58,45 +55,59 @@ from .result import (
 
 def _ordered_labels(loaded: dict[str, ExperimentResult]) -> list[str]:
     """Return loaded labels in canonical (config) order, then extras."""
-    canonical = [lbl for lbl in RESOLUTION_CONFIGS if lbl in loaded]
+    canonical = [lbl for lbl in ASPECT_RATIO_CONFIGS if lbl in loaded]
     extras = sorted(set(loaded) - set(canonical))
     return canonical + extras
 
 
-class CompareResolutionCLI(ExperimentCLI):
+def _fmt_size(size: ImageSize) -> str:
+    """Format an ImageSize as ``'HxW'``."""
+    return f"{size.height}x{size.width}"
+
+
+def _pixel_count(size: ImageSize) -> int:
+    return size.height * size.width
+
+
+class CompareAspectRatioCLI(ExperimentCLI):
     def experiment_name(self) -> str:
         return (
-            "Train resolutions one-at-a-time and merge results across machines. "
-            "Use --run to train one resolution (writes JSON), then --report to "
+            "Compare square vs rectangular (native aspect-ratio) training. "
+            "Use --run to train one config (writes JSON), then --report to "
             "print a comparison from all collected JSON files."
         )
 
     def default_results_dir(self) -> Path:
-        return RESULTS_ROOT / "compare_resolution"
+        return RESULTS_ROOT / "compare_aspect_ratio"
 
     def available_keys(self) -> list[str]:
-        return list(RESOLUTION_CONFIGS.keys())
+        return list(ASPECT_RATIO_CONFIGS.keys())
 
     def run_one(self, key: str, results_dir: Path) -> None:
-        if key not in RESOLUTION_CONFIGS:
-            available = ", ".join(RESOLUTION_CONFIGS.keys())
+        if key not in ASPECT_RATIO_CONFIGS:
+            available = ", ".join(ASPECT_RATIO_CONFIGS.keys())
             msg = (
-                f"Resolution {key!r} not configured. "
+                f"Aspect-ratio config {key!r} not configured. "
                 f"Currently configured: {available}"
             )
             self.logger.error(msg)
             raise ValueError(msg)
-        config = RESOLUTION_CONFIGS[key]
+        config = ASPECT_RATIO_CONFIGS[key]
 
         setup = prepare_training_setup(self.logger)
 
         log_section(
             self.logger,
-            "RESOLUTION: %spx  (PRE_RESIZE=%s  INPUT_SIZE=%s)",
+            "ASPECT RATIO: %s  (%s)",
             key,
-            config.pre_resize,
-            config.input_size,
+            config.description,
             width=70,
+        )
+        self.logger.info(
+            "  PRE_RESIZE=%s  INPUT_SIZE=%s  pixels=%dK",
+            _fmt_size(config.pre_resize),
+            _fmt_size(config.input_size),
+            _pixel_count(config.input_size) // 1000,
         )
         self.logger.info("  Data hash: %s", setup.data_hash[:HASH_PREFIX_LEN])
 
@@ -106,7 +117,7 @@ class CompareResolutionCLI(ExperimentCLI):
             test_samples=setup.split.test,
             device=setup.device,
             num_workers=setup.num_workers,
-            run_label=f"{key}px",
+            run_label=key,
             backbone=BACKBONE,
             input_size=config.input_size,
             pre_resize=config.pre_resize,
@@ -115,7 +126,7 @@ class CompareResolutionCLI(ExperimentCLI):
         )
 
         self.logger.info(
-            ">> %spx: test Macro F1=%.4f  params=%dK  ONNX=%.1fMB  time=%.0fs",
+            ">> %s: test Macro F1=%.4f  params=%dK  ONNX=%.1fMB  time=%.0fs",
             key,
             measurements.test_result.macro_f1,
             measurements.param_count // 1000,
@@ -137,43 +148,40 @@ class CompareResolutionCLI(ExperimentCLI):
         results = select_consistent_results(
             raw_results,
             key=lambda r: r.label,
-            key_label="resolution",
+            key_label="aspect_ratio",
             logger=self.logger,
         )
         ordered = _ordered_labels(results)
         data_hash = next(iter(results.values())).data_hash
 
-        log_section(self.logger, "RESOLUTION COMPARISON RESULTS")
+        log_section(self.logger, "ASPECT RATIO COMPARISON RESULTS")
         self.logger.info("  Loaded %d result(s) from %s", len(results), results_dir)
         self.logger.info("  Data snapshot: %s", data_hash[:HASH_PREFIX_LEN])
 
+        # Main comparison table
         self.logger.info("")
         self.logger.info(
-            "  %-12s  %-12s  %-12s  %-10s  %-10s  %-10s  %-10s",
-            "Resolution",
+            "  %-18s  %-12s  %-12s  %-8s  %-10s  %-10s  %-10s  %-10s",
+            "Config",
             "PRE_RESIZE",
             "INPUT_SIZE",
+            "Pixels",
             "Macro F1",
             "Params",
             "ONNX Size",
             "Time",
         )
-        self.logger.info("  " + "-" * 82)
-
-        baseline_label = ordered[-1]  # smallest resolution as baseline
-        baseline_f1 = results[baseline_label].test_result.macro_f1
+        self.logger.info("  " + "-" * 100)
 
         for lbl in ordered:
             r = results[lbl]
-            f1 = r.test_result.macro_f1
-            pre_str = f"{r.pre_resize.height}x{r.pre_resize.width}"
-            inp_str = f"{r.input_size.height}x{r.input_size.width}"
             self.logger.info(
-                "  %-12s  %-12s  %-12s  %-10.4f  %-10s  %-10s  %s",
-                f"{lbl}px",
-                pre_str,
-                inp_str,
-                f1,
+                "  %-18s  %-12s  %-12s  %-8s  %-10.4f  %-10s  %-10s  %s",
+                lbl,
+                _fmt_size(r.pre_resize),
+                _fmt_size(r.input_size),
+                f"{_pixel_count(r.input_size) // 1000}K",
+                r.test_result.macro_f1,
                 f"{r.param_count / 1e6:.1f}M",
                 f"{r.onnx_size_mb:.1f}MB",
                 f"{r.train_time_s:.0f}s",
@@ -184,31 +192,29 @@ class CompareResolutionCLI(ExperimentCLI):
         self.logger.info("Run environment:")
         for lbl in ordered:
             r = results[lbl]
-            self.logger.info(
-                "  %-12s  host=%s  device=%s", f"{lbl}px", r.hostname, r.device
-            )
+            self.logger.info("  %-18s  host=%s  device=%s", lbl, r.hostname, r.device)
 
         # Per-class F1
         self.logger.info("")
         self.logger.info("Per-class F1:")
         header = f"  {'Class':<20s}"
         for lbl in ordered:
-            header += f"  {lbl + 'px':<14s}"
+            header += f"  {lbl:<18s}"
         self.logger.info(header)
-        self.logger.info("  " + "-" * (20 + 16 * len(ordered)))
+        self.logger.info("  " + "-" * (20 + 20 * len(ordered)))
 
         for i, cls_name in enumerate(CLASS_NAMES):
             row = f"  {cls_name:<20s}"
             for lbl in ordered:
                 f1 = results[lbl].test_result.per_class_f1[i]
-                row += f"  {f1:<14.4f}"
+                row += f"  {f1:<18.4f}"
             self.logger.info(row)
 
         # Per-class precision/recall
         self.logger.info("")
         self.logger.info("Per-class Precision / Recall:")
         for lbl in ordered:
-            self.logger.info("  %spx:", lbl)
+            self.logger.info("  %s (%s):", lbl, results[lbl].description)
             tr = results[lbl].test_result
             for i, cls_name in enumerate(CLASS_NAMES):
                 self.logger.info(
@@ -221,9 +227,14 @@ class CompareResolutionCLI(ExperimentCLI):
 
         # Summary
         log_section(self.logger, "SUMMARY")
+
+        # Separate square and rect configs for comparison
+        square_labels = [lbl for lbl in ordered if lbl.startswith("square_")]
+        rect_labels = [lbl for lbl in ordered if lbl.startswith("rect_")]
+
         best_lbl = max(ordered, key=lambda lbl: results[lbl].test_result.macro_f1)
         best_f1 = results[best_lbl].test_result.macro_f1
-        self.logger.info("  Best resolution: %spx (Macro F1=%.4f)", best_lbl, best_f1)
+        self.logger.info("  Best config: %s (Macro F1=%.4f)", best_lbl, best_f1)
 
         self.logger.info("")
         for lbl in ordered:
@@ -231,30 +242,49 @@ class CompareResolutionCLI(ExperimentCLI):
             f1 = r.test_result.macro_f1
             diff = f1 - best_f1
             if lbl == best_lbl:
-                self.logger.info("  * %spx: F1=%.4f (BEST)", lbl, f1)
+                self.logger.info("  * %s: F1=%.4f (BEST)", lbl, f1)
             else:
-                self.logger.info("    %spx: F1=%.4f (%+.4f vs best)", lbl, f1, diff)
+                self.logger.info("    %s: F1=%.4f (%+.4f vs best)", lbl, f1, diff)
 
-        delta_vs_baseline = best_f1 - baseline_f1
-        self.logger.info("")
-        if best_lbl == baseline_label:
-            self.logger.info(
-                "  結論: 提高解析度沒有帶來改善，維持 %spx", baseline_label
+        # Square vs rect comparison at similar pixel budget
+        if square_labels and rect_labels:
+            best_square = max(
+                square_labels,
+                key=lambda lbl: results[lbl].test_result.macro_f1,
             )
-        elif delta_vs_baseline > 0.005:
-            self.logger.info(
-                "  結論: %spx 有顯著改善 (%+.4f F1)，建議更新 constants.py",
-                best_lbl,
-                delta_vs_baseline,
+            best_rect = max(
+                rect_labels,
+                key=lambda lbl: results[lbl].test_result.macro_f1,
             )
-        else:
-            self.logger.info(
-                "  結論: %spx 改善有限 (%+.4f F1)，考量訓練時間後不建議更換",
-                best_lbl,
-                delta_vs_baseline,
-            )
-        self.logger.info("=" * 80)
+            sq_f1 = results[best_square].test_result.macro_f1
+            rc_f1 = results[best_rect].test_result.macro_f1
+            delta = rc_f1 - sq_f1
+
+            self.logger.info("")
+            self.logger.info("  Square vs Rectangular:")
+            self.logger.info("    Best square: %s (F1=%.4f)", best_square, sq_f1)
+            self.logger.info("    Best rect:   %s (F1=%.4f)", best_rect, rc_f1)
+            self.logger.info("    Delta: %+.4f", delta)
+
+            if delta > 0.005:
+                self.logger.info(
+                    "  結論: 長方形有顯著改善 (%+.4f F1)，"
+                    "建議更新 model_spec.py 的 INPUT_SIZE/PRE_RESIZE",
+                    delta,
+                )
+            elif delta < -0.005:
+                self.logger.info(
+                    "  結論: 正方形表現更好 (%+.4f F1)，維持現有設定",
+                    delta,
+                )
+            else:
+                self.logger.info(
+                    "  結論: 兩者差異不大 (%+.4f F1)，" "考量相容性建議維持正方形",
+                    delta,
+                )
+
+        self.logger.info("=" * 100)
 
 
 if __name__ == "__main__":
-    CompareResolutionCLI().main()
+    CompareAspectRatioCLI().main()

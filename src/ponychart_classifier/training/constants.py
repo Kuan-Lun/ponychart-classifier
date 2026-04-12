@@ -11,6 +11,7 @@ from ponychart_classifier.model_spec import (  # noqa: F401
     INPUT_SIZE,
     NUM_CLASSES,
     PRE_RESIZE,
+    ImageSize,
 )
 
 __all__ = [
@@ -18,6 +19,7 @@ __all__ = [
     "IMAGENET_MEAN",
     "IMAGENET_STD",
     "INPUT_SIZE",
+    "ImageSize",
     "NUM_CLASSES",
     "PRE_RESIZE",
 ]

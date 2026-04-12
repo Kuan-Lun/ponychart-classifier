@@ -159,9 +159,13 @@ class PonyChartClassifier:
 
     def _preprocess(self, bgr: np.ndarray[Any, Any]) -> np.ndarray[Any, Any]:
         """BGR image -> NCHW float32 tensor (matching training transforms)."""
-        resized = cv.resize(bgr, (PRE_RESIZE, PRE_RESIZE), interpolation=cv.INTER_AREA)
-        offset = (PRE_RESIZE - INPUT_SIZE) // 2
-        cropped = resized[offset : offset + INPUT_SIZE, offset : offset + INPUT_SIZE]
+        resized = cv.resize(bgr, PRE_RESIZE.wh(), interpolation=cv.INTER_AREA)
+        offset_h = (PRE_RESIZE.height - INPUT_SIZE.height) // 2
+        offset_w = (PRE_RESIZE.width - INPUT_SIZE.width) // 2
+        cropped = resized[
+            offset_h : offset_h + INPUT_SIZE.height,
+            offset_w : offset_w + INPUT_SIZE.width,
+        ]
         rgb = cv.cvtColor(cropped, cv.COLOR_BGR2RGB).astype(np.float32) / 255.0
         normalized = (rgb - _IMAGENET_MEAN) / _IMAGENET_STD
         # HWC -> CHW -> NCHW

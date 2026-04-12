@@ -28,6 +28,7 @@ from cli.experiment import RESULTS_ROOT, ExperimentCLI
 from ponychart_classifier.training import (
     BACKBONE_REGISTRY,
     INPUT_SIZE,
+    ImageSize,
 )
 
 from .benchmark import print_comparison, run_benchmark
@@ -63,10 +64,10 @@ class BenchmarkCpuCLI(ExperimentCLI):
         )
         parser.add_argument(
             "--input-size",
-            type=int,
+            type=str,
             default=None,
             help=(
-                "Override input size for the backbone. "
+                "Override input size for the backbone (e.g. '320' or '320x180'). "
                 "Default: per-backbone native (see BACKBONE_INPUT_SIZE)."
             ),
         )
@@ -80,10 +81,23 @@ class BenchmarkCpuCLI(ExperimentCLI):
             ),
         )
 
+    @staticmethod
+    def _parse_input_size(raw: str) -> ImageSize:
+        """Parse ``'320'`` or ``'320x180'`` into an ``ImageSize``."""
+        if "x" in raw:
+            parts = raw.split("x", 1)
+            return ImageSize(int(parts[0]), int(parts[1]))
+        n = int(raw)
+        return ImageSize(n, n)
+
     def run_one(self, key: str, results_dir: Path) -> None:
         args = self._args
         threads: int | None = args.threads if args.threads > 0 else None
-        input_size: int = args.input_size or BACKBONE_INPUT_SIZE.get(key, INPUT_SIZE)
+        input_size: ImageSize = (
+            self._parse_input_size(args.input_size)
+            if args.input_size
+            else BACKBONE_INPUT_SIZE.get(key, INPUT_SIZE)
+        )
 
         self.logger.info("CPU inference benchmark")
         self.logger.info(

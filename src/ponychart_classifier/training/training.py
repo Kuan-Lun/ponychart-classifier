@@ -36,6 +36,7 @@ from .constants import (
     SCHEDULER_MIN_LR,
     SCHEDULER_PATIENCE,
     WEIGHT_DECAY,
+    ImageSize,
 )
 from .dataset import TensorBatch, build_data_pipeline
 from .model import _extract_submodules, build_model, measure_training_memory
@@ -201,8 +202,8 @@ def train_model(
     lr_features: float = LR_FEATURES,
     lr_classifier: float = LR_CLASSIFIER,
     pos_weight: torch.Tensor | None = None,
-    pre_resize: int = PRE_RESIZE,
-    input_size: int = INPUT_SIZE,
+    pre_resize: ImageSize = PRE_RESIZE,
+    input_size: ImageSize = INPUT_SIZE,
 ) -> TrainResult:
     """Train a model end-to-end.
 
