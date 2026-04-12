@@ -6,9 +6,13 @@
 
 此 CLI 拆成兩種模式，方便把不同解析度派到不同設備上跑：
 
-1. 單跑一種解析度並把結果寫成 JSON：
+1. 單跑一種解析度並把結果寫成 JSON（``--run KEY``）：
      uv run --extra train python -m cli.compare_resolution --run 1.00x
      uv run --extra train python -m cli.compare_resolution --run 1.40x
+
+   KEY 必須是 ``configs.py`` 中 ``RESOLUTION_CONFIGS`` 定義的倍率之一。
+   目前可用的 KEY：``1.40x``, ``1.20x``, ``1.00x``, ``0.85x``, ``0.70x``。
+   其中 ``1.00x`` 即 production ``INPUT_SIZE``（基準線）。
 
 2. 讀取 results dir 內的 JSON 並印對照表：
      uv run --extra train python -m cli.compare_resolution --report
