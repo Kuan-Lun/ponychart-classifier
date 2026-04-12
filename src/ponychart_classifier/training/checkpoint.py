@@ -10,6 +10,8 @@ import numpy as np
 import torch
 import torch.nn as nn
 
+from ponychart_classifier.model_spec import ImageSize
+
 from .constants import (
     BACKBONE,
     BATCH_SIZE,
@@ -22,6 +24,8 @@ from .model import build_model
 from .sampling import is_original, load_samples, prepare_balanced_samples
 from .splitting import group_hash_split
 from .training import evaluate
+
+torch.serialization.add_safe_globals([ImageSize])
 
 logger = logging.getLogger(__name__)
 

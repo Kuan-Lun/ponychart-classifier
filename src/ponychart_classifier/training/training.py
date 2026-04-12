@@ -41,6 +41,8 @@ from .dataset import TensorBatch, build_data_pipeline
 from .model import _extract_submodules, build_model, measure_training_memory
 from .sampling import Sample
 
+torch.serialization.add_safe_globals([ImageSize])
+
 logger = logging.getLogger(__name__)
 
 
