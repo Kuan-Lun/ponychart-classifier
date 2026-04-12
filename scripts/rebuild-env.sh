@@ -9,7 +9,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-rm -rf .venv uv.lock .mypy_cache .ruff_cache
+rm -rf .venv uv.lock .mypy_cache .ruff_cache .pytest_cache
 find . -type d -name __pycache__ -exec rm -rf {} +
 uv cache clean --force
 uv venv --python 3.13
