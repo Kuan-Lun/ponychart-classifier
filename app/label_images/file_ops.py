@@ -4,9 +4,19 @@ import hashlib
 import shutil
 from pathlib import Path
 
+import numpy as np
+from PIL import Image
+
 from ponychart_classifier.training.sampling import is_original
 
-from .constants import CONFLICT_SUBDIR, IMAGE_DIR, LABEL_DIR_NAMES, UNLABELED_SUBDIR
+from .constants import (
+    CONFLICT_SUBDIR,
+    IMAGE_DIR,
+    LABEL_DIR_NAMES,
+    NEAR_DUP_MAX_DIFF,
+    NEAR_DUP_MAX_RATIO,
+    UNLABELED_SUBDIR,
+)
 
 
 def labels_to_subdir(labels: list[int]) -> str:
@@ -83,6 +93,54 @@ def dedup_images(paths: list[Path]) -> list[tuple[Path, Path]]:
             duplicates.append((p, hash_map[h]))
         else:
             hash_map[h] = p
+    return duplicates
+
+
+def _dhash(img_path: Path, hash_size: int = 8) -> int:
+    """計算圖片的 difference hash（降採樣灰階後比較相鄰像素亮度）。"""
+    img = (
+        Image.open(img_path)
+        .convert("L")
+        .resize((hash_size + 1, hash_size), Image.LANCZOS)
+    )
+    pixels = np.array(img)
+    diff = pixels[:, 1:] > pixels[:, :-1]
+    return int(np.packbits(diff.flatten()).tobytes().hex(), 16)
+
+
+def _is_near_duplicate(path_a: Path, path_b: Path) -> bool:
+    """像素級驗證兩張圖片是否為 near-duplicate。"""
+    a = np.array(Image.open(path_a))
+    b = np.array(Image.open(path_b))
+    if a.shape != b.shape:
+        return False
+    diff = np.abs(a.astype(np.int16) - b.astype(np.int16))
+    return int(diff.max()) <= NEAR_DUP_MAX_DIFF and (
+        np.count_nonzero(diff) / diff.size <= NEAR_DUP_MAX_RATIO
+    )
+
+
+def dedup_near_images(paths: list[Path]) -> list[tuple[Path, Path]]:
+    """找出像素幾乎相同的 near-duplicate 圖片，保留最舊的。
+
+    流程：dhash 分組 → 同組內 pixel-level 驗證。
+
+    Returns:
+        list of (duplicate_to_remove, original_to_keep) pairs.
+    """
+    hash_map: dict[int, list[Path]] = {}
+    for p in sorted(paths):
+        h = _dhash(p)
+        hash_map.setdefault(h, []).append(p)
+
+    duplicates: list[tuple[Path, Path]] = []
+    for group in hash_map.values():
+        if len(group) < 2:
+            continue
+        keep = group[0]
+        for other in group[1:]:
+            if _is_near_duplicate(keep, other):
+                duplicates.append((other, keep))
     return duplicates
 
 

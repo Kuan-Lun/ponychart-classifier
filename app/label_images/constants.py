@@ -34,3 +34,7 @@ CLASS_NAMES_LIST: list[str] = [LABEL_MAP[i] for i in range(1, 7)]
 
 # Model analysis: |prob - threshold| below this is considered ambiguous
 SUSPICIOUS_MARGIN = 0.15
+
+# Near-duplicate detection: pixel-level thresholds
+NEAR_DUP_MAX_DIFF = 10  # 單一像素最大容許差異 (0-255)
+NEAR_DUP_MAX_RATIO = 0.01  # 不同像素佔比上限 (1%)

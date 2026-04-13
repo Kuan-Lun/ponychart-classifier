@@ -1,18 +1,81 @@
 """批次檔案操作：刪除裁切圖、全部整理（含去重、清理孤兒標籤、搬移）。"""
 
+import tkinter as tk
 from pathlib import Path
 from tkinter import messagebox
 
-from .constants import CONFLICT_SUBDIR, IMAGE_DIR
+from PIL import Image, ImageTk
+
+from .constants import CONFLICT_SUBDIR, IMAGE_DIR, MAX_SIZE
 from .file_ops import (
     cleanup_empty_dirs,
     dedup_images,
+    dedup_near_images,
     is_raw_image,
     organize_single,
     target_path_for,
 )
 from .label_store import LabelStore
 from .navigator import ImageNavigator
+
+
+def _load_thumbnail(path: Path) -> Image.Image:
+    """載入圖片並縮放至預覽大小。"""
+    img = Image.open(path).convert("RGB")
+    w, h = img.size
+    preview_max = MAX_SIZE // 2
+    scale = min(preview_max / max(1, w), preview_max / max(1, h), 1.0)
+    if scale < 1.0:
+        img = img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
+    return img
+
+
+def _confirm_near_dup(dup_path: Path, orig_path: Path) -> bool:
+    """彈出視窗並排顯示兩張圖片，讓使用者決定是否刪除較新的。"""
+    dlg = tk.Toplevel()
+    dlg.title("近似重複圖片確認")
+    dlg.grab_set()
+
+    result: list[bool] = [False]
+
+    img_keep = _load_thumbnail(orig_path)
+    img_del = _load_thumbnail(dup_path)
+    tk_keep = ImageTk.PhotoImage(img_keep)
+    tk_del = ImageTk.PhotoImage(img_del)
+
+    # 保留（左）
+    frm_keep = tk.Frame(dlg)
+    frm_keep.pack(side="left", padx=8, pady=8)
+    tk.Label(frm_keep, text="保留（較早）", font=("", 13, "bold")).pack()
+    tk.Label(frm_keep, text=orig_path.name, wraplength=400).pack()
+    tk.Label(frm_keep, image=tk_keep).pack()
+
+    # 刪除（右）
+    frm_del = tk.Frame(dlg)
+    frm_del.pack(side="left", padx=8, pady=8)
+    tk.Label(frm_del, text="刪除（較晚）", font=("", 13, "bold"), fg="red").pack()
+    tk.Label(frm_del, text=dup_path.name, wraplength=400).pack()
+    tk.Label(frm_del, image=tk_del).pack()
+
+    # 按鈕
+    btn_frame = tk.Frame(dlg)
+    btn_frame.pack(side="bottom", pady=8)
+
+    def on_delete() -> None:
+        result[0] = True
+        dlg.destroy()
+
+    def on_skip() -> None:
+        dlg.destroy()
+
+    tk.Button(btn_frame, text="刪除較晚的", command=on_delete, fg="red").pack(
+        side="left", padx=16
+    )
+    tk.Button(btn_frame, text="跳過", command=on_skip).pack(side="left", padx=16)
+
+    dlg.protocol("WM_DELETE_WINDOW", on_skip)
+    dlg.wait_window()
+    return result[0]
 
 
 class FileActions:
@@ -70,6 +133,20 @@ class FileActions:
                 n_dedup += 1
             self._store.save()
 
+        near_dups = dedup_near_images(list(self._nav.all_paths))
+        n_near = 0
+        if near_dups:
+            for dup_path, orig_path in near_dups:
+                if not _confirm_near_dup(dup_path, orig_path):
+                    continue
+                dup_key = self._store.path_to_key(dup_path)
+                self._store.delete(dup_key)
+                self._nav.remove_path(dup_path)
+                dup_path.unlink()
+                n_near += 1
+            if n_near:
+                self._store.save()
+
         orphans = self._store.purge_orphans(IMAGE_DIR)
         n_orphan = len(orphans)
         if n_orphan:
@@ -83,7 +160,7 @@ class FileActions:
             if p != target:
                 pending.append((p, key))
 
-        if not pending and not n_dedup and not n_orphan:
+        if not pending and not n_dedup and not n_near and not n_orphan:
             messagebox.showinfo("全部整理", "所有圖片已在正確位置，無重複。")
             return
 
@@ -117,7 +194,9 @@ class FileActions:
 
         parts = []
         if n_dedup:
-            parts.append(f"已刪除 {n_dedup} 張重複圖片。")
+            parts.append(f"已刪除 {n_dedup} 張重複圖片（SHA-256 相同）。")
+        if n_near:
+            parts.append(f"已刪除 {n_near} 張近似重複圖片（像素幾乎相同）。")
         if n_orphan:
             parts.append(f"已清理 {n_orphan} 筆孤兒標籤。")
         if n_moved:
