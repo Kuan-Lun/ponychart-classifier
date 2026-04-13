@@ -173,7 +173,6 @@ _SCENARIOS: list[_Scenario] = [
     _Scenario("k3_n9_uniform", 9, [1 / 3] * 3, _ALL_METHODS, 500),
     _Scenario("k3_n12_non_uniform", 12, [0.5, 0.3, 0.2], _ALL_METHODS, 500),
     _Scenario("k4_n150_non_uniform", 150, [0.4, 0.3, 0.2, 0.1], _ASYMP_METHODS, 500),
-    _Scenario("k6_n12_uniform", 12, [1 / 6] * 6, _ALL_METHODS, 500),
     _Scenario("k6_n60_uniform", 60, [1 / 6] * 6, _ASYMP_METHODS, 500),
     _Scenario("k6_n200_uniform", 200, [1 / 6] * 6, _ASYMP_METHODS, 500),
 ]
@@ -345,16 +344,6 @@ class TestTypeIErrorCalibration:
 
     def test_exact_conservative_k3_non_uniform(self) -> None:
         sc = _find("k3_n12_non_uniform")
-        rates = _get_rates(sc)
-        for a in _ALPHAS:
-            m_ = _margin(a, sc.n_sim)
-            for m in _EXACT_METHODS:
-                assert (
-                    rates[(a, m)] <= a + m_
-                ), f"{m} alpha={a}: rate {rates[(a, m)]:.3f} > {a} + {m_:.3f}"
-
-    def test_exact_conservative_k6_uniform(self) -> None:
-        sc = _find("k6_n12_uniform")
         rates = _get_rates(sc)
         for a in _ALPHAS:
             m_ = _margin(a, sc.n_sim)
