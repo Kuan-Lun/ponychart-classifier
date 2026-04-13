@@ -7,7 +7,7 @@ REPO_DIR = Path(__file__).resolve().parent.parent.parent
 IMAGE_SUBDIR = "rawimage"
 IMAGE_DIR = REPO_DIR / "rawimage"
 LABEL_FILE = IMAGE_DIR / "labels.json"
-MAX_SIZE = 800
+MAX_SIZE = 1004
 
 LABEL_MAP: dict[int, str] = {
     1: "Twilight Sparkle",
