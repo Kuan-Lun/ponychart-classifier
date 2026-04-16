@@ -137,6 +137,17 @@ class AnalysisManager:
         if old_key in self.model_probs:
             self.model_probs[new_key] = self.model_probs.pop(old_key)
 
+    def delete_key(self, key: str) -> None:
+        """移除已刪除圖片對應的預測結果。"""
+        if self.model_probs is None:
+            return
+        self.model_probs.pop(key, None)
+
+    def delete_keys(self, keys: list[str]) -> None:
+        """批次移除多張已不存在圖片的預測結果。"""
+        for key in keys:
+            self.delete_key(key)
+
 
 class AnalysisTable:
     """模型分析結果的表格 UI 元件。"""

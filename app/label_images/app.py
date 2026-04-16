@@ -260,6 +260,7 @@ class LabelApp:
         self.root = root
         self.store = LabelStore(LABEL_FILE, IMAGE_SUBDIR)
         self.nav = ImageNavigator(image_paths, self.store)
+        self.analysis = AnalysisManager()
 
         # Action groups
         self.label_actions = _LabelActions(self)
@@ -267,7 +268,7 @@ class LabelApp:
         self.crop_actions = _CropActions(self)
         self.filter_actions = _FilterActions(self)
         self.analysis_actions = _AnalysisActions(self)
-        self._file_actions = FileActions(self.nav, self.store)
+        self._file_actions = FileActions(self.nav, self.store, self.analysis)
         self._key_handler = _KeyHandler(self)
 
         root.title(
@@ -301,7 +302,6 @@ class LabelApp:
         )
 
         # Model analysis & checkpoint viewer
-        self.analysis = AnalysisManager()
         self._data_overview_viewer = DataOverviewViewer(root, self.store)
         self._model_info_viewer = ModelInfoViewer(root)
         self._val_f1_viewer = ValF1Viewer(root)

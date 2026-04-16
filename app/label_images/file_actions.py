@@ -6,6 +6,7 @@ from tkinter import messagebox
 
 from PIL import Image, ImageTk
 
+from .analysis import AnalysisManager
 from .constants import CONFLICT_SUBDIR, IMAGE_DIR, MAX_SIZE
 from .file_ops import (
     cleanup_empty_dirs,
@@ -81,9 +82,15 @@ def _confirm_near_dup(dup_path: Path, orig_path: Path) -> bool:
 class FileActions:
     """封裝需要使用者確認的批次檔案操作。"""
 
-    def __init__(self, nav: ImageNavigator, store: LabelStore) -> None:
+    def __init__(
+        self,
+        nav: ImageNavigator,
+        store: LabelStore,
+        analysis: AnalysisManager,
+    ) -> None:
         self._nav = nav
         self._store = store
+        self._analysis = analysis
 
     def delete_crop(self) -> bool:
         """刪除目前的裁切圖。回傳 True 表示有刪除。"""
@@ -103,6 +110,7 @@ class FileActions:
 
         key = self._nav.current_key
         self._store.delete(key)
+        self._analysis.delete_key(key)
         self._store.save()
         self._nav.remove_path(path)
         path.unlink(missing_ok=True)
@@ -128,6 +136,7 @@ class FileActions:
             for dup_path, _orig in dups:
                 dup_key = self._store.path_to_key(dup_path)
                 self._store.delete(dup_key)
+                self._analysis.delete_key(dup_key)
                 self._nav.remove_path(dup_path)
                 dup_path.unlink()
                 n_dedup += 1
@@ -141,6 +150,7 @@ class FileActions:
                     continue
                 dup_key = self._store.path_to_key(dup_path)
                 self._store.delete(dup_key)
+                self._analysis.delete_key(dup_key)
                 self._nav.remove_path(dup_path)
                 dup_path.unlink()
                 n_near += 1
@@ -150,6 +160,7 @@ class FileActions:
         orphans = self._store.purge_orphans(IMAGE_DIR)
         n_orphan = len(orphans)
         if n_orphan:
+            self._analysis.delete_keys(orphans)
             self._store.save()
 
         pending: list[tuple[Path, str]] = []
@@ -183,6 +194,7 @@ class FileActions:
                 if new_path != old_path:
                     new_key = self._store.path_to_key(new_path)
                     self._store.rename_key(old_key, new_key)
+                    self._analysis.rename_key(old_key, new_key)
                     self._nav.replace_path(old_path, new_path)
                     n_moved += 1
                     if CONFLICT_SUBDIR in new_path.parts:
