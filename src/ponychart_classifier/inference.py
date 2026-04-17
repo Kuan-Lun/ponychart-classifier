@@ -18,8 +18,8 @@ from .model_spec import (
     CLASS_NAMES,
     IMAGENET_MEAN,
     IMAGENET_STD,
-    INPUT_SIZE,
     ClassThresholds,
+    ImageSize,
     PredictionResult,
     select_predictions,
 )
@@ -32,6 +32,20 @@ _IMAGENET_MEAN = np.array(IMAGENET_MEAN, dtype=np.float32)
 _IMAGENET_STD = np.array(IMAGENET_STD, dtype=np.float32)
 
 
+def _read_input_size(session: Any) -> ImageSize:
+    """Recover ``(H, W)`` from the ONNX session's input shape ``[N, C, H, W]``."""
+    shape = session.get_inputs()[0].shape
+    if (
+        len(shape) != 4
+        or not isinstance(shape[2], int)
+        or not isinstance(shape[3], int)
+    ):
+        raise RuntimeError(
+            f"ONNX input must have fixed H and W (shape [N, C, H, W]); got {shape!r}."
+        )
+    return ImageSize(height=shape[2], width=shape[3])
+
+
 class PonyChartClassifier:
     """Lazy-loading ONNX classifier for PonyChart images."""
 
@@ -42,6 +56,7 @@ class PonyChartClassifier:
         self._session: Any = None
         self._classes: list[str] = list(CLASS_NAMES)
         self._thresholds: dict[str, float] = {}
+        self._input_size: ImageSize | None = None
 
     @staticmethod
     def _download(path: str, filename: str) -> None:
@@ -152,13 +167,15 @@ class PonyChartClassifier:
             self._session = ort.InferenceSession(
                 self._model_path, providers=["CPUExecutionProvider"]
             )
+            self._input_size = _read_input_size(self._session)
             with open(self._thresholds_path, encoding="utf-8") as f:
                 self._thresholds = json.load(f)
             self._loaded = True
 
     def _preprocess(self, bgr: np.ndarray[Any, Any]) -> np.ndarray[Any, Any]:
         """BGR image -> NCHW float32 tensor (matching training transforms)."""
-        resized = cv.resize(bgr, INPUT_SIZE.wh(), interpolation=cv.INTER_AREA)
+        assert self._input_size is not None, "load() must be called before _preprocess"
+        resized = cv.resize(bgr, self._input_size.wh(), interpolation=cv.INTER_AREA)
         rgb = cv.cvtColor(resized, cv.COLOR_BGR2RGB).astype(np.float32) / 255.0
         normalized = (rgb - _IMAGENET_MEAN) / _IMAGENET_STD
         # HWC -> CHW -> NCHW
