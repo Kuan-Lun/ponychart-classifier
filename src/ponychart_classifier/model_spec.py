@@ -3,17 +3,44 @@
 from __future__ import annotations
 
 import dataclasses
-from collections.abc import Sequence
+from enum import StrEnum
 
-NUM_CLASSES = 6
-CLASS_NAMES = [
-    "Twilight Sparkle",
-    "Rarity",
-    "Fluttershy",
-    "Rainbow Dash",
-    "Pinkie Pie",
-    "Applejack",
-]
+
+class PonyClass(StrEnum):
+    """Stable machine identifiers for PonyChart classes."""
+
+    TWILIGHT_SPARKLE = "twilight_sparkle"
+    RARITY = "rarity"
+    FLUTTERSHY = "fluttershy"
+    RAINBOW_DASH = "rainbow_dash"
+    PINKIE_PIE = "pinkie_pie"
+    APPLEJACK = "applejack"
+
+
+PONY_CLASSES = (
+    PonyClass.TWILIGHT_SPARKLE,
+    PonyClass.RARITY,
+    PonyClass.FLUTTERSHY,
+    PonyClass.RAINBOW_DASH,
+    PonyClass.PINKIE_PIE,
+    PonyClass.APPLEJACK,
+)
+
+DISPLAY_NAME_BY_CLASS: dict[PonyClass, str] = {
+    PonyClass.TWILIGHT_SPARKLE: "Twilight Sparkle",
+    PonyClass.RARITY: "Rarity",
+    PonyClass.FLUTTERSHY: "Fluttershy",
+    PonyClass.RAINBOW_DASH: "Rainbow Dash",
+    PonyClass.PINKIE_PIE: "Pinkie Pie",
+    PonyClass.APPLEJACK: "Applejack",
+}
+
+DISPLAY_NAME_TO_CLASS = {
+    name: pony_class for pony_class, name in DISPLAY_NAME_BY_CLASS.items()
+}
+
+NUM_CLASSES = len(PONY_CLASSES)
+CLASS_NAMES = [DISPLAY_NAME_BY_CLASS[pony_class] for pony_class in PONY_CLASSES]
 IMAGENET_MEAN = [0.485, 0.456, 0.406]
 IMAGENET_STD = [0.229, 0.224, 0.225]
 
@@ -43,56 +70,12 @@ class ImageSize:
 INPUT_SIZE = ImageSize(238, 431)
 
 
-MAX_K = 3
-
-
-@dataclasses.dataclass(frozen=True)
-class ClassThresholds:
-    """Per-class sigmoid thresholds for multi-label prediction."""
-
-    twilight_sparkle: float
-    rarity: float
-    fluttershy: float
-    rainbow_dash: float
-    pinkie_pie: float
-    applejack: float
-
-    def as_list(self) -> list[float]:
-        """Return thresholds as a list ordered by :data:`CLASS_NAMES`."""
-        return [
-            self.twilight_sparkle,
-            self.rarity,
-            self.fluttershy,
-            self.rainbow_dash,
-            self.pinkie_pie,
-            self.applejack,
-        ]
-
-
-@dataclasses.dataclass(frozen=True)
-class PredictionResult:
-    """Inference result with per-character scores and selected labels."""
-
-    twilight_sparkle: float
-    rarity: float
-    fluttershy: float
-    rainbow_dash: float
-    pinkie_pie: float
-    applejack: float
-    labels: frozenset[str]
-
-
-def select_predictions(
-    probs: Sequence[float],
-    thresholds: Sequence[float],
-    *,
-    min_k: int = 1,
-    max_k: int = MAX_K,
-) -> list[int]:
-    """Return 0-based class indices selected by thresholds with min/max-k capping."""
-    picked = [i for i, (p, t) in enumerate(zip(probs, thresholds)) if p >= t]
-    if len(picked) < min_k:
-        picked = sorted(range(len(probs)), key=lambda i: probs[i], reverse=True)[:max_k]
-    elif len(picked) > max_k:
-        picked = sorted(picked, key=lambda i: probs[i], reverse=True)[:max_k]
-    return picked
+def parse_class_key(key: str) -> PonyClass:
+    """Parse either a stable class id or a display name into :class:`PonyClass`."""
+    try:
+        return PonyClass(key)
+    except ValueError:
+        try:
+            return DISPLAY_NAME_TO_CLASS[key]
+        except KeyError as exc:
+            raise KeyError(f"Unknown PonyChart class key: {key}") from exc

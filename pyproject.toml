@@ -50,6 +50,7 @@ Homepage = "https://github.com/Kuan-Lun/ponychart-classifier"
 Tracker = "https://github.com/Kuan-Lun/ponychart-classifier/issues"
 
 [tool.hatch.build.targets.wheel]
+exclude = ["artifacts/**"]
 packages = ["src/ponychart_classifier"]
 
 [tool.ruff]

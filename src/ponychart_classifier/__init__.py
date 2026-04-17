@@ -1,19 +1,18 @@
 """PonyChart classifier -- inference constants and prediction utilities."""
 
-import os
 import sys
 
-from .inference import PonyChartClassifier
-from .model_spec import ClassThresholds, PredictionResult
+from .inference import ClassThresholds, PonyChartClassifier, PredictionResult
 
-_pkg_dir = os.path.dirname(__file__)
-_classifier = PonyChartClassifier(
-    model_path=os.path.join(_pkg_dir, "model.onnx"),
-    thresholds_path=os.path.join(_pkg_dir, "thresholds.json"),
-)
+_classifier = PonyChartClassifier()
 
 predict = _classifier.predict
 update = _classifier.update
+
+
+def clear_artifacts() -> None:
+    """Delete the runtime artifact cache directory and reset the default classifier."""
+    _classifier.clear_artifacts()
 
 
 def get_thresholds() -> ClassThresholds:
@@ -41,6 +40,7 @@ __all__ = [
     "ClassThresholds",
     "PonyChartClassifier",
     "PredictionResult",
+    "clear_artifacts",
     "get_thresholds",
     "predict",
     "preload",

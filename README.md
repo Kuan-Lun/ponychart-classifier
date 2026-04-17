@@ -39,12 +39,15 @@ ponychart-classifier/
 ├── src/
 │   └── ponychart_classifier/          # PyPI 套件
 │       ├── __init__.py                # 公開 API (predict, update, preload, get_thresholds)
-│       ├── model_spec.py              # 推論常數 + PredictionResult / ClassThresholds
-│       ├── inference.py               # PonyChartClassifier (ONNX 推論)
-│       ├── _http.py                   # SSL-aware URL opener
+│       ├── model_spec.py              # 訓練與推論共用模型規格
+│       ├── inference/                 # 推論 package
+│       │   ├── __init__.py            # inference API re-export
+│       │   ├── classifier.py          # PonyChartClassifier
+│       │   ├── artifacts.py           # runtime cache 路徑、下載、ETag
+│       │   ├── preprocessing.py       # 影像前處理
+│       │   ├── label_selection.py     # 閾值篩選與 top-k 規則
+│       │   └── results.py             # PredictionResult / ClassThresholds
 │       ├── py.typed                   # PEP 561 type marker
-│       ├── model.onnx                 # 隨套件發佈的 ONNX 模型
-│       ├── thresholds.json            # 隨套件發佈的分類閾值
 │       ├── stats/                     # 多項分布適合度檢定
 │       │   ├── __init__.py            # 公開 API re-export
 │       │   ├── asymptotic.py          # 漸近檢定 (chi-square / G-test)
@@ -93,6 +96,7 @@ ponychart-classifier/
 │   ├── fit_cards.py                   # PonyChart 角色分布模型擬合
 │   ├── learning_curve.py              # Learning curve 分析 + power-law 外推
 │   └── profile_dataloader.py          # DataLoader 效能分析
+├── artifacts/                         # 訓練輸出 model.onnx / thresholds.json (gitignored)
 ├── rawimage/                          # 訓練用原始圖片 (PNG)
 │   ├── labels.json                    # 標註資料 {"1/twilight/filename.png": [1,3]}
 │   └── checkpoint.pt                  # PyTorch checkpoint (resume 訓練用)
@@ -138,7 +142,13 @@ mypyc 編譯的 extension 找不到內部模組，執行下列指令把 `.venv`
 ## 使用方式
 
 ```python
-from ponychart_classifier import predict, preload, update, get_thresholds
+from ponychart_classifier import (
+    clear_artifacts,
+    predict,
+    preload,
+    update,
+    get_thresholds,
+)
 from ponychart_classifier import PonyChartClassifier, PredictionResult, ClassThresholds
 
 # 預先載入模型
@@ -155,6 +165,9 @@ print(result.twilight_sparkle)  # 0.02
 
 # 取得各角色的分類閾值
 thresholds: ClassThresholds = get_thresholds()
+
+# 清除 runtime cache，下一次載入時會重新下載
+clear_artifacts()
 ```
 
 也可以直接使用 `PonyChartClassifier` 類別：
@@ -163,10 +176,19 @@ thresholds: ClassThresholds = get_thresholds()
 from ponychart_classifier import PonyChartClassifier
 
 classifier = PonyChartClassifier(
-    model_path="model.onnx", thresholds_path="thresholds.json"
+    model_path="artifacts/model.onnx",
+    thresholds_path="artifacts/thresholds.json",
 )
 result = classifier.predict("path/to/image.png", min_k=1, max_k=3)
 ```
+
+未顯式指定路徑時，`PonyChartClassifier` 會使用使用者 cache 目錄中的 runtime artifact：
+
+- macOS: `~/Library/Caches/ponychart-classifier/`
+- Linux: `~/.cache/ponychart-classifier/` 或 `XDG_CACHE_HOME`
+- Windows: `%LOCALAPPDATA%\\ponychart-classifier\\Cache\\`
+
+這些檔案不隨 package 發佈；若 cache 被清掉，下一次 `preload()`、`predict()` 或 `update()` 會重新下載。
 
 ## 工作流程
 
@@ -198,7 +220,8 @@ uv run python scripts/train.py
 uv run python scripts/train.py --from-scratch
 ```
 
-訓練完成後會覆寫 `model.onnx`、`thresholds.json` 和 `checkpoint.pt`，下次推論自動使用新模型。
+訓練完成後會覆寫 `artifacts/model.onnx`、`artifacts/thresholds.json` 和 `checkpoint.pt`。
+開發者可直接從 `artifacts/` 上傳模型到雲端；一般使用者的 runtime `update()` 則只更新 user cache dir。
 
 ### Resume 訓練
 
@@ -236,7 +259,7 @@ uv run python scripts/train.py --from-scratch
 | `efficientnet_b2` | 9.1M | ~18MB | 最大模型，較高精度但較慢 |
 
 所有 backbone 都使用 ImageNet 預訓練權重 + transfer learning。
-推論端使用 ONNX Runtime，backbone 更換後只需重新匯出 `model.onnx`，推論程式碼不需改動。
+推論端使用 ONNX Runtime，backbone 更換後只需重新匯出 `artifacts/model.onnx`，推論程式碼不需改動。
 
 ## CLI 實驗模組
 

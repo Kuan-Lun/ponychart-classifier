@@ -23,10 +23,10 @@ from pathlib import Path
 
 import torch
 
+from ponychart_classifier.model_spec import DISPLAY_NAME_BY_CLASS, PONY_CLASSES
 from ponychart_classifier.training import (
     BACKBONE,
     BATCH_SIZE,
-    CLASS_NAMES,
     INPUT_SIZE,
     LABEL_SMOOTHING,
     LR_CLASSIFIER,
@@ -205,9 +205,15 @@ def _run(args: argparse.Namespace) -> None:
     model, thresholds = result.model, result.thresholds
 
     # Save thresholds
-    thresholds_dict = dict(zip(CLASS_NAMES, thresholds))
-    for name, thr in thresholds_dict.items():
-        logger.info("  %s: threshold=%.4f", name, thr)
+    OUTPUT_THRESHOLDS.parent.mkdir(parents=True, exist_ok=True)
+    thresholds_dict = {
+        pony_class.value: threshold
+        for pony_class, threshold in zip(PONY_CLASSES, thresholds)
+    }
+    for pony_class, threshold in zip(PONY_CLASSES, thresholds):
+        logger.info(
+            "  %s: threshold=%.4f", DISPLAY_NAME_BY_CLASS[pony_class], threshold
+        )
     with open(OUTPUT_THRESHOLDS, "w", encoding="utf-8") as f:
         json.dump(thresholds_dict, f, ensure_ascii=False, indent=2)
     logger.info("Thresholds saved: %s", OUTPUT_THRESHOLDS)
@@ -266,6 +272,7 @@ def _run(args: argparse.Namespace) -> None:
 
     # Export ONNX
     logger.info("Exporting ONNX...")
+    OUTPUT_ONNX.parent.mkdir(parents=True, exist_ok=True)
     export_onnx(model, OUTPUT_ONNX, input_size=INPUT_SIZE)
 
     # Recompute val_f1 on current dataset and update checkpoint

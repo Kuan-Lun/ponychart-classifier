@@ -14,6 +14,7 @@ from ponychart_classifier.model_spec import (  # noqa: F401
 )
 
 __all__ = [
+    "ARTIFACTS_DIR",
     "CLASS_NAMES",
     "IMAGENET_MEAN",
     "IMAGENET_STD",
@@ -24,14 +25,14 @@ __all__ = [
 
 PACKAGE_DIR = Path(__file__).resolve().parent.parent  # src/ponychart_classifier/
 REPO_DIR = PACKAGE_DIR.parent.parent  # repo root
+ARTIFACTS_DIR = REPO_DIR / "artifacts"
 
 RAWIMAGE_DIR = REPO_DIR / "rawimage"
 LABELS_FILE = RAWIMAGE_DIR / "labels.json"
 OUTPUT_CHECKPOINT = RAWIMAGE_DIR / "checkpoint.pt"
 
-# These are shipped as package-data inside ponychart_classifier/
-OUTPUT_ONNX = PACKAGE_DIR / "model.onnx"
-OUTPUT_THRESHOLDS = PACKAGE_DIR / "thresholds.json"
+OUTPUT_ONNX = ARTIFACTS_DIR / "model.onnx"
+OUTPUT_THRESHOLDS = ARTIFACTS_DIR / "thresholds.json"
 
 # Training hyperparameters (single source of truth)
 BACKBONE = "efficientnet_b0"
