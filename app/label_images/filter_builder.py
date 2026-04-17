@@ -3,7 +3,7 @@
 from collections.abc import Callable
 from pathlib import Path
 
-from ponychart_classifier.model_spec import select_predictions
+from ponychart_classifier.inference.label_selection import select_predictions
 from ponychart_classifier.training.constants import VAL_SIZE
 from ponychart_classifier.training.sampling import (
     Sample,

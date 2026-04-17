@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+from ponychart_classifier.model_spec import DISPLAY_NAME_BY_CLASS, PONY_CLASSES
+
 # 所有路徑以 repo root 為基準
 REPO_DIR = Path(__file__).resolve().parent.parent.parent
 IMAGE_SUBDIR = "rawimage"
@@ -10,12 +12,8 @@ LABEL_FILE = IMAGE_DIR / "labels.json"
 MAX_SIZE = 1004
 
 LABEL_MAP: dict[int, str] = {
-    1: "Twilight Sparkle",
-    2: "Rarity",
-    3: "Fluttershy",
-    4: "Rainbow Dash",
-    5: "Pinkie Pie",
-    6: "Applejack",
+    index: DISPLAY_NAME_BY_CLASS[pony_class]
+    for index, pony_class in enumerate(PONY_CLASSES, start=1)
 }
 
 LABEL_DIR_NAMES: dict[int, str] = {

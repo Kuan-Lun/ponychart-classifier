@@ -5,7 +5,7 @@ import tkinter as tk
 from collections.abc import Callable
 
 import ponychart_classifier as _pkg
-from ponychart_classifier.model_spec import select_predictions
+from ponychart_classifier.inference.label_selection import select_predictions
 from ponychart_classifier.training import OUTPUT_CHECKPOINT, recompute_checkpoint_val_f1
 from ponychart_classifier.training.sampling import Sample
 
