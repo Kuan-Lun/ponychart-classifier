@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Stop-hook: run formatters and type checker on the whole project before
-# Claude finishes responding. Mirrors VS Code's on-save pipeline:
+# Stop-hook implementation shared by Claude and Codex.
+# Mirrors VS Code's on-save pipeline:
 #   1. Black                 — pre-format pass; also catches syntax errors.
 #   2. Ruff `--fix`          — auto-fixes safe lints (imports, pyupgrade, …).
 #   3. Black                 — second pass: re-format whatever ruff rewrote
@@ -16,10 +16,9 @@
 # the right gate.
 #
 # Error handling: any tool failing causes the script to exit 2, which makes
-# Claude Code surface the captured stderr to the model on the next turn.
-# stderr from a successful tool is invisible to Claude (Stop hooks only
-# forward stderr on non-zero exit), so the noisy "All done! ✨ 🍰 ✨" lines
-# from black don't pollute the transcript.
+# the caller surface the captured stderr to the model on the next turn.
+# stderr from a successful tool is intentionally ignored, so the noisy
+# "All done! ✨ 🍰 ✨" lines from black do not pollute the transcript.
 
 set -eu
 trap 'exit 2' ERR
