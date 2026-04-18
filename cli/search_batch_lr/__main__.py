@@ -168,7 +168,13 @@ class SearchBatchLrCLI(ExperimentCLI):
         )
 
         seed_all(SEED)
-        best_f1, best_per_class, stopped_epoch, elapsed_s = run_experiment(
+        (
+            best_f1,
+            best_per_class,
+            phase1_stopped_epoch,
+            stopped_epoch,
+            elapsed_s,
+        ) = run_experiment(
             train_ds,
             val_ds,
             device,
@@ -195,6 +201,7 @@ class SearchBatchLrCLI(ExperimentCLI):
             lr_classifier=config.lr_classifier,
             best_f1=best_f1,
             per_class_f1=best_per_class,
+            phase1_stopped_epoch=phase1_stopped_epoch,
             stopped_epoch=stopped_epoch,
             time_s=elapsed_s,
             train_size=len(train_samples),
@@ -207,9 +214,10 @@ class SearchBatchLrCLI(ExperimentCLI):
         )
 
         self.logger.info(
-            ">> batch=%d  F1=%.4f  stopped_epoch=%d  time=%.1fs",
+            ">> batch=%d  F1=%.4f  p1_stop=%d  p2_stop=%d  time=%.1fs",
             batch_size,
             best_f1,
+            phase1_stopped_epoch,
             stopped_epoch,
             elapsed_s,
         )
@@ -249,7 +257,7 @@ class SearchBatchLrCLI(ExperimentCLI):
 
         self.logger.info("")
         self.logger.info(
-            "  %-4s  %-6s  %-8s  %-10s  %-10s  %-10s  %-8s  %-6s  %-7s",
+            "  %-4s  %-6s  %-8s  %-10s  %-10s  %-10s  %-8s  %-6s  %-6s  %-7s",
             "Rank",
             "Batch",
             "LR scale",
@@ -257,14 +265,15 @@ class SearchBatchLrCLI(ExperimentCLI):
             "LR feat",
             "LR cls",
             "Macro F1",
-            "Epoch",
+            "P1 Ep",
+            "P2 Ep",
             "Time",
         )
-        self.logger.info("  " + "-" * 85)
+        self.logger.info("  " + "-" * 93)
         for rank, r in enumerate(sorted_by_f1, 1):
             self.logger.info(
                 "  #%-3d  %-6d  %-8s  %-10.1e  %-10.1e  %-10.1e"
-                "  %-8.4f  %-6d  %-7.1fs",
+                "  %-8.4f  %-6d  %-6d  %-7.1fs",
                 rank,
                 r.batch_size,
                 f"{r.lr_scale:.1f}x",
@@ -272,6 +281,7 @@ class SearchBatchLrCLI(ExperimentCLI):
                 r.lr_features,
                 r.lr_classifier,
                 r.best_f1,
+                r.phase1_stopped_epoch,
                 r.stopped_epoch,
                 r.time_s,
             )

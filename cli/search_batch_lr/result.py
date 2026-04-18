@@ -25,6 +25,7 @@ class SearchResult:
     lr_classifier: float
     best_f1: float
     per_class_f1: list[float]
+    phase1_stopped_epoch: int
     stopped_epoch: int
     time_s: float
     train_size: int
@@ -54,6 +55,7 @@ class SearchResultDict(TypedDict):
     lr_classifier: float
     best_f1: float
     per_class_f1: list[float]
+    phase1_stopped_epoch: int
     stopped_epoch: int
     time_s: float
     split: SplitDict
@@ -72,6 +74,7 @@ def result_to_dict(result: SearchResult) -> SearchResultDict:
         lr_classifier=result.lr_classifier,
         best_f1=result.best_f1,
         per_class_f1=list(result.per_class_f1),
+        phase1_stopped_epoch=result.phase1_stopped_epoch,
         stopped_epoch=result.stopped_epoch,
         time_s=result.time_s,
         split=SplitDict(
@@ -96,6 +99,7 @@ def result_from_dict(data: SearchResultDict) -> SearchResult:
         lr_classifier=data["lr_classifier"],
         best_f1=data["best_f1"],
         per_class_f1=list(data["per_class_f1"]),
+        phase1_stopped_epoch=data["phase1_stopped_epoch"],
         stopped_epoch=data["stopped_epoch"],
         time_s=data["time_s"],
         train_size=split["train_size"],

@@ -1,7 +1,9 @@
 """Two-phase training experiment for batch-LR search.
 
-Phase 1 freezes the backbone and trains only the head.
-Phase 2 unfreezes and fine-tunes with ReduceLROnPlateau + early stopping.
+Phase 1 freezes the backbone and trains only the head, with val_loss
+early stopping (patience ``PHASE1_PATIENCE``) matching ``train.py``.
+Phase 2 unfreezes and fine-tunes with ReduceLROnPlateau + val_F1 early
+stopping.
 """
 
 from __future__ import annotations
@@ -13,6 +15,8 @@ import torch.nn as nn
 
 from ponychart_classifier.training import (
     MIN_DELTA_F1,
+    MIN_DELTA_LOSS,
+    PHASE1_PATIENCE,
     SCHEDULER_FACTOR,
     SCHEDULER_MIN_LR,
     SCHEDULER_PATIENCE,
@@ -39,10 +43,11 @@ def run_experiment(
     lr_features: float,
     lr_classifier: float,
     backbone: str,
-) -> tuple[float, list[float], int, float]:
+) -> tuple[float, list[float], int, int, float]:
     """Run one two-phase training experiment.
 
-    Returns ``(best_f1, best_per_class_f1, stopped_epoch, elapsed_s)``.
+    Returns ``(best_f1, best_per_class_f1, phase1_stopped_epoch,
+    stopped_epoch, elapsed_s)``.
     """
     t0 = time.monotonic()
     train_loader = make_dataloader(
@@ -64,14 +69,26 @@ def run_experiment(
     features, classifier = _extract_submodules(model)
     criterion = nn.BCEWithLogitsLoss()
 
-    # Phase 1: Head only
+    # Phase 1: Head only (val_loss early stopping, mirrors train.py)
     for param in features.parameters():
         param.requires_grad = False
     optimizer = torch.optim.AdamW(
         classifier.parameters(), lr=lr_head, weight_decay=WEIGHT_DECAY
     )
-    for _epoch in range(1, SEARCH_PHASE1_EPOCHS + 1):
+    best_p1_loss = float("inf")
+    p1_patience_counter = 0
+    phase1_stopped_epoch = SEARCH_PHASE1_EPOCHS
+    for epoch in range(1, SEARCH_PHASE1_EPOCHS + 1):
         train_one_epoch(model, train_loader, criterion, optimizer, device)
+        p1_val_loss = evaluate(model, val_loader, criterion, device).loss
+        if p1_val_loss < best_p1_loss - MIN_DELTA_LOSS:
+            best_p1_loss = p1_val_loss
+            p1_patience_counter = 0
+        else:
+            p1_patience_counter += 1
+        if p1_patience_counter >= PHASE1_PATIENCE:
+            phase1_stopped_epoch = epoch
+            break
 
     # Phase 2: Full fine-tuning
     for param in features.parameters():
@@ -113,4 +130,10 @@ def run_experiment(
             stopped_epoch = epoch
             break
 
-    return best_f1, best_per_class, stopped_epoch, time.monotonic() - t0
+    return (
+        best_f1,
+        best_per_class,
+        phase1_stopped_epoch,
+        stopped_epoch,
+        time.monotonic() - t0,
+    )
