@@ -18,7 +18,6 @@ resume 效果，與同資料量的 from-scratch 比較，找出 crossover point�
 
 from __future__ import annotations
 
-import copy
 import logging
 from dataclasses import dataclass
 
@@ -32,25 +31,17 @@ from ponychart_classifier.training import (
     HOLDOUT_TEST_SIZE,
     SEED,
     VAL_SIZE,
-    Sample,
-    build_groups,
-    evaluate,
-    extract_original_test_samples,
+    configure_logging,
     get_transforms,
-    load_samples_logged,
+    log_per_class_table,
     log_section,
     make_test_loader,
-    prepare_balanced_samples,
-    seed_all,
-    setup_device_and_workers,
-    split_by_groups,
-    train_with_seed_reset,
+    prepare_balanced_train_val_for_group_keys,
+    prepare_group_holdout_setup_logged,
+    train_and_evaluate_on_test,
 )
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-)
+configure_logging(logging.INFO)
 logger = logging.getLogger(__name__)
 
 
@@ -67,35 +58,6 @@ class ResumeExperiment:
 
 BASE_FRACTIONS = [0.50, 0.60, 0.70, 0.80, 0.90]
 SAFETY_MARGIN = 0.75
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-def prepare_train_val(
-    samples: list[Sample],
-    seed: int,
-    val_gk_set: set[str],
-) -> tuple[list[Sample], list[Sample]]:
-    """Apply orig/crop balance + train/val split (same pipeline as train.py)."""
-    rng = np.random.RandomState(seed)
-    balanced = prepare_balanced_samples(samples, rng)
-
-    sub_groups = build_groups(balanced)
-
-    train_samples = [
-        balanced[i]
-        for gk, indices in sub_groups.items()
-        if gk not in val_gk_set
-        for i in indices
-    ]
-    val_samples = [
-        balanced[i]
-        for gk, indices in sub_groups.items()
-        if gk in val_gk_set
-        for i in indices
-    ]
-    return train_samples, val_samples
 
 
 def find_crossover(
@@ -119,56 +81,60 @@ def find_crossover(
 # Main
 # ---------------------------------------------------------------------------
 def main() -> None:
-    seed_all(SEED)
-    device, num_workers = setup_device_and_workers(logger)
-    all_samples = load_samples_logged(logger)
-
-    # ── Build group index ──
-    groups = build_groups(all_samples)
-
-    # ── Split: test / val / train ──
-    gsp = split_by_groups(all_samples, test_size=HOLDOUT_TEST_SIZE, val_size=VAL_SIZE)
-    val_gk_set = set(gsp.val)
-
-    test_samples = extract_original_test_samples(all_samples, gsp.test, groups)
-    logger.info("Test set (originals only): %d images", len(test_samples))
+    setup = prepare_group_holdout_setup_logged(
+        logger,
+        seed=SEED,
+        test_size=HOLDOUT_TEST_SIZE,
+        val_size=VAL_SIZE,
+    )
+    val_group_keys = setup.val_group_keys
 
     # Prepare shared test loader
-    test_loader = make_test_loader(test_samples, BATCH_SIZE, num_workers, device)
+    test_loader = make_test_loader(
+        setup.test_samples,
+        BATCH_SIZE,
+        setup.num_workers,
+        setup.device,
+    )
     criterion = nn.BCEWithLogitsLoss()
 
     # ── Collect pool samples ──
-    train_val_group_keys = gsp.train + gsp.val
-    pool_indices = [idx for gk in train_val_group_keys for idx in groups[gk]]
-    pool_samples = [all_samples[i] for i in pool_indices]
+    train_val_group_keys = setup.train_val_group_keys
+    pool_samples = [
+        setup.all_samples[i]
+        for gk in train_val_group_keys
+        for i in setup.groups[gk]
+    ]
 
     # Sort pool group keys chronologically
     sorted_pool_groups = sorted(train_val_group_keys)
     logger.info("Pool groups (chronological): %d", len(sorted_pool_groups))
 
     # ── Full train/val split for baseline and resume targets ──
-    full_train, full_val = prepare_train_val(pool_samples, SEED, val_gk_set)
+    full_train, full_val = prepare_balanced_train_val_for_group_keys(
+        setup.all_samples,
+        setup.groups,
+        train_val_group_keys,
+        seed=SEED,
+        val_group_keys=val_group_keys,
+    )
     logger.info("Full pool: train=%d  val=%d", len(full_train), len(full_val))
 
     # ── Baseline: 100% from scratch ──
     log_section(logger, "BASELINE: %d%% data from scratch", 100, width=70)
 
-    scratch_train_result = train_with_seed_reset(
+    scratch_run = train_and_evaluate_on_test(
         full_train,
         full_val,
-        device,
-        num_workers,
-        "Baseline (100% from scratch)",
+        device=setup.device,
+        num_workers=setup.num_workers,
+        label="Baseline (100% from scratch)",
+        test_loader=test_loader,
+        criterion=criterion,
         train_transform=get_transforms(is_train=True),
         backbone=BACKBONE,
     )
-    scratch_result = evaluate(
-        scratch_train_result.model,
-        test_loader,
-        criterion,
-        device,
-        scratch_train_result.thresholds,
-    )
+    scratch_result = scratch_run.eval_result
     scratch_f1 = scratch_result.macro_f1
     logger.info(">> Baseline scratch F1: %.4f", scratch_f1)
 
@@ -178,15 +144,10 @@ def main() -> None:
     for frac in BASE_FRACTIONS:
         n_groups = max(1, int(np.ceil(frac * len(sorted_pool_groups))))
         base_group_keys = sorted_pool_groups[:n_groups]
+        base_n = sum(len(setup.groups[gk]) for gk in base_group_keys)
 
-        # Collect base samples
-        base_indices = []
-        for gk in base_group_keys:
-            base_indices.extend(groups[gk])
-        base_samples = [all_samples[i] for i in base_indices]
-
-        new_n = len(pool_samples) - len(base_samples)
-        new_ratio = new_n / max(len(base_samples), 1)
+        new_n = len(pool_samples) - base_n
+        new_ratio = new_n / max(base_n, 1)
         pct = int(frac * 100)
 
         # Step 1: Train from scratch on base data -> checkpoint
@@ -194,50 +155,52 @@ def main() -> None:
             logger,
             "BASE %d%% (%d samples) -> new_data_ratio=%.1f%%",
             pct,
-            len(base_samples),
+            base_n,
             new_ratio * 100,
             width=70,
         )
 
-        seed_all(SEED)
-        base_train, base_val = prepare_train_val(base_samples, SEED, val_gk_set)
+        base_train, base_val = prepare_balanced_train_val_for_group_keys(
+            setup.all_samples,
+            setup.groups,
+            base_group_keys,
+            seed=SEED,
+            val_group_keys=val_group_keys,
+        )
         logger.info("  Base train=%d  val=%d", len(base_train), len(base_val))
 
-        base_train_result = train_with_seed_reset(
+        base_run = train_and_evaluate_on_test(
             base_train,
             base_val,
-            device,
-            num_workers,
-            f"Base {pct}% from scratch",
+            device=setup.device,
+            num_workers=setup.num_workers,
+            label=f"Base {pct}% from scratch",
+            test_loader=test_loader,
+            criterion=criterion,
             train_transform=get_transforms(is_train=True),
             backbone=BACKBONE,
         )
-        base_state_dict = copy.deepcopy(base_train_result.model.state_dict())
 
         # Step 2: Resume from base checkpoint with 100% data
-        resume_train_result = train_with_seed_reset(
+        resume_run = train_and_evaluate_on_test(
             full_train,
             full_val,
-            device,
-            num_workers,
-            f"Resume from {pct}% checkpoint",
+            device=setup.device,
+            num_workers=setup.num_workers,
+            label=f"Resume from {pct}% checkpoint",
+            test_loader=test_loader,
+            criterion=criterion,
             train_transform=get_transforms(is_train=True),
             backbone=BACKBONE,
-            resume_state_dict=base_state_dict,
+            resume_state_dict=base_run.state_dict,
         )
-        resume_result = evaluate(
-            resume_train_result.model,
-            test_loader,
-            criterion,
-            device,
-            resume_train_result.thresholds,
-        )
+        resume_result = resume_run.eval_result
 
         delta = scratch_f1 - resume_result.macro_f1
         experiment_results.append(
             ResumeExperiment(
                 fraction=frac,
-                base_n=len(base_samples),
+                base_n=base_n,
                 new_n=new_n,
                 new_ratio=new_ratio,
                 resume_f1=resume_result.macro_f1,
@@ -292,19 +255,12 @@ def main() -> None:
         "PER-CLASS DELTA (scratch_f1 - resume_f1, positive = scratch better)",
     )
     logger.info("")
-
-    header = f"  {'Class':<20s}"
-    for r in experiment_results:
-        header += f"  {int(r.fraction * 100)}%".ljust(10)
-    logger.info(header)
-    logger.info("  " + "-" * (20 + 10 * len(experiment_results)))
-
-    for i, name in enumerate(CLASS_NAMES):
-        row = f"  {name:<20s}"
-        for r in experiment_results:
-            class_delta = scratch_result.per_class_f1[i] - r.resume_per_class_f1[i]
-            row += f"  {class_delta:+.4f}  "
-        logger.info(row)
+    log_per_class_table(
+        logger,
+        [f"{int(r.fraction * 100)}%" for r in experiment_results],
+        lambda i, j: f"{scratch_result.per_class_f1[i] - experiment_results[j].resume_per_class_f1[i]:+.4f}",
+        col_width=8,
+    )
 
     # ── Crossover analysis ──
     log_section(logger, "CROSSOVER ANALYSIS")

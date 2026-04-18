@@ -24,32 +24,34 @@ import os
 from dataclasses import dataclass
 
 import numpy as np
-import torch.nn as nn
 
 from ponychart_classifier.training import (
     BACKBONE,
     BATCH_SIZE,
     CLASS_NAMES,
+    MODERATE_CORRELATION,
     NUM_CLASSES,
     SEED,
+    STRONG_CORRELATION,
     VAL_SIZE,
+    PerClassMetricsBlock,
     Sample,
-    build_groups,
+    ThresholdRow,
     compute_class_rates,
-    evaluate,
-    extract_original_test_samples,
+    configure_logging,
     get_base_timestamp,
     get_transforms,
+    is_negligible_delta,
     is_original,
-    load_samples_logged,
+    is_significant_regression,
+    log_named_thresholds,
+    log_per_class_precision_recall_blocks,
     log_section,
     make_test_loader,
     prepare_balanced_samples,
-    seed_all,
-    setup_device_and_workers,
-    split_by_groups,
-    train_model,
-    train_with_seed_reset,
+    prepare_group_holdout_setup_logged,
+    split_balanced_train_val,
+    train_and_evaluate_on_test,
 )
 
 
@@ -68,10 +70,7 @@ class CropRecommendation:
     beneficial: bool
 
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-)
+configure_logging(logging.INFO)
 logger = logging.getLogger(__name__)
 
 
@@ -104,115 +103,111 @@ def _pearson_r(x: list[float], y: list[float]) -> float:
 # Main
 # ---------------------------------------------------------------------------
 def main() -> None:
-    rng = seed_all(SEED)
-    device, num_workers = setup_device_and_workers(logger)
-    all_samples = load_samples_logged(logger)
-
-    # Split groups: test / val / train
-    gsp = split_by_groups(all_samples, test_size=0.10, val_size=VAL_SIZE)
-    val_gk_set = set(gsp.val)
-
-    # Build index from base timestamp to sample indices
-    groups = build_groups(all_samples)
-
-    # Test set: only original images from test groups
-    test_samples = extract_original_test_samples(all_samples, gsp.test, groups)
+    setup = prepare_group_holdout_setup_logged(
+        logger,
+        seed=SEED,
+        test_size=0.10,
+        val_size=VAL_SIZE,
+    )
+    rng = np.random.RandomState(SEED)
+    val_gk_set = setup.val_group_keys
 
     # Collect train+val indices, separate originals and crops
     train_val_indices_orig = []
     train_val_indices_crop = []
-    for gk in gsp.train + gsp.val:
-        for idx in groups[gk]:
-            fname = os.path.basename(all_samples[idx].path)
+    for gk in setup.train_val_group_keys:
+        for idx in setup.groups[gk]:
+            fname = os.path.basename(setup.all_samples[idx].path)
             if is_original(fname):
                 train_val_indices_orig.append(idx)
             else:
                 train_val_indices_crop.append(idx)
 
-    train_val_all = [all_samples[i] for gk in gsp.train + gsp.val for i in groups[gk]]
-    train_val_orig = [all_samples[i] for i in train_val_indices_orig]
-    train_val_crop = [all_samples[i] for i in train_val_indices_crop]
+    train_val_all = [
+        setup.all_samples[i]
+        for gk in setup.train_val_group_keys
+        for i in setup.groups[gk]
+    ]
+    train_val_orig = [setup.all_samples[i] for i in train_val_indices_orig]
+    train_val_crop = [setup.all_samples[i] for i in train_val_indices_crop]
 
     # ── Experiment C: balance samples using GoF-based strategy ──
     orig_rates = compute_class_rates(train_val_orig)
     train_val_balanced = prepare_balanced_samples(train_val_all, rng)
 
-    # ── Helper: split a sample list into train/val using pre-computed groups ──
-    def _train_val_split(
-        samples: list[Sample],
-    ) -> tuple[list[Sample], list[Sample]]:
-        idx_groups = build_groups(samples)
-        train = [
-            samples[i]
-            for gk, indices in idx_groups.items()
-            if gk not in val_gk_set
-            for i in indices
-        ]
-        val = [
-            samples[i]
-            for gk, indices in idx_groups.items()
-            if gk in val_gk_set
-            for i in indices
-        ]
-        return train, val
-
     # ── Split train/val for each experiment ──
     # Experiment A: originals + all crops (biased)
-    train_a, val_a = _train_val_split(train_val_all)
+    train_a, val_a = split_balanced_train_val(
+        train_val_all,
+        seed=SEED,
+        val_group_keys=val_gk_set,
+    )
 
     # Experiment B: originals only
-    train_b, val_b = _train_val_split(train_val_orig)
+    train_b, val_b = split_balanced_train_val(
+        train_val_orig,
+        seed=SEED,
+        val_group_keys=val_gk_set,
+    )
 
     # Experiment C: originals + balanced crops
-    train_c, val_c = _train_val_split(train_val_balanced)
-
-    criterion = nn.BCEWithLogitsLoss()
+    train_c, val_c = split_balanced_train_val(
+        train_val_balanced,
+        seed=SEED,
+        val_group_keys=val_gk_set,
+    )
 
     # ---- Train experiments (all from ImageNet pretrained weights) ----
-    train_result_a = train_model(
+    test_loader = make_test_loader(
+        setup.test_samples,
+        BATCH_SIZE,
+        setup.num_workers,
+        setup.device,
+    )
+    run_a = train_and_evaluate_on_test(
         train_a,
         val_a,
-        device,
-        num_workers,
-        "A: Originals + biased crops",
+        device=setup.device,
+        num_workers=setup.num_workers,
+        label="A: Originals + biased crops",
+        test_loader=test_loader,
         train_transform=get_transforms(is_train=True),
         backbone=BACKBONE,
     )
-    model_a, thresholds_a = train_result_a.model, train_result_a.thresholds
+    thresholds_a = run_a.train_result.thresholds
 
-    train_result_b = train_with_seed_reset(
+    run_b = train_and_evaluate_on_test(
         train_b,
         val_b,
-        device,
-        num_workers,
-        "B: Originals only (baseline)",
+        device=setup.device,
+        num_workers=setup.num_workers,
+        label="B: Originals only (baseline)",
+        test_loader=test_loader,
         train_transform=get_transforms(is_train=True),
         backbone=BACKBONE,
     )
-    model_b, thresholds_b = train_result_b.model, train_result_b.thresholds
+    thresholds_b = run_b.train_result.thresholds
 
-    train_result_c = train_with_seed_reset(
+    run_c = train_and_evaluate_on_test(
         train_c,
         val_c,
-        device,
-        num_workers,
-        "C: Originals + balanced crops",
+        device=setup.device,
+        num_workers=setup.num_workers,
+        label="C: Originals + balanced crops",
+        test_loader=test_loader,
         train_transform=get_transforms(is_train=True),
         backbone=BACKBONE,
     )
-    model_c, thresholds_c = train_result_c.model, train_result_c.thresholds
-
-    # ---- Evaluate all on test set ----
-    test_loader = make_test_loader(test_samples, BATCH_SIZE, num_workers, device)
-
-    eval_a = evaluate(model_a, test_loader, criterion, device, thresholds_a)
-    eval_b = evaluate(model_b, test_loader, criterion, device, thresholds_b)
-    eval_c = evaluate(model_c, test_loader, criterion, device, thresholds_c)
+    thresholds_c = run_c.train_result.thresholds
+    eval_a = run_a.eval_result
+    eval_b = run_b.eval_result
+    eval_c = run_c.eval_result
 
     # ── Data split summary ──
     log_section(logger, "DATA SPLIT SUMMARY", width=80)
     logger.info(
-        "Test set (shared, originals only): %s images", f"{len(test_samples):,}"
+        "Test set (shared, originals only): %s images",
+        f"{len(setup.test_samples):,}",
     )
     logger.info("")
     logger.info("Experiment A (orig + biased crops):")
@@ -239,12 +234,18 @@ def main() -> None:
     log_section(
         logger,
         "TEST SET EVALUATION (on %d original images)",
-        len(test_samples),
+        len(setup.test_samples),
         width=80,
     )
-    logger.info("  A thresholds: %s", dict(zip(CLASS_NAMES, thresholds_a)))
-    logger.info("  B thresholds: %s", dict(zip(CLASS_NAMES, thresholds_b)))
-    logger.info("  C thresholds: %s", dict(zip(CLASS_NAMES, thresholds_c)))
+    log_named_thresholds(
+        logger,
+        list(CLASS_NAMES),
+        [
+            ThresholdRow(label="A thresholds", thresholds=thresholds_a),
+            ThresholdRow(label="B thresholds", thresholds=thresholds_b),
+            ThresholdRow(label="C thresholds", thresholds=thresholds_c),
+        ],
+    )
     logger.info("")
     logger.info(
         "%-20s  %-14s  %-14s  %-14s",
@@ -269,36 +270,31 @@ def main() -> None:
         eval_c.loss,
     )
 
-    logger.info("")
-    logger.info("Per-class detail (optimized thresholds):")
-    logger.info(
-        "  %-20s  %-7s %-7s %-7s | %-7s %-7s %-7s | %-7s %-7s %-7s",
-        "Class",
-        "A_P",
-        "A_R",
-        "A_F1",
-        "B_P",
-        "B_R",
-        "B_F1",
-        "C_P",
-        "C_R",
-        "C_F1",
+    log_per_class_precision_recall_blocks(
+        logger,
+        list(CLASS_NAMES),
+        [
+            PerClassMetricsBlock(
+                label="A (biased)",
+                precision=eval_a.per_class_precision,
+                recall=eval_a.per_class_recall,
+                f1=eval_a.per_class_f1,
+            ),
+            PerClassMetricsBlock(
+                label="B (orig only)",
+                precision=eval_b.per_class_precision,
+                recall=eval_b.per_class_recall,
+                f1=eval_b.per_class_f1,
+            ),
+            PerClassMetricsBlock(
+                label="C (balanced)",
+                precision=eval_c.per_class_precision,
+                recall=eval_c.per_class_recall,
+                f1=eval_c.per_class_f1,
+            ),
+        ],
+        title="Per-class Precision / Recall:",
     )
-    for i, name in enumerate(CLASS_NAMES):
-        logger.info(
-            "  %-20s  %-7.4f %-7.4f %-7.4f | %-7.4f %-7.4f %-7.4f"
-            " | %-7.4f %-7.4f %-7.4f",
-            name,
-            eval_a.per_class_precision[i],
-            eval_a.per_class_recall[i],
-            eval_a.per_class_f1[i],
-            eval_b.per_class_precision[i],
-            eval_b.per_class_recall[i],
-            eval_b.per_class_f1[i],
-            eval_c.per_class_precision[i],
-            eval_c.per_class_recall[i],
-            eval_c.per_class_f1[i],
-        )
 
     # ── Effect decomposition ──
     log_section(logger, "EFFECT DECOMPOSITION", width=80)
@@ -354,7 +350,7 @@ def main() -> None:
     )
     ac_hint = (
         "(正相關 = 偏差確實影響 F1)"
-        if abs(r_ac) > 0.3
+        if abs(r_ac) > MODERATE_CORRELATION
         else "(弱相關 = 偏差對 F1 影響有限)"
     )
     logger.info("  Pearson r (bias vs A-B F1 diff): %.4f  %s", r_ab, ab_hint)
@@ -373,16 +369,16 @@ def main() -> None:
     logger.info("  Bias effect    (A-C): %+.4f", bias_effect)
     logger.info("  Bias-F1 correlation:  r=%.4f", r_ac)
     logger.info("")
-    if abs(bias_effect) < 0.005:
+    if is_negligible_delta(bias_effect):
         logger.info("  結論: 裁切偏差對整體 F1 影響有限 (%.4f)", bias_effect)
-    elif bias_effect < -0.005:
+    elif is_significant_regression(bias_effect):
         logger.info(
             "  結論: 裁切偏差降低效果 (%.4f F1)，建議使用平衡後的 crop",
             bias_effect,
         )
     else:
         logger.info("  結論: 裁切偏差反而有正面效果 (+%.4f F1)", bias_effect)
-    if abs(r_ac) > 0.5:
+    if abs(r_ac) > STRONG_CORRELATION:
         logger.info(
             "  注意: 偏差與 per-class F1 有強相關" " (r=%.2f)，特定角色受影響顯著",
             r_ac,
@@ -390,7 +386,7 @@ def main() -> None:
     logger.info("=" * 80)
 
     # ── Crop recommendation (based on train crops only) ──
-    train_gk_set = set(gsp.train)
+    train_gk_set = set(setup.split.train)
     train_crops = [
         s
         for s in train_val_crop

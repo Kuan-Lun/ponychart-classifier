@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TypedDict, cast
 
+from cli.result_utils import TrainValSplitDict, parse_json_object
 from ponychart_classifier.training import HASH_PREFIX_LEN, EnvDict
 
 # ---------------------------------------------------------------------------
@@ -42,11 +43,6 @@ class SearchResult:
 # ---------------------------------------------------------------------------
 
 
-class SplitDict(TypedDict):
-    train_size: int
-    val_size: int
-
-
 class SearchResultDict(TypedDict):
     batch_size: int
     lr_scale: float
@@ -58,7 +54,7 @@ class SearchResultDict(TypedDict):
     phase1_stopped_epoch: int
     stopped_epoch: int
     time_s: float
-    split: SplitDict
+    split: TrainValSplitDict
     seed: int
     backbone: str
     data_hash: str
@@ -77,7 +73,7 @@ def result_to_dict(result: SearchResult) -> SearchResultDict:
         phase1_stopped_epoch=result.phase1_stopped_epoch,
         stopped_epoch=result.stopped_epoch,
         time_s=result.time_s,
-        split=SplitDict(
+        split=TrainValSplitDict(
             train_size=result.train_size,
             val_size=result.val_size,
         ),
@@ -113,10 +109,7 @@ def result_from_dict(data: SearchResultDict) -> SearchResult:
 
 
 def _parse_result_json(raw: str) -> SearchResultDict:
-    parsed = json.loads(raw)
-    if not isinstance(parsed, dict):
-        raise ValueError(f"Expected a JSON object, got {type(parsed).__name__}")
-    return cast(SearchResultDict, parsed)
+    return cast(SearchResultDict, parse_json_object(raw))
 
 
 def result_filename(batch_size: int, data_hash: str) -> str:

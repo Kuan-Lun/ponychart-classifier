@@ -54,6 +54,8 @@ from ponychart_classifier.training import (
     SEARCH_PHASE2_EPOCHS,
     SEED,
     VAL_SIZE,
+    PerClassColumn,
+    RunEnvironmentRow,
     describe_device,
     get_device,
     get_performance_cpu_count,
@@ -61,6 +63,8 @@ from ponychart_classifier.training import (
     hash_samples,
     load_all_json_results,
     load_samples_logged,
+    log_per_class_f1_matrix,
+    log_run_environments,
     log_section,
     measure_training_memory,
     seed_all,
@@ -287,29 +291,28 @@ class SearchBatchLrCLI(ExperimentCLI):
             )
 
         # Per-batch environment
-        self.logger.info("")
-        self.logger.info("Run environment:")
-        for r in sorted(by_batch.values(), key=lambda r: r.batch_size):
-            self.logger.info(
-                "  batch=%-4d  host=%s  device=%s",
-                r.batch_size,
-                r.hostname,
-                r.device,
-            )
+        log_run_environments(
+            self.logger,
+            [
+                RunEnvironmentRow(
+                    label=f"batch={r.batch_size}",
+                    hostname=r.hostname,
+                    device=r.device,
+                )
+                for r in sorted(by_batch.values(), key=lambda r: r.batch_size)
+            ],
+        )
 
-        # -- Per-class detail for all --
-        self.logger.info("")
-        self.logger.info("Per-class F1 for all configs:")
-        for rank, r in enumerate(sorted_by_f1, 1):
-            self.logger.info(
-                "  #%d (batch=%d, scale=%.1fx, F1=%.4f):",
-                rank,
-                r.batch_size,
-                r.lr_scale,
-                r.best_f1,
+        # -- Per-class matrix (class rows, config columns, * = best) --
+        columns = [
+            PerClassColumn(
+                label=f"#{rank} b={r.batch_size}",
+                macro_f1=r.best_f1,
+                per_class_f1=list(r.per_class_f1),
             )
-            for i, name in enumerate(CLASS_NAMES):
-                self.logger.info("    %-20s  %.4f", name, r.per_class_f1[i])
+            for rank, r in enumerate(sorted_by_f1, 1)
+        ]
+        log_per_class_f1_matrix(self.logger, list(CLASS_NAMES), columns)
 
         # -- Recommendation --
         best = sorted_by_f1[0]

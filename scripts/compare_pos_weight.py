@@ -20,39 +20,32 @@ import torch.nn as nn
 from ponychart_classifier.training import (
     BACKBONE,
     CLASS_NAMES,
-    HOLDOUT_TEST_SIZE,
     NUM_CLASSES,
-    SEED,
-    VAL_SIZE,
+    PerClassMetricsBlock,
+    ThresholdRow,
     compute_pos_weight,
+    configure_logging,
     evaluate,
     get_transforms,
-    load_samples_logged,
+    is_significant_improvement,
+    is_significant_regression,
+    log_named_thresholds,
+    log_per_class_precision_recall_blocks,
     log_section,
     make_test_loader,
-    prepare_holdout_split_logged,
-    seed_all,
-    setup_device_and_workers,
+    prepare_holdout_setup_logged,
     train_with_seed_reset,
 )
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-)
+configure_logging(logging.INFO)
 logger = logging.getLogger(__name__)
 
 
 def main() -> None:
-    rng = seed_all(SEED)
-    device, num_workers = setup_device_and_workers(logger)
-    all_samples = load_samples_logged(logger)
-
-    # ── Split into train / val / test ──
-    split = prepare_holdout_split_logged(
-        all_samples, rng, logger, test_size=HOLDOUT_TEST_SIZE, val_size=VAL_SIZE
-    )
-    train_samples, val_samples, test_samples = split.train, split.val, split.test
+    setup = prepare_holdout_setup_logged(logger)
+    train_samples = setup.split.train
+    val_samples = setup.split.val
+    test_samples = setup.split.test
 
     # ── Compute pos_weight from training data ──
     pw = compute_pos_weight(train_samples)
@@ -62,8 +55,8 @@ def main() -> None:
     train_result_a = train_with_seed_reset(
         train_samples,
         val_samples,
-        device,
-        num_workers,
+        setup.device,
+        setup.num_workers,
         "A: Baseline (no pos_weight)",
         train_transform=get_transforms(is_train=True),
         backbone=BACKBONE,
@@ -75,8 +68,8 @@ def main() -> None:
     train_result_b = train_with_seed_reset(
         train_samples,
         val_samples,
-        device,
-        num_workers,
+        setup.device,
+        setup.num_workers,
         "B: With pos_weight",
         train_transform=get_transforms(is_train=True),
         backbone=BACKBONE,
@@ -87,10 +80,14 @@ def main() -> None:
 
     # ── Evaluate both on holdout test set ──
     criterion = nn.BCEWithLogitsLoss()
-    test_loader = make_test_loader(test_samples, num_workers=num_workers, device=device)
+    test_loader = make_test_loader(
+        test_samples,
+        num_workers=setup.num_workers,
+        device=setup.device,
+    )
 
-    eval_a = evaluate(model_a, test_loader, criterion, device, thresholds_a)
-    eval_b = evaluate(model_b, test_loader, criterion, device, thresholds_b)
+    eval_a = evaluate(model_a, test_loader, criterion, setup.device, thresholds_a)
+    eval_b = evaluate(model_b, test_loader, criterion, setup.device, thresholds_b)
 
     # ── Report ──
     log_section(
@@ -99,8 +96,14 @@ def main() -> None:
         len(test_samples),
         width=80,
     )
-    logger.info("  A thresholds: %s", dict(zip(CLASS_NAMES, thresholds_a)))
-    logger.info("  B thresholds: %s", dict(zip(CLASS_NAMES, thresholds_b)))
+    log_named_thresholds(
+        logger,
+        list(CLASS_NAMES),
+        [
+            ThresholdRow(label="A thresholds", thresholds=thresholds_a),
+            ThresholdRow(label="B thresholds", thresholds=thresholds_b),
+        ],
+    )
     logger.info("")
 
     logger.info(
@@ -129,34 +132,32 @@ def main() -> None:
     )
 
     logger.info("")
-    logger.info("Per-class F1 comparison:")
-    logger.info(
-        "  %-20s  %-7s %-7s %-7s | %-7s %-7s %-7s | %-7s",
-        "Class",
-        "A_P",
-        "A_R",
-        "A_F1",
-        "B_P",
-        "B_R",
-        "B_F1",
-        "Delta",
-    )
-    logger.info("  " + "-" * 75)
     deltas = []
+    for i in range(len(CLASS_NAMES)):
+        deltas.append(eval_b.per_class_f1[i] - eval_a.per_class_f1[i])
+    log_per_class_precision_recall_blocks(
+        logger,
+        list(CLASS_NAMES),
+        [
+            PerClassMetricsBlock(
+                label="A (Baseline)",
+                precision=eval_a.per_class_precision,
+                recall=eval_a.per_class_recall,
+                f1=eval_a.per_class_f1,
+            ),
+            PerClassMetricsBlock(
+                label="B (pos_weight)",
+                precision=eval_b.per_class_precision,
+                recall=eval_b.per_class_recall,
+                f1=eval_b.per_class_f1,
+            ),
+        ],
+        title="Per-class Precision / Recall:",
+    )
+    logger.info("")
+    logger.info("Per-class F1 delta (B - A):")
     for i, name in enumerate(CLASS_NAMES):
-        d = eval_b.per_class_f1[i] - eval_a.per_class_f1[i]
-        deltas.append(d)
-        logger.info(
-            "  %-20s  %-7.4f %-7.4f %-7.4f | %-7.4f %-7.4f %-7.4f | %+.4f",
-            name,
-            eval_a.per_class_precision[i],
-            eval_a.per_class_recall[i],
-            eval_a.per_class_f1[i],
-            eval_b.per_class_precision[i],
-            eval_b.per_class_recall[i],
-            eval_b.per_class_f1[i],
-            d,
-        )
+        logger.info("  %-20s  %+.4f", name, deltas[i])
 
     # ── Summary ──
     log_section(logger, "SUMMARY", width=80)
@@ -176,9 +177,9 @@ def main() -> None:
         NUM_CLASSES,
     )
 
-    if delta_f1 > 0.005:
+    if is_significant_improvement(delta_f1):
         logger.info("  結論: pos_weight 有正面效果 (%+.4f F1)", delta_f1)
-    elif delta_f1 < -0.005:
+    elif is_significant_regression(delta_f1):
         logger.info("  結論: pos_weight 有負面效果 (%+.4f F1)", delta_f1)
     else:
         logger.info("  結論: pos_weight 影響不大 (delta=%.4f)", delta_f1)

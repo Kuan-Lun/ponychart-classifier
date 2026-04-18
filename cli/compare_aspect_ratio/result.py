@@ -7,14 +7,15 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TypedDict, cast
 
-from cli.training_runner import (
-    SplitDict,
+from cli.result_utils import (
+    HoldoutSplitDict,
     TestResultDict,
-    TrainingMeasurements,
-    TrainingSetup,
+    build_holdout_metadata,
     eval_result_from_dict,
     eval_result_to_dict,
+    parse_json_object,
 )
+from cli.training_runner import TrainingMeasurements, TrainingSetup
 from ponychart_classifier.training import (
     HASH_PREFIX_LEN,
     SEED,
@@ -65,7 +66,7 @@ class ExperimentDict(TypedDict):
     train_time_s: float
     thresholds: list[float]
     test_result: TestResultDict
-    split: SplitDict
+    split: HoldoutSplitDict
     seed: int
     data_hash: str
     env: EnvDict
@@ -81,7 +82,7 @@ def experiment_to_dict(exp: ExperimentResult) -> ExperimentDict:
         train_time_s=exp.train_time_s,
         thresholds=list(exp.thresholds),
         test_result=eval_result_to_dict(exp.test_result),
-        split=SplitDict(
+        split=HoldoutSplitDict(
             train_size=exp.train_size,
             val_size=exp.val_size,
             test_size=exp.test_size,
@@ -119,10 +120,7 @@ def experiment_from_dict(data: ExperimentDict) -> ExperimentResult:
 
 
 def _parse_experiment_json(raw: str) -> ExperimentDict:
-    parsed = json.loads(raw)
-    if not isinstance(parsed, dict):
-        raise ValueError(f"Expected a JSON object, got {type(parsed).__name__}")
-    return cast(ExperimentDict, parsed)
+    return cast(ExperimentDict, parse_json_object(raw))
 
 
 def result_filename(label: str, data_hash: str) -> str:
@@ -146,20 +144,21 @@ def measurements_to_result(
     m: TrainingMeasurements,
     setup: TrainingSetup,
 ) -> ExperimentResult:
+    metadata = build_holdout_metadata(m, setup, seed=SEED)
     return ExperimentResult(
         label=label,
         input_size=config.input_size,
         description=config.description,
         test_result=m.test_result,
-        thresholds=m.thresholds,
-        param_count=m.param_count,
-        onnx_size_mb=m.onnx_size_mb,
-        train_time_s=m.train_time_s,
-        train_size=len(setup.split.train),
-        val_size=len(setup.split.val),
-        test_size=len(setup.split.test),
-        seed=SEED,
-        data_hash=setup.data_hash,
-        hostname=m.hostname,
-        device=m.device_label,
+        thresholds=metadata.thresholds,
+        param_count=metadata.param_count,
+        onnx_size_mb=metadata.onnx_size_mb,
+        train_time_s=metadata.train_time_s,
+        train_size=metadata.train_size,
+        val_size=metadata.val_size,
+        test_size=metadata.test_size,
+        seed=metadata.seed,
+        data_hash=metadata.data_hash,
+        hostname=metadata.hostname,
+        device=metadata.device,
     )

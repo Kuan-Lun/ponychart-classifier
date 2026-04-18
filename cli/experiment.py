@@ -13,6 +13,8 @@ import logging
 from abc import ABC, abstractmethod
 from pathlib import Path
 
+from ponychart_classifier.training import configure_logging
+
 RESULTS_ROOT = Path(__file__).resolve().parent.parent / "results"
 """Project-level directory for all experiment result JSONs."""
 
@@ -21,10 +23,7 @@ class ExperimentCLI(ABC):
     """Abstract base for ``--run`` / ``--report`` experiment CLIs."""
 
     def __init__(self) -> None:
-        logging.basicConfig(
-            level=logging.INFO,
-            format="%(asctime)s [%(levelname)s] %(message)s",
-        )
+        configure_logging(logging.INFO)
         self.logger = logging.getLogger(self.__class__.__module__)
 
     # ------------------------------------------------------------------

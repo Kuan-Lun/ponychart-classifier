@@ -20,17 +20,16 @@ import torch.nn as nn
 from ponychart_classifier.training import (
     BACKBONE,
     CLASS_NAMES,
-    HOLDOUT_TEST_SIZE,
-    SEED,
-    VAL_SIZE,
+    PerClassMetricsBlock,
+    ThresholdRow,
+    configure_logging,
     evaluate,
     get_transforms,
-    load_samples_logged,
+    log_named_thresholds,
+    log_per_class_precision_recall_blocks,
     log_section,
     make_test_loader,
-    prepare_holdout_split_logged,
-    seed_all,
-    setup_device_and_workers,
+    prepare_holdout_setup_logged,
     train_model,
 )
 
@@ -42,31 +41,23 @@ def main() -> None:
         description="Evaluate model F1 on originals-only holdout test set"
     ).parse_args()
 
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(message)s",
-    )
+    configure_logging(logging.INFO)
 
     _run()
 
 
 def _run() -> None:
-    rng = seed_all(SEED)
-    device, num_workers = setup_device_and_workers(logger)
-    all_samples = load_samples_logged(logger)
-
-    # ── Split into train / val / test ──
-    split = prepare_holdout_split_logged(
-        all_samples, rng, logger, test_size=HOLDOUT_TEST_SIZE, val_size=VAL_SIZE
-    )
-    train_samples, val_samples, test_samples = split.train, split.val, split.test
+    setup = prepare_holdout_setup_logged(logger)
+    train_samples = setup.split.train
+    val_samples = setup.split.val
+    test_samples = setup.split.test
 
     # ── Train from scratch (never resume: different split → data leakage) ──
     train_result = train_model(
         train_samples,
         val_samples,
-        device,
-        num_workers,
+        setup.device,
+        setup.num_workers,
         "Holdout Evaluation",
         train_transform=get_transforms(is_train=True),
         backbone=BACKBONE,
@@ -76,9 +67,13 @@ def _run() -> None:
 
     # ── Evaluate on holdout test set (originals only) ──
     criterion = nn.BCEWithLogitsLoss()
-    test_loader = make_test_loader(test_samples, num_workers=num_workers, device=device)
+    test_loader = make_test_loader(
+        test_samples,
+        num_workers=setup.num_workers,
+        device=setup.device,
+    )
 
-    eval_result = evaluate(model, test_loader, criterion, device, thresholds)
+    eval_result = evaluate(model, test_loader, criterion, setup.device, thresholds)
 
     # ── Report ──
     log_section(
@@ -87,27 +82,26 @@ def _run() -> None:
         len(test_samples),
         width=70,
     )
-    logger.info("Thresholds (from val set): %s", dict(zip(CLASS_NAMES, thresholds)))
+    log_named_thresholds(
+        logger,
+        list(CLASS_NAMES),
+        [ThresholdRow(label="Thresholds (from val set)", thresholds=thresholds)],
+    )
     logger.info("")
     logger.info("  Macro F1: %.4f", eval_result.macro_f1)
     logger.info("  Loss:     %.4f", eval_result.loss)
-    logger.info("")
-    logger.info(
-        "  %-20s  %-10s  %-10s  %-10s",
-        "Class",
-        "Precision",
-        "Recall",
-        "F1",
+    log_per_class_precision_recall_blocks(
+        logger,
+        list(CLASS_NAMES),
+        [
+            PerClassMetricsBlock(
+                label="Holdout test set",
+                precision=eval_result.per_class_precision,
+                recall=eval_result.per_class_recall,
+                f1=eval_result.per_class_f1,
+            )
+        ],
     )
-    logger.info("  " + "-" * 55)
-    for i, name in enumerate(CLASS_NAMES):
-        logger.info(
-            "  %-20s  %-10.4f  %-10.4f  %-10.4f",
-            name,
-            eval_result.per_class_precision[i],
-            eval_result.per_class_recall[i],
-            eval_result.per_class_f1[i],
-        )
     logger.info("=" * 70)
 
 

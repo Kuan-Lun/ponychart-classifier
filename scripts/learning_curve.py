@@ -10,10 +10,8 @@ Learning Curve 分析腳本：估算增加 raw 資料對模型 F1 的邊際效�
 
 from __future__ import annotations
 
-import copy
 import logging
 from dataclasses import dataclass
-from typing import Any
 
 import numpy as np
 import torch.nn as nn
@@ -23,28 +21,25 @@ from ponychart_classifier.training import (
     BATCH_SIZE,
     CLASS_NAMES,
     HOLDOUT_TEST_SIZE,
+    LIMITED_HEADROOM,
     RETRAIN_NEW_DATA_RATIO,
+    SATURATED_HEADROOM,
     SEED,
     VAL_SIZE,
     EvalResult,
-    build_groups,
-    evaluate,
-    extract_original_test_samples,
+    PerClassColumn,
+    configure_logging,
     get_transforms,
-    load_samples_logged,
+    log_per_class_f1_matrix,
+    log_per_class_table,
     log_section,
     make_test_loader,
-    prepare_balanced_samples,
-    seed_all,
-    setup_device_and_workers,
-    split_by_groups,
-    train_model,
+    prepare_balanced_train_val_for_group_keys,
+    prepare_group_holdout_setup_logged,
+    train_and_evaluate_on_test,
 )
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-)
+configure_logging(logging.INFO)
 logger = logging.getLogger(__name__)
 
 # 每一步的樣本數都比上一步多出「剛好超過 RETRAIN_NEW_DATA_RATIO」，
@@ -134,23 +129,22 @@ def extrapolate_f1(params: tuple[float, float, float], n: int) -> float:
 # Main
 # ---------------------------------------------------------------------------
 def main() -> None:
-    seed_all(SEED)
-    device, num_workers = setup_device_and_workers(logger)
-    all_samples = load_samples_logged(logger)
-
-    # Build group index
-    groups = build_groups(all_samples)
-
-    # Split: test / val / train
-    gsp = split_by_groups(all_samples, test_size=HOLDOUT_TEST_SIZE, val_size=VAL_SIZE)
-    val_gk_set = set(gsp.val)
-    train_val_group_keys = gsp.train + gsp.val
-
-    test_samples = extract_original_test_samples(all_samples, gsp.test, groups)
-    logger.info("Test set (originals only): %d images", len(test_samples))
+    setup = prepare_group_holdout_setup_logged(
+        logger,
+        seed=SEED,
+        test_size=HOLDOUT_TEST_SIZE,
+        val_size=VAL_SIZE,
+    )
+    val_group_keys = setup.val_group_keys
+    train_val_group_keys = setup.train_val_group_keys
 
     # Prepare test loader (shared)
-    test_loader = make_test_loader(test_samples, BATCH_SIZE, num_workers, device)
+    test_loader = make_test_loader(
+        setup.test_samples,
+        BATCH_SIZE,
+        setup.num_workers,
+        setup.device,
+    )
     criterion = nn.BCEWithLogitsLoss()
 
     # ── Prepare nested sampling order (shuffle once) ──
@@ -159,84 +153,62 @@ def main() -> None:
 
     # ── Run experiments at different data fractions (sequential resume) ──
     experiment_results: list[CurvePoint] = []
-    prev_state_dict: dict[str, Any] | None = None
+    prev_state_dict: dict[str, object] | None = None
 
     for frac in DATA_FRACTIONS:
-        seed_all(SEED)
-
         # Nested subsample: smaller fractions are always subsets of larger ones
         selected_groups = nested_subsample_groups(
             train_val_group_keys, frac, shuffled_order
         )
-
-        # Collect samples for selected groups
-        selected_indices = []
-        for gk in selected_groups:
-            selected_indices.extend(groups[gk])
-        selected_samples = [all_samples[i] for i in selected_indices]
-
-        # Split into train / val using pre-computed group assignments
-        sub_groups = build_groups(selected_samples)
-
-        raw_train_samples = [
-            selected_samples[i]
-            for gk, indices in sub_groups.items()
-            if gk not in val_gk_set
-            for i in indices
-        ]
-        val_samples = [
-            selected_samples[i]
-            for gk, indices in sub_groups.items()
-            if gk in val_gk_set
-            for i in indices
-        ]
-
-        # Crop balancing (same as train.py)
-        train_samples = prepare_balanced_samples(
-            raw_train_samples, np.random.RandomState(SEED)
+        train_samples, val_samples = prepare_balanced_train_val_for_group_keys(
+            setup.all_samples,
+            setup.groups,
+            selected_groups,
+            seed=SEED,
+            val_group_keys=val_group_keys,
         )
+        n_samples = sum(len(setup.groups[gk]) for gk in selected_groups)
 
         pct = int(frac * 100)
-        name = f"{pct}% data ({len(selected_samples)} samples)"
+        name = f"{pct}% data ({n_samples} samples)"
 
-        train_result = train_model(
+        run = train_and_evaluate_on_test(
             train_samples,
             val_samples,
-            device,
-            num_workers,
-            name,
+            device=setup.device,
+            num_workers=setup.num_workers,
+            label=name,
+            test_loader=test_loader,
+            criterion=criterion,
+            reset_seed=True,
             train_transform=get_transforms(is_train=True),
             backbone=BACKBONE,
             resume_state_dict=prev_state_dict,
         )
-        model, thresholds = train_result.model, train_result.thresholds
-        prev_state_dict = copy.deepcopy(model.state_dict())
-
-        # Evaluate on shared test set
-        eval_result = evaluate(model, test_loader, criterion, device, thresholds)
+        prev_state_dict = run.state_dict
         experiment_results.append(
             CurvePoint(
-                eval_result=eval_result,
+                eval_result=run.eval_result,
                 fraction=frac,
-                n_samples=len(selected_samples),
+                n_samples=n_samples,
                 n_train=len(train_samples),
                 n_val=len(val_samples),
-                thresholds=thresholds,
+                thresholds=run.train_result.thresholds,
             )
         )
 
         logger.info(
             ">> %s: test Macro F1=%.4f  thresholds=%s",
             name,
-            eval_result.macro_f1,
-            dict(zip(CLASS_NAMES, thresholds)),
+            run.eval_result.macro_f1,
+            dict(zip(CLASS_NAMES, run.train_result.thresholds)),
         )
 
     # ── Comparison table ──
     log_section(
         logger,
         "LEARNING CURVE RESULTS (test set: %d original images)",
-        len(test_samples),
+        len(setup.test_samples),
     )
 
     logger.info("")
@@ -267,34 +239,24 @@ def main() -> None:
         prev_f1 = r.eval_result.macro_f1
 
     # Per-class F1 table
-    logger.info("")
-    logger.info("Per-class F1:")
-    header = f"  {'Class':<20s}"
-    for r in experiment_results:
-        header += f"  {int(r.fraction * 100)}%".ljust(14)
-    logger.info(header)
-    logger.info("  " + "-" * (20 + 14 * len(experiment_results)))
-
-    for i, name in enumerate(CLASS_NAMES):
-        row = f"  {name:<20s}"
-        for r in experiment_results:
-            row += f"  {r.eval_result.per_class_f1[i]:<12.4f}"
-        logger.info(row)
+    columns = [
+        PerClassColumn(
+            label=f"{int(r.fraction * 100)}%",
+            macro_f1=r.eval_result.macro_f1,
+            per_class_f1=r.eval_result.per_class_f1,
+        )
+        for r in experiment_results
+    ]
+    log_per_class_f1_matrix(logger, list(CLASS_NAMES), columns)
 
     # Per-class threshold table
     logger.info("")
     logger.info("Per-class optimized thresholds:")
-    header = f"  {'Class':<20s}"
-    for r in experiment_results:
-        header += f"  {int(r.fraction * 100)}%".ljust(14)
-    logger.info(header)
-    logger.info("  " + "-" * (20 + 14 * len(experiment_results)))
-
-    for i, name in enumerate(CLASS_NAMES):
-        row = f"  {name:<20s}"
-        for r in experiment_results:
-            row += f"  {r.thresholds[i]:<12.4f}"
-        logger.info(row)
+    log_per_class_table(
+        logger,
+        [f"{int(r.fraction * 100)}%" for r in experiment_results],
+        lambda i, j: f"{experiment_results[j].thresholds[i]:.4f}",
+    )
 
     # ── Power-law extrapolation ──
     log_section(logger, "POWER-LAW EXTRAPOLATION")
@@ -451,13 +413,13 @@ def main() -> None:
             asymptote,
             headroom,
         )
-        if headroom < 0.01:
+        if headroom < SATURATED_HEADROOM:
             logger.info(
                 "  結論: 模型在目前架構下已接近飽和 (headroom < 0.01)，"
                 "加更多資料幾乎無法提升 F1。"
             )
             logger.info("  建議: 考慮更大的模型架構、更好的特徵工程、或 ensemble。")
-        elif headroom < 0.03:
+        elif headroom < LIMITED_HEADROOM:
             logger.info(
                 "  結論: 剩餘提升空間有限 (headroom=%.4f)，"
                 "加資料的邊際效益已明顯遞減。",

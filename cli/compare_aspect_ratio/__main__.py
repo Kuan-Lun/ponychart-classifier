@@ -38,8 +38,16 @@ from ponychart_classifier.training import (
     BATCH_SIZE,
     CLASS_NAMES,
     HASH_PREFIX_LEN,
+    PerClassColumn,
+    PerClassMetricsBlock,
+    RunEnvironmentRow,
     get_transforms,
+    is_significant_improvement,
+    is_significant_regression,
     load_all_json_results,
+    log_per_class_f1_matrix,
+    log_per_class_precision_recall_blocks,
+    log_run_environments,
     log_section,
     select_consistent_results,
 )
@@ -184,42 +192,43 @@ class CompareAspectRatioCLI(ExperimentCLI):
             )
 
         # Run environment
-        self.logger.info("")
-        self.logger.info("Run environment:")
-        for lbl in ordered:
-            r = results[lbl]
-            self.logger.info("  %-18s  host=%s  device=%s", lbl, r.hostname, r.device)
+        log_run_environments(
+            self.logger,
+            [
+                RunEnvironmentRow(
+                    label=lbl,
+                    hostname=results[lbl].hostname,
+                    device=results[lbl].device,
+                )
+                for lbl in ordered
+            ],
+        )
 
-        # Per-class F1
-        self.logger.info("")
-        self.logger.info("Per-class F1:")
-        header = f"  {'Class':<20s}"
-        for lbl in ordered:
-            header += f"  {lbl:<18s}"
-        self.logger.info(header)
-        self.logger.info("  " + "-" * (20 + 20 * len(ordered)))
-
-        for i, cls_name in enumerate(CLASS_NAMES):
-            row = f"  {cls_name:<20s}"
-            for lbl in ordered:
-                f1 = results[lbl].test_result.per_class_f1[i]
-                row += f"  {f1:<18.4f}"
-            self.logger.info(row)
+        # Per-class matrix (class rows, config columns, * = best)
+        columns = [
+            PerClassColumn(
+                label=lbl,
+                macro_f1=results[lbl].test_result.macro_f1,
+                per_class_f1=list(results[lbl].test_result.per_class_f1),
+            )
+            for lbl in ordered
+        ]
+        log_per_class_f1_matrix(self.logger, list(CLASS_NAMES), columns)
 
         # Per-class precision/recall
-        self.logger.info("")
-        self.logger.info("Per-class Precision / Recall:")
-        for lbl in ordered:
-            self.logger.info("  %s (%s):", lbl, results[lbl].description)
-            tr = results[lbl].test_result
-            for i, cls_name in enumerate(CLASS_NAMES):
-                self.logger.info(
-                    "    %-20s  P=%.4f  R=%.4f  F1=%.4f",
-                    cls_name,
-                    tr.per_class_precision[i],
-                    tr.per_class_recall[i],
-                    tr.per_class_f1[i],
+        log_per_class_precision_recall_blocks(
+            self.logger,
+            list(CLASS_NAMES),
+            [
+                PerClassMetricsBlock(
+                    label=f"{lbl} ({results[lbl].description})",
+                    precision=results[lbl].test_result.per_class_precision,
+                    recall=results[lbl].test_result.per_class_recall,
+                    f1=results[lbl].test_result.per_class_f1,
                 )
+                for lbl in ordered
+            ],
+        )
 
         # Summary
         log_section(self.logger, "SUMMARY")
@@ -262,13 +271,13 @@ class CompareAspectRatioCLI(ExperimentCLI):
             self.logger.info("    Best rect:   %s (F1=%.4f)", best_rect, rc_f1)
             self.logger.info("    Delta: %+.4f", delta)
 
-            if delta > 0.005:
+            if is_significant_improvement(delta):
                 self.logger.info(
                     "  結論: 長方形有顯著改善 (%+.4f F1)，"
                     "建議更新 model_spec.py 的 INPUT_SIZE",
                     delta,
                 )
-            elif delta < -0.005:
+            elif is_significant_regression(delta):
                 self.logger.info(
                     "  結論: 正方形表現更好 (%+.4f F1)，維持現有設定",
                     delta,

@@ -35,8 +35,17 @@ from ponychart_classifier.training import (
     BACKBONE_REGISTRY,
     CLASS_NAMES,
     HASH_PREFIX_LEN,
+    PerClassColumn,
+    PerClassMetricsBlock,
+    RunEnvironmentRow,
+    ThresholdRow,
+    format_thresholds,
     get_transforms,
     load_all_json_results,
+    log_named_thresholds,
+    log_per_class_f1_matrix,
+    log_per_class_precision_recall_blocks,
+    log_run_environments,
     log_section,
     select_consistent_results,
 )
@@ -156,7 +165,6 @@ class CompareBackbonesCLI(ExperimentCLI):
         for name in ordered_names:
             r = results[name]
             tr = r.test_result
-            thr_str = " ".join(f"{t:.2f}" for t in r.thresholds)
             inp_str = f"{r.input_size.height}x{r.input_size.width}"
             self.logger.info(
                 "  %-22s  %-8s  %-10.4f  %-10s  %-10s  %-10s  %s",
@@ -166,46 +174,53 @@ class CompareBackbonesCLI(ExperimentCLI):
                 f"{r.param_count / 1e6:.1f}M",
                 f"{r.onnx_size_mb:.1f}MB",
                 f"{r.train_time_s:.0f}s",
-                thr_str,
+                format_thresholds(r.thresholds),
             )
 
         # Per-backbone environment
-        self.logger.info("")
-        self.logger.info("Run environment:")
-        for name in ordered_names:
-            r = results[name]
-            self.logger.info("  %-22s  host=%s  device=%s", name, r.hostname, r.device)
+        log_run_environments(
+            self.logger,
+            [
+                RunEnvironmentRow(
+                    label=name,
+                    hostname=results[name].hostname,
+                    device=results[name].device,
+                )
+                for name in ordered_names
+            ],
+        )
 
-        # Per-class F1 table
-        self.logger.info("")
-        self.logger.info("Per-class F1:")
-        header = f"  {'Class':<20s}"
-        for name in ordered_names:
-            header += f"  {name:<22s}"
-        self.logger.info(header)
-        self.logger.info("  " + "-" * (20 + 24 * len(ordered_names)))
-
-        for i, cls_name in enumerate(CLASS_NAMES):
-            row = f"  {cls_name:<20s}"
-            for name in ordered_names:
-                f1 = results[name].test_result.per_class_f1[i]
-                row += f"  {f1:<22.4f}"
-            self.logger.info(row)
+        # Per-class matrix (class rows, backbone columns, * = best)
+        columns = [
+            PerClassColumn(
+                label=name,
+                macro_f1=results[name].test_result.macro_f1,
+                per_class_f1=list(results[name].test_result.per_class_f1),
+            )
+            for name in ordered_names
+        ]
+        log_per_class_f1_matrix(self.logger, list(CLASS_NAMES), columns)
 
         # Per-class precision/recall
-        self.logger.info("")
-        self.logger.info("Per-class Precision / Recall:")
-        for name in ordered_names:
-            self.logger.info("  %s:", name)
-            tr = results[name].test_result
-            for i, cls_name in enumerate(CLASS_NAMES):
-                self.logger.info(
-                    "    %-20s  P=%.4f  R=%.4f  F1=%.4f",
-                    cls_name,
-                    tr.per_class_precision[i],
-                    tr.per_class_recall[i],
-                    tr.per_class_f1[i],
+        log_per_class_precision_recall_blocks(
+            self.logger,
+            list(CLASS_NAMES),
+            [
+                PerClassMetricsBlock(
+                    label=name,
+                    precision=results[name].test_result.per_class_precision,
+                    recall=results[name].test_result.per_class_recall,
+                    f1=results[name].test_result.per_class_f1,
                 )
+                for name in ordered_names
+            ],
+        )
+        self.logger.info("")
+        log_named_thresholds(
+            self.logger,
+            list(CLASS_NAMES),
+            [ThresholdRow(label=name, thresholds=results[name].thresholds) for name in ordered_names],
+        )
 
         # Recommendation
         log_section(self.logger, "RECOMMENDATION")

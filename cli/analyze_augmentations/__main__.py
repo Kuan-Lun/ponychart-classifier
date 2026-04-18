@@ -38,7 +38,13 @@ from ponychart_classifier.training import (
     CLASS_NAMES,
     HASH_PREFIX_LEN,
     INPUT_SIZE,
+    SMALL_DELTA,
+    RunEnvironmentRow,
+    is_close_result,
+    is_significant_improvement,
+    is_significant_regression,
     load_all_json_results,
+    log_run_environments,
     log_section,
     select_consistent_results,
 )
@@ -189,11 +195,18 @@ class AnalyzeAugmentationsCLI(ExperimentCLI):
             self.logger.info("".join(row_parts))
 
         # Run environment
-        self.logger.info("")
-        self.logger.info("  Run environment:")
-        for lbl in ordered:
-            r = results[lbl]
-            self.logger.info("    %-12s  host=%s  device=%s", lbl, r.hostname, r.device)
+        log_run_environments(
+            self.logger,
+            [
+                RunEnvironmentRow(
+                    label=lbl,
+                    hostname=results[lbl].hostname,
+                    device=results[lbl].device,
+                )
+                for lbl in ordered
+            ],
+            title="  Run environment:",
+        )
 
         # ── Flip analysis ──
         self._report_flip_analysis(results, baseline_f1, baseline_per_class)
@@ -237,9 +250,9 @@ class AnalyzeAugmentationsCLI(ExperimentCLI):
         self.logger.info("  VFlip effect:  %+.4f", vflip_delta)
 
         for label, delta in [("水平翻轉", hflip_delta), ("垂直翻轉", vflip_delta)]:
-            if delta > 0.005:
+            if is_significant_improvement(delta):
                 self.logger.info("  >> %s有正面效果，建議保留", label)
-            elif delta < -0.005:
+            elif is_significant_regression(delta):
                 self.logger.info("  >> %s有負面效果，建議移除", label)
             else:
                 self.logger.info(
@@ -288,7 +301,7 @@ class AnalyzeAugmentationsCLI(ExperimentCLI):
             best_deg = {"rot15": 15, "rot45": 45, "rot90": 90}[best_rot_name]
             delta = best_rot_f1 - baseline_f1
             self.logger.info("  >> 最佳旋轉角度: %d (%+.4f F1)", best_deg, delta)
-            if delta > 0.005:
+            if is_significant_improvement(delta):
                 self.logger.info("  >> 建議使用 %d 旋轉", best_deg)
             else:
                 self.logger.info("  >> 效果有限 (%.4f)，旋轉非必要", delta)
@@ -341,9 +354,9 @@ class AnalyzeAugmentationsCLI(ExperimentCLI):
         self.logger.info("  Current config (HFlip+VFlip+Rot90): %+.4f", current_delta)
         self.logger.info("  Sum of individual effects:           %+.4f", sum_individual)
         self.logger.info("  Interaction effect:                  %+.4f", interaction)
-        if interaction > 0.005:
+        if is_significant_improvement(interaction):
             self.logger.info("  >> 組合使用有正向交互作用，建議同時啟用")
-        elif interaction < -0.005:
+        elif is_significant_regression(interaction):
             self.logger.info("  >> 組合使用有負向交互作用，建議精簡增強組合")
         else:
             self.logger.info("  >> 交互作用微小，各增強可獨立決定是否啟用")
@@ -379,11 +392,11 @@ class AnalyzeAugmentationsCLI(ExperimentCLI):
         )
 
         recommended_parts: list[str] = []
-        if hflip_delta > 0.003:
+        if hflip_delta > SMALL_DELTA:
             recommended_parts.append("RandomHorizontalFlip(p=0.5)")
-        if vflip_delta > 0.003:
+        if vflip_delta > SMALL_DELTA:
             recommended_parts.append("RandomVerticalFlip(p=0.5)")
-        if best_rot_name != "none" and (best_rot_f1 - baseline_f1) > 0.003:
+        if best_rot_name != "none" and (best_rot_f1 - baseline_f1) > SMALL_DELTA:
             best_deg = {"rot15": 15, "rot45": 45, "rot90": 90}[best_rot_name]
             recommended_parts.append(f"RandomAffine(degrees={best_deg})")
 
@@ -405,7 +418,7 @@ class AnalyzeAugmentationsCLI(ExperimentCLI):
                 best_result.test_result.macro_f1
                 - results["current"].test_result.macro_f1
             )
-            if abs(diff) < 0.003:
+            if is_close_result(diff):
                 self.logger.info("  目前設定 (current) 已接近最佳，無需調整")
             elif diff > 0:
                 self.logger.info("  切換至 '%s' 可提升 F1 約 %+.4f", best_name, diff)

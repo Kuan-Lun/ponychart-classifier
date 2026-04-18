@@ -17,31 +17,24 @@ import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TypedDict
 
 import torch
 import torch.nn as nn
 from torchvision import transforms
 
 from ponychart_classifier.training import (
-    HASH_PREFIX_LEN,
-    HOLDOUT_TEST_SIZE,
     SEED,
-    VAL_SIZE,
     EvalResult,
-    HoldoutSplit,
+    HoldoutExperimentSetup,
     ImageSize,
     Sample,
     build_cached_dataset,
     describe_device,
     evaluate,
     export_onnx,
-    hash_samples,
-    load_samples_logged,
     make_dataloader,
-    prepare_holdout_split,
+    prepare_holdout_setup_logged,
     seed_all,
-    setup_device_and_workers,
     train_model,
 )
 
@@ -69,85 +62,12 @@ def count_parameters(model: nn.Module) -> int:
     return sum(p.numel() for p in model.parameters())
 
 
-# ------------------------------------------------------------------
-# Shared TypedDicts for JSON serialization
-# ------------------------------------------------------------------
-
-
-class TestResultDict(TypedDict):
-    """JSON shape of an :class:`~ponychart_classifier.training.EvalResult`."""
-
-    loss: float
-    macro_f1: float
-    per_class_f1: list[float]
-    per_class_precision: list[float]
-    per_class_recall: list[float]
-
-
-class SplitDict(TypedDict):
-    """JSON shape of the holdout split sizes."""
-
-    train_size: int
-    val_size: int
-    test_size: int
-
-
-def eval_result_to_dict(tr: EvalResult) -> TestResultDict:
-    """Serialize an :class:`EvalResult` into a :class:`TestResultDict`."""
-    return TestResultDict(
-        loss=tr.loss,
-        macro_f1=tr.macro_f1,
-        per_class_f1=list(tr.per_class_f1),
-        per_class_precision=list(tr.per_class_precision),
-        per_class_recall=list(tr.per_class_recall),
-    )
-
-
-def eval_result_from_dict(d: TestResultDict) -> EvalResult:
-    """Deserialize a :class:`TestResultDict` into an :class:`EvalResult`."""
-    return EvalResult(
-        loss=d["loss"],
-        macro_f1=d["macro_f1"],
-        per_class_f1=list(d["per_class_f1"]),
-        per_class_precision=list(d["per_class_precision"]),
-        per_class_recall=list(d["per_class_recall"]),
-    )
-
-
-# ------------------------------------------------------------------
-# Training setup
-# ------------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class TrainingSetup:
-    """Everything needed before running a training experiment."""
-
-    device: torch.device
-    num_workers: int
-    split: HoldoutSplit
-    data_hash: str
+TrainingSetup = HoldoutExperimentSetup
 
 
 def prepare_training_setup(logger: logging.Logger) -> TrainingSetup:
-    """Seed -> device -> load samples -> hash -> holdout split.
-
-    This is the shared pipeline that was duplicated in both compare
-    scripts' ``cmd_run`` functions.
-    """
-    rng = seed_all(SEED)
-    device, num_workers = setup_device_and_workers(logger)
-    all_samples = load_samples_logged(logger)
-    data_hash = hash_samples(all_samples)
-    logger.info(
-        "Data fingerprint: %s (full=%s)", data_hash[:HASH_PREFIX_LEN], data_hash
-    )
-    hs = prepare_holdout_split(
-        all_samples, rng, test_size=HOLDOUT_TEST_SIZE, val_size=VAL_SIZE
-    )
-    return TrainingSetup(
-        device=device, num_workers=num_workers, split=hs, data_hash=data_hash
-    )
+    """Build the standard logged holdout setup for experiment CLIs."""
+    return prepare_holdout_setup_logged(logger)
 
 
 # ------------------------------------------------------------------

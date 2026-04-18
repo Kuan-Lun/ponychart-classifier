@@ -41,8 +41,15 @@ from ponychart_classifier.training import (
     BATCH_SIZE,
     CLASS_NAMES,
     HASH_PREFIX_LEN,
+    PerClassColumn,
+    PerClassMetricsBlock,
+    RunEnvironmentRow,
     get_transforms,
+    is_significant_improvement,
     load_all_json_results,
+    log_per_class_f1_matrix,
+    log_per_class_precision_recall_blocks,
+    log_run_environments,
     log_section,
     select_consistent_results,
 )
@@ -184,45 +191,44 @@ class CompareResolutionCLI(ExperimentCLI):
             )
 
         # Run environment
-        self.logger.info("")
-        self.logger.info("Run environment:")
-        for lbl in ordered:
-            r = results[lbl]
-            self.logger.info("  %-10s  host=%s  device=%s", lbl, r.hostname, r.device)
+        log_run_environments(
+            self.logger,
+            [
+                RunEnvironmentRow(
+                    label=lbl,
+                    hostname=results[lbl].hostname,
+                    device=results[lbl].device,
+                )
+                for lbl in ordered
+            ],
+        )
 
-        # Per-class F1
-        self.logger.info("")
-        self.logger.info("Per-class F1:")
-        header = f"  {'Class':<20s}"
-        for lbl in ordered:
-            header += f"  {lbl:<14s}"
-        self.logger.info(header)
-        self.logger.info("  " + "-" * (20 + 16 * len(ordered)))
-
-        for i, cls_name in enumerate(CLASS_NAMES):
-            row = f"  {cls_name:<20s}"
-            for lbl in ordered:
-                f1 = results[lbl].test_result.per_class_f1[i]
-                row += f"  {f1:<14.4f}"
-            self.logger.info(row)
+        # Per-class matrix (class rows, config columns, * = best)
+        columns = [
+            PerClassColumn(
+                label=lbl,
+                macro_f1=results[lbl].test_result.macro_f1,
+                per_class_f1=list(results[lbl].test_result.per_class_f1),
+            )
+            for lbl in ordered
+        ]
+        log_per_class_f1_matrix(self.logger, list(CLASS_NAMES), columns)
 
         # Per-class precision/recall
-        self.logger.info("")
-        self.logger.info("Per-class Precision / Recall:")
-        for lbl in ordered:
-            r = results[lbl]
-            self.logger.info(
-                "  %s (%.2fx, %s):", lbl, r.scale, _fmt_size(r.input_size.hw())
-            )
-            tr = r.test_result
-            for i, cls_name in enumerate(CLASS_NAMES):
-                self.logger.info(
-                    "    %-20s  P=%.4f  R=%.4f  F1=%.4f",
-                    cls_name,
-                    tr.per_class_precision[i],
-                    tr.per_class_recall[i],
-                    tr.per_class_f1[i],
+        log_per_class_precision_recall_blocks(
+            self.logger,
+            list(CLASS_NAMES),
+            [
+                PerClassMetricsBlock(
+                    label=f"{lbl} ({results[lbl].scale:.2f}x, "
+                    f"{_fmt_size(results[lbl].input_size.hw())})",
+                    precision=results[lbl].test_result.per_class_precision,
+                    recall=results[lbl].test_result.per_class_recall,
+                    f1=results[lbl].test_result.per_class_f1,
                 )
+                for lbl in ordered
+            ],
+        )
 
         # Summary
         log_section(self.logger, "SUMMARY")
@@ -246,7 +252,7 @@ class CompareResolutionCLI(ExperimentCLI):
             self.logger.info("")
             if best_lbl == baseline_lbl:
                 self.logger.info("  結論: 放大縮小解析度沒有帶來改善，維持 1.00x")
-            elif delta_vs_baseline > 0.005:
+            elif is_significant_improvement(delta_vs_baseline):
                 self.logger.info(
                     "  結論: %s 有顯著改善 (%+.4f F1)，建議更新 constants.py",
                     best_lbl,
