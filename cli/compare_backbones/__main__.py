@@ -219,7 +219,10 @@ class CompareBackbonesCLI(ExperimentCLI):
         log_named_thresholds(
             self.logger,
             list(CLASS_NAMES),
-            [ThresholdRow(label=name, thresholds=results[name].thresholds) for name in ordered_names],
+            [
+                ThresholdRow(label=name, thresholds=results[name].thresholds)
+                for name in ordered_names
+            ],
         )
 
         # Recommendation

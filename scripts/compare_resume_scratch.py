@@ -101,9 +101,7 @@ def main() -> None:
     # ── Collect pool samples ──
     train_val_group_keys = setup.train_val_group_keys
     pool_samples = [
-        setup.all_samples[i]
-        for gk in train_val_group_keys
-        for i in setup.groups[gk]
+        setup.all_samples[i] for gk in train_val_group_keys for i in setup.groups[gk]
     ]
 
     # Sort pool group keys chronologically

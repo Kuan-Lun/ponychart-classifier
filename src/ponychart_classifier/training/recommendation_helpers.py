@@ -21,12 +21,16 @@ STRONG_CORRELATION = 0.5
 """Absolute Pearson r above this suggests a strong relationship."""
 
 
-def is_significant_improvement(delta: float, *, threshold: float = SIGNIFICANT_DELTA) -> bool:
+def is_significant_improvement(
+    delta: float, *, threshold: float = SIGNIFICANT_DELTA
+) -> bool:
     """Return True when ``delta`` is meaningfully positive."""
     return delta > threshold
 
 
-def is_significant_regression(delta: float, *, threshold: float = SIGNIFICANT_DELTA) -> bool:
+def is_significant_regression(
+    delta: float, *, threshold: float = SIGNIFICANT_DELTA
+) -> bool:
     """Return True when ``delta`` is meaningfully negative."""
     return delta < -threshold
 
