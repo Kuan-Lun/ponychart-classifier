@@ -37,13 +37,12 @@ class PerClassColumn:
 
 
 @dataclass(frozen=True)
-class PerClassMetricsBlock:
-    """Named precision/recall/F1 metrics for one configuration."""
+class PerClassPrecisionRecallBlock:
+    """Named per-class precision/recall metrics for one configuration."""
 
     label: str
     precision: Sequence[float]
     recall: Sequence[float]
-    f1: Sequence[float]
 
 
 @dataclass(frozen=True)
@@ -71,14 +70,30 @@ def _validate_per_class_matrix(
     if not class_names:
         raise ValueError("class_names must not be empty")
 
-    expected_count = len(class_names)
     for column in columns:
-        actual_count = len(column.per_class_f1)
-        if actual_count != expected_count:
-            raise ValueError(
-                "per-class F1 count mismatch for "
-                f"{column.label!r}: expected {expected_count}, got {actual_count}"
-            )
+        _validate_same_length(
+            class_names,
+            column.per_class_f1,
+            field_name="per-class F1",
+            owner_label=column.label,
+        )
+
+
+def _validate_same_length(
+    class_names: Sequence[str],
+    values: Sequence[float],
+    *,
+    field_name: str,
+    owner_label: str,
+) -> None:
+    """Reject malformed per-class sequences with caller-facing errors."""
+    expected_count = len(class_names)
+    actual_count = len(values)
+    if actual_count != expected_count:
+        raise ValueError(
+            f"{field_name} count mismatch for {owner_label!r}: "
+            f"expected {expected_count}, got {actual_count}"
+        )
 
 
 def log_per_class_f1_matrix(
@@ -141,31 +156,32 @@ def log_per_class_f1_matrix(
     logger.info("%s", wins_row)
 
 
-def log_per_class_precision_recall_blocks(
+def log_per_class_precision_recall(
     logger: logging.Logger,
     class_names: Sequence[str],
-    blocks: Sequence[PerClassMetricsBlock],
+    blocks: Sequence[PerClassPrecisionRecallBlock],
     *,
     title: str = "Per-class Precision / Recall:",
 ) -> None:
-    """Log one or more named precision/recall/F1 blocks."""
+    """Log one or more named precision/recall blocks."""
     if not blocks:
         return
     if not class_names:
         raise ValueError("class_names must not be empty")
 
-    expected_count = len(class_names)
     for block in blocks:
-        for field_name, values in (
-            ("precision", block.precision),
-            ("recall", block.recall),
-            ("f1", block.f1),
-        ):
-            if len(values) != expected_count:
-                raise ValueError(
-                    f"{field_name} count mismatch for {block.label!r}: "
-                    f"expected {expected_count}, got {len(values)}"
-                )
+        _validate_same_length(
+            class_names,
+            block.precision,
+            field_name="precision",
+            owner_label=block.label,
+        )
+        _validate_same_length(
+            class_names,
+            block.recall,
+            field_name="recall",
+            owner_label=block.label,
+        )
 
     logger.info("")
     logger.info("%s", title)
@@ -173,11 +189,10 @@ def log_per_class_precision_recall_blocks(
         logger.info("  %s:", block.label)
         for i, cls_name in enumerate(class_names):
             logger.info(
-                "    %-20s  P=%.4f  R=%.4f  F1=%.4f",
+                "    %-20s  P=%.4f  R=%.4f",
                 cls_name,
                 block.precision[i],
                 block.recall[i],
-                block.f1[i],
             )
 
 
@@ -222,13 +237,15 @@ def log_named_thresholds(
     if not class_names:
         raise ValueError("class_names must not be empty")
 
-    expected_count = len(class_names)
+    logger.info("")
     logger.info("%s", title)
     for row in rows:
-        if len(row.thresholds) != expected_count:
-            raise ValueError(
-                f"threshold count mismatch for {row.label!r}: "
-                f"expected {expected_count}, got {len(row.thresholds)}"
-            )
-        threshold_map = dict(zip(class_names, row.thresholds, strict=False))
-        logger.info("  %s: %s", row.label, threshold_map)
+        _validate_same_length(
+            class_names,
+            row.thresholds,
+            field_name="threshold",
+            owner_label=row.label,
+        )
+        logger.info("  %s:", row.label)
+        for cls_name, threshold in zip(class_names, row.thresholds, strict=True):
+            logger.info("    %-20s  %.2f", cls_name, threshold)

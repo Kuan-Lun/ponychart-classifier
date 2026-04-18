@@ -21,7 +21,7 @@ from ponychart_classifier.training import (
     BACKBONE,
     CLASS_NAMES,
     NUM_CLASSES,
-    PerClassMetricsBlock,
+    PerClassPrecisionRecallBlock,
     ThresholdRow,
     compute_pos_weight,
     configure_logging,
@@ -30,7 +30,7 @@ from ponychart_classifier.training import (
     is_significant_improvement,
     is_significant_regression,
     log_named_thresholds,
-    log_per_class_precision_recall_blocks,
+    log_per_class_precision_recall,
     log_section,
     make_test_loader,
     prepare_holdout_setup_logged,
@@ -135,21 +135,19 @@ def main() -> None:
     deltas = []
     for i in range(len(CLASS_NAMES)):
         deltas.append(eval_b.per_class_f1[i] - eval_a.per_class_f1[i])
-    log_per_class_precision_recall_blocks(
+    log_per_class_precision_recall(
         logger,
         list(CLASS_NAMES),
         [
-            PerClassMetricsBlock(
+            PerClassPrecisionRecallBlock(
                 label="A (Baseline)",
                 precision=eval_a.per_class_precision,
                 recall=eval_a.per_class_recall,
-                f1=eval_a.per_class_f1,
             ),
-            PerClassMetricsBlock(
+            PerClassPrecisionRecallBlock(
                 label="B (pos_weight)",
                 precision=eval_b.per_class_precision,
                 recall=eval_b.per_class_recall,
-                f1=eval_b.per_class_f1,
             ),
         ],
         title="Per-class Precision / Recall:",

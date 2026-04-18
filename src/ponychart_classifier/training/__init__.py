@@ -60,13 +60,13 @@ from .experiment_io import (
 from .export import export_onnx
 from .log_helpers import (
     PerClassColumn,
-    PerClassMetricsBlock,
+    PerClassPrecisionRecallBlock,
     RunEnvironmentRow,
     ThresholdRow,
     format_thresholds,
     log_named_thresholds,
     log_per_class_f1_matrix,
-    log_per_class_precision_recall_blocks,
+    log_per_class_precision_recall,
     log_run_environments,
     log_section,
 )
@@ -212,7 +212,7 @@ __all__ = [
     "PHASE2_EPOCHS",
     "PHASE2_PATIENCE",
     "PerClassColumn",
-    "PerClassMetricsBlock",
+    "PerClassPrecisionRecallBlock",
     "PonyChartDataset",
     "prepare_balanced_samples",
     "prepare_balanced_train_val_for_group_keys",
@@ -241,7 +241,7 @@ __all__ = [
     "TensorBatch",
     "train_and_evaluate_on_test",
     "log_per_class_f1_matrix",
-    "log_per_class_precision_recall_blocks",
+    "log_per_class_precision_recall",
     "log_named_thresholds",
     "log_run_environments",
     "train_model",

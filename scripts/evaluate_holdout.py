@@ -20,13 +20,13 @@ import torch.nn as nn
 from ponychart_classifier.training import (
     BACKBONE,
     CLASS_NAMES,
-    PerClassMetricsBlock,
+    PerClassPrecisionRecallBlock,
     ThresholdRow,
     configure_logging,
     evaluate,
     get_transforms,
     log_named_thresholds,
-    log_per_class_precision_recall_blocks,
+    log_per_class_precision_recall,
     log_section,
     make_test_loader,
     prepare_holdout_setup_logged,
@@ -90,15 +90,14 @@ def _run() -> None:
     logger.info("")
     logger.info("  Macro F1: %.4f", eval_result.macro_f1)
     logger.info("  Loss:     %.4f", eval_result.loss)
-    log_per_class_precision_recall_blocks(
+    log_per_class_precision_recall(
         logger,
         list(CLASS_NAMES),
         [
-            PerClassMetricsBlock(
+            PerClassPrecisionRecallBlock(
                 label="Holdout test set",
                 precision=eval_result.per_class_precision,
                 recall=eval_result.per_class_recall,
-                f1=eval_result.per_class_f1,
             )
         ],
     )

@@ -36,7 +36,7 @@ from ponychart_classifier.training import (
     CLASS_NAMES,
     HASH_PREFIX_LEN,
     PerClassColumn,
-    PerClassMetricsBlock,
+    PerClassPrecisionRecallBlock,
     RunEnvironmentRow,
     ThresholdRow,
     format_thresholds,
@@ -44,7 +44,7 @@ from ponychart_classifier.training import (
     load_all_json_results,
     log_named_thresholds,
     log_per_class_f1_matrix,
-    log_per_class_precision_recall_blocks,
+    log_per_class_precision_recall,
     log_run_environments,
     log_section,
     select_consistent_results,
@@ -202,15 +202,14 @@ class CompareBackbonesCLI(ExperimentCLI):
         log_per_class_f1_matrix(self.logger, list(CLASS_NAMES), columns)
 
         # Per-class precision/recall
-        log_per_class_precision_recall_blocks(
+        log_per_class_precision_recall(
             self.logger,
             list(CLASS_NAMES),
             [
-                PerClassMetricsBlock(
+                PerClassPrecisionRecallBlock(
                     label=name,
                     precision=results[name].test_result.per_class_precision,
                     recall=results[name].test_result.per_class_recall,
-                    f1=results[name].test_result.per_class_f1,
                 )
                 for name in ordered_names
             ],

@@ -34,7 +34,7 @@ from ponychart_classifier.training import (
     SEED,
     STRONG_CORRELATION,
     VAL_SIZE,
-    PerClassMetricsBlock,
+    PerClassPrecisionRecallBlock,
     Sample,
     ThresholdRow,
     compute_class_rates,
@@ -45,7 +45,7 @@ from ponychart_classifier.training import (
     is_original,
     is_significant_regression,
     log_named_thresholds,
-    log_per_class_precision_recall_blocks,
+    log_per_class_precision_recall,
     log_section,
     make_test_loader,
     prepare_balanced_samples,
@@ -270,27 +270,24 @@ def main() -> None:
         eval_c.loss,
     )
 
-    log_per_class_precision_recall_blocks(
+    log_per_class_precision_recall(
         logger,
         list(CLASS_NAMES),
         [
-            PerClassMetricsBlock(
+            PerClassPrecisionRecallBlock(
                 label="A (biased)",
                 precision=eval_a.per_class_precision,
                 recall=eval_a.per_class_recall,
-                f1=eval_a.per_class_f1,
             ),
-            PerClassMetricsBlock(
+            PerClassPrecisionRecallBlock(
                 label="B (orig only)",
                 precision=eval_b.per_class_precision,
                 recall=eval_b.per_class_recall,
-                f1=eval_b.per_class_f1,
             ),
-            PerClassMetricsBlock(
+            PerClassPrecisionRecallBlock(
                 label="C (balanced)",
                 precision=eval_c.per_class_precision,
                 recall=eval_c.per_class_recall,
-                f1=eval_c.per_class_f1,
             ),
         ],
         title="Per-class Precision / Recall:",

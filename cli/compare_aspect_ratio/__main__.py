@@ -39,14 +39,14 @@ from ponychart_classifier.training import (
     CLASS_NAMES,
     HASH_PREFIX_LEN,
     PerClassColumn,
-    PerClassMetricsBlock,
+    PerClassPrecisionRecallBlock,
     RunEnvironmentRow,
     get_transforms,
     is_significant_improvement,
     is_significant_regression,
     load_all_json_results,
     log_per_class_f1_matrix,
-    log_per_class_precision_recall_blocks,
+    log_per_class_precision_recall,
     log_run_environments,
     log_section,
     select_consistent_results,
@@ -216,15 +216,14 @@ class CompareAspectRatioCLI(ExperimentCLI):
         log_per_class_f1_matrix(self.logger, list(CLASS_NAMES), columns)
 
         # Per-class precision/recall
-        log_per_class_precision_recall_blocks(
+        log_per_class_precision_recall(
             self.logger,
             list(CLASS_NAMES),
             [
-                PerClassMetricsBlock(
+                PerClassPrecisionRecallBlock(
                     label=f"{lbl} ({results[lbl].description})",
                     precision=results[lbl].test_result.per_class_precision,
                     recall=results[lbl].test_result.per_class_recall,
-                    f1=results[lbl].test_result.per_class_f1,
                 )
                 for lbl in ordered
             ],
