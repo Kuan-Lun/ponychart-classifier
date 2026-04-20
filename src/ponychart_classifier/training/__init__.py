@@ -6,6 +6,7 @@ from .constants import (
     BACKBONE,
     BATCH_SIZE,
     CLASS_NAMES,
+    GOF_RECENT_ORIG_LIMIT,
     HOLDOUT_TEST_SIZE,
     IMAGENET_MEAN,
     IMAGENET_STD,
@@ -101,6 +102,8 @@ from .sampling import (
     load_labels,
     load_samples,
     prepare_balanced_samples,
+    select_recent_original_keys,
+    select_recent_original_samples,
     separate_orig_crop,
 )
 from .script_utils import (  # noqa: F401
@@ -167,6 +170,7 @@ __all__ = [
     "extract_raw_stem",
     "FeatureClassifierModel",
     "format_thresholds",
+    "GOF_RECENT_ORIG_LIMIT",
     "get_base_timestamp",
     "get_device",
     "get_performance_cpu_count",
@@ -233,6 +237,8 @@ __all__ = [
     "SEARCH_PHASE2_EPOCHS",
     "SEED",
     "seed_all",
+    "select_recent_original_keys",
+    "select_recent_original_samples",
     "select_consistent_results",
     "separate_orig_crop",
     "setup_device_and_workers",

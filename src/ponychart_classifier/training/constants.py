@@ -16,6 +16,7 @@ from ponychart_classifier.model_spec import (  # noqa: F401
 __all__ = [
     "ARTIFACTS_DIR",
     "CLASS_NAMES",
+    "GOF_RECENT_ORIG_LIMIT",
     "IMAGENET_MEAN",
     "IMAGENET_STD",
     "INPUT_SIZE",
@@ -59,6 +60,7 @@ VAL_SIZE = 0.15
 
 # Balancing: goodness-of-fit significance level
 GOF_ALPHA = 0.05
+GOF_RECENT_ORIG_LIMIT = 1000
 
 # Expected label-size ratios (single / double / triple)
 # Automatically normalized to probabilities; values only need to be proportional.

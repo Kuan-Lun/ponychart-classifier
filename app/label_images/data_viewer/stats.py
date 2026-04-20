@@ -4,10 +4,13 @@ from __future__ import annotations
 
 from collections import Counter
 from itertools import combinations
-from pathlib import Path
+
+from ponychart_classifier.training.sampling import (
+    is_original,
+    select_recent_original_keys,
+)
 
 from ..constants import LABEL_MAP
-from ..file_ops import is_raw_image
 from ..label_store import LabelStore
 
 NUM_CLASSES = len(LABEL_MAP)
@@ -16,13 +19,15 @@ NUM_CLASSES = len(LABEL_MAP)
 def snapshot_orig_samples(store: LabelStore) -> dict[str, list[int]]:
     """UI 執行緒呼叫：擷取 store 中「原圖」的標籤快照。"""
     orig: dict[str, list[int]] = {}
+    orig_keys: list[str] = []
     for key in store.all_keys():
         labels = store.get(key)
         if not labels:
             continue
-        if is_raw_image(Path(Path(key).name)):
+        if is_original(key.split("/")[-1]):
             orig[key] = labels
-    return orig
+            orig_keys.append(key)
+    return {key: orig[key] for key in select_recent_original_keys(orig_keys)}
 
 
 def count_by_label_size(samples: dict[str, list[int]]) -> dict[int, list[int]]:

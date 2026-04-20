@@ -21,7 +21,7 @@ from ponychart_classifier.stats.statistics import (
     pearson_stat,
 )
 
-MAX_COMPOSITIONS: int = 2_000_000
+MAX_COMPOSITIONS: int = 50_000
 
 
 def num_compositions(n: int, k: int) -> int:

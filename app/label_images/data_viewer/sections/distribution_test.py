@@ -5,7 +5,10 @@ from __future__ import annotations
 import tkinter as tk
 
 from ponychart_classifier.stats import GoFTestResult, goodness_of_fit_test
-from ponychart_classifier.training.constants import LABEL_SIZE_PROBS
+from ponychart_classifier.training.constants import (
+    GOF_RECENT_ORIG_LIMIT,
+    LABEL_SIZE_PROBS,
+)
 
 from ..stats import combo_counts_flat, count_by_label_size, overall_counts
 from ..widgets import FONT, FONT_BOLD, grid_cell, section_frame, section_header
@@ -45,12 +48,31 @@ class DistributionTestSection:
         self._total_cols = self._INFO_COLS + len(self._all_methods) * 2
 
     def render(self, parent: tk.Widget) -> None:
-        section_header(parent, "資料分布檢定（原圖）")
+        section_header(
+            parent,
+            f"資料分布檢定（原圖，最近 {GOF_RECENT_ORIG_LIMIT:,} 張）",
+        )
         if not self._orig:
             tk.Label(parent, text="尚無原圖標註資料", font=FONT, fg="#999").pack(
                 anchor="w", padx=16, pady=(0, 4)
             )
             return
+        tk.Label(
+            parent,
+            text=f"此次檢定使用 {len(self._orig):,} 張原圖",
+            font=FONT,
+            anchor="w",
+        ).pack(anchor="w", padx=16, pady=(0, 4))
+        tk.Label(
+            parent,
+            text=(
+                "註：Probability exact 沒有單一統計量；"
+                "N/A 代表真正的 exact，數值* 代表 fallback 到 Pearson asymptotic。"
+            ),
+            font=FONT,
+            anchor="w",
+            fg="#666",
+        ).pack(anchor="w", padx=16, pady=(0, 4))
 
         frame = section_frame(parent)
         self._render_header(frame)
@@ -179,12 +201,23 @@ class DistributionTestSection:
                     probs=probs,
                     method=method_key,  # type: ignore[arg-type]
                 )
-                grid_cell(frame, self._fmt_stat(r), row, col, width=self._STAT_W)
+                grid_cell(
+                    frame,
+                    self._fmt_stat(method_key, r),
+                    row,
+                    col,
+                    width=self._STAT_W,
+                )
                 grid_cell(frame, self._fmt_p(r), row, col + 1, width=self._P_W)
         return start_row + len(rows)
 
     @staticmethod
-    def _fmt_stat(r: GoFTestResult) -> str:
+    def _fmt_stat(method_key: str, r: GoFTestResult) -> str:
+        if method_key == "probability_exact":
+            if r.exact:
+                return "N/A"
+            if r.statistic is not None:
+                return f"{r.statistic:.2f}*"
         if r.statistic is None:
             return "—"
         return f"{r.statistic:.2f}"

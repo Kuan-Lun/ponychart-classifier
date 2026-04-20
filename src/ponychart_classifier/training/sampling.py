@@ -7,8 +7,9 @@ import logging
 import os
 import re
 from collections import Counter, defaultdict
+from collections.abc import Callable, Iterable
 from itertools import combinations
-from typing import NamedTuple
+from typing import NamedTuple, TypeVar
 
 import numpy as np
 import torch
@@ -17,6 +18,7 @@ from ponychart_classifier.stats import goodness_of_fit_test
 
 from .constants import (
     GOF_ALPHA,
+    GOF_RECENT_ORIG_LIMIT,
     LABEL_SIZE_PROBS,
     LABELS_FILE,
     NUM_CLASSES,
@@ -24,6 +26,7 @@ from .constants import (
 )
 
 logger = logging.getLogger(__name__)
+_T = TypeVar("_T")
 
 _ORIG_STEM_RE = re.compile(r"^pony_chart_\d{8}_\d{6}$")
 _RAW_STEM_RE = re.compile(r"(pony_chart_\d{8}_\d{6})")
@@ -65,6 +68,52 @@ def get_base_timestamp(filename: str) -> str:
     """Extract pony_chart_YYYYMMDD_HHMMSS from any variant."""
     parts = filename.replace(".png", "").replace(".jpg", "").split("_")
     return "_".join(parts[:4])
+
+
+def _select_recent_original_items(
+    items: Iterable[_T],
+    *,
+    filename_getter: Callable[[_T], str],
+    identity_getter: Callable[[_T], str],
+    limit: int = GOF_RECENT_ORIG_LIMIT,
+) -> list[_T]:
+    """Return up to ``limit`` original items sorted by recency, newest first."""
+    ranked: list[tuple[str, str, _T]] = []
+    for item in items:
+        filename = filename_getter(item)
+        raw_stem = extract_raw_stem(filename)
+        if raw_stem is None:
+            msg = f"Expected original image filename, got: {filename}"
+            raise ValueError(msg)
+        ranked.append((raw_stem, identity_getter(item), item))
+    ranked.sort(key=lambda row: (row[0], row[1]), reverse=True)
+    return [item for _, _, item in ranked[:limit]]
+
+
+def select_recent_original_samples(
+    samples: list[Sample],
+    limit: int = GOF_RECENT_ORIG_LIMIT,
+) -> list[Sample]:
+    """Select the most recent original samples, newest first."""
+    return _select_recent_original_items(
+        samples,
+        filename_getter=lambda sample: os.path.basename(sample.path),
+        identity_getter=lambda sample: sample.path,
+        limit=limit,
+    )
+
+
+def select_recent_original_keys(
+    keys: Iterable[str],
+    limit: int = GOF_RECENT_ORIG_LIMIT,
+) -> list[str]:
+    """Select the most recent original keys, newest first."""
+    return _select_recent_original_items(
+        keys,
+        filename_getter=os.path.basename,
+        identity_getter=lambda key: key,
+        limit=limit,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -147,13 +196,14 @@ def combo_counts_flat(
     return [cnt.get(c, 0) for c in all_combos]
 
 
-def _should_balance(counts: list[int]) -> bool:
+def _should_balance(counts: list[int], *, subset_size: int) -> bool:
     """對 combo counts 做均勻性檢定，回傳是否應平衡（不拒絕 H0）。"""
     if sum(counts) == 0:
         return False
     result = goodness_of_fit_test(counts)
     logger.info(
-        "GoF test (k=%d, n=%d): p=%.4f, %s",
+        "GoF test (recent subset, subset_n=%d, k=%d, n=%d): p=%.4f, %s",
+        subset_size,
         len(counts),
         sum(counts),
         result.p_value,
@@ -222,25 +272,37 @@ def prepare_balanced_samples(
 
     1. 分離 orig / crop
     2. 對 orig 各標籤數量組做均勻性檢定，決定 balance_flags
-    3. 檢定標籤數量比例，決定 target_probs
+    3. 以最近原圖子集檢定標籤數量比例，決定 target_probs
     4. 對 orig 和 crop 各自呼叫 _balance_one_side 一步完成
     5. 合併
     """
     orig, crop = separate_orig_crop(samples)
+    orig_for_gof = select_recent_original_samples(orig)
+    logger.info(
+        "GoF original subset: using %d most recent original images (of %d available)",
+        len(orig_for_gof),
+        len(orig),
+    )
 
     # 逐組檢定
     balance_flags: dict[int, bool] = {}
     for label_size in (1, 2, 3):
-        counts = combo_counts_flat(orig, label_size)
-        balance_flags[label_size] = _should_balance(counts)
+        counts = combo_counts_flat(orig_for_gof, label_size)
+        balance_flags[label_size] = _should_balance(
+            counts,
+            subset_size=len(orig_for_gof),
+        )
 
     # 檢定標籤數量比例，決定 target_probs
-    size_counts = [sum(1 for s in orig if len(s.labels) == n) for n in (1, 2, 3)]
+    size_counts = [
+        sum(1 for s in orig_for_gof if len(s.labels) == n) for n in (1, 2, 3)
+    ]
     total_orig = sum(size_counts)
     if total_orig > 0:
         size_result = goodness_of_fit_test(size_counts, probs=LABEL_SIZE_PROBS)
         logger.info(
-            "GoF test (label-size ratio): p=%.4f, %s",
+            "GoF test (label-size ratio, n=%d): p=%.4f, %s",
+            total_orig,
             size_result.p_value,
             "use expected" if size_result.p_value > GOF_ALPHA else "use actual",
         )
