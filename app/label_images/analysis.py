@@ -1,5 +1,6 @@
 """模型分析：背景推論與結果表格顯示。"""
 
+import json
 import threading
 import tkinter as tk
 from collections.abc import Callable
@@ -8,6 +9,7 @@ from pathlib import Path
 import ponychart_classifier as _pkg
 from ponychart_classifier.inference import artifacts
 from ponychart_classifier.inference.label_selection import select_predictions
+from ponychart_classifier.model_spec import PONY_CLASSES, parse_class_key
 from ponychart_classifier.training import OUTPUT_CHECKPOINT, recompute_checkpoint_val_f1
 from ponychart_classifier.training.sampling import Sample
 
@@ -22,6 +24,21 @@ from .label_store import LabelStore
 from .navigator import ImageNavigator
 
 
+def _load_thresholds(path: Path) -> list[float] | None:
+    """從 thresholds.json 直接讀取 threshold list，不需載入 ONNX model。"""
+    if not path.exists():
+        return None
+    try:
+        with path.open(encoding="utf-8") as f:
+            raw: object = json.load(f)
+        if not isinstance(raw, dict):
+            return None
+        parsed = {parse_class_key(str(k)): float(v) for k, v in raw.items()}
+        return [parsed.get(c, 0.5) for c in PONY_CLASSES]
+    except Exception:
+        return None
+
+
 class AnalysisManager:
     """管理模型分析的背景執行緒與結果。"""
 
@@ -34,10 +51,9 @@ class AnalysisManager:
         self._progress: tuple[int, int] | None = None
         self._cache_path: Path = ANALYSIS_CACHE_FILE
         self._model_path: Path = artifacts.DEFAULT_MODEL_PATH
-        cached = prob_cache.load(self._cache_path, self._model_path)
-        if cached is not None:
-            self.model_probs = cached.probs
-            self.model_thresholds = cached.thresholds
+        self.model_probs = prob_cache.load(self._cache_path, self._model_path)
+        if self.model_probs is not None:
+            self.model_thresholds = _load_thresholds(artifacts.DEFAULT_THRESHOLDS_PATH)
 
     @property
     def is_running(self) -> bool:
@@ -114,12 +130,11 @@ class AnalysisManager:
                     merged.update(new_probs)
                     self.model_probs = merged
                 self.model_thresholds = new_thresholds
-                if self.model_probs is not None and self.model_thresholds is not None:
+                if self.model_probs is not None:
                     prob_cache.save(
                         self._cache_path,
                         self._model_path,
                         self.model_probs,
-                        self.model_thresholds,
                     )
                 on_complete()
 
