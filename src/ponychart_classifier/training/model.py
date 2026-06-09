@@ -72,6 +72,19 @@ def _build_efficientnet_b4(pretrained: bool) -> nn.Module:
     return cast(nn.Module, models.efficientnet_b4(weights=weights))
 
 
+# Backbone reference specs (ImageNet defaults; not used at runtime)
+# Train mem is approximate — activation overhead means larger models scale slightly
+# higher than the param ratio alone; use as a rough OOM risk guide.
+#
+# Backbone            ImageNet size  Params   ONNX size  Train mem (×B0, approx)
+# ------------------  -------------  -------  ---------  -----------------------
+# mobilenet_v3_small  224×224        2.5 M    ~4 MB      ~0.5×
+# mobilenet_v3_large  224×224        5.4 M    ~9 MB      ~1.0×
+# efficientnet_b0     224×224        5.3 M    ~11 MB     1.0× (baseline)
+# efficientnet_b1     240×240        7.8 M    ~15 MB     ~1.5×
+# efficientnet_b2     260×260        9.1 M    ~18 MB     ~1.7×
+# efficientnet_b3     300×300        12 M     ~24 MB     ~2.3×
+# efficientnet_b4     380×380        19 M     ~67 MB     ~3.6×
 BACKBONE_REGISTRY: dict[str, BackboneConfig] = {
     "mobilenet_v3_small": BackboneConfig(
         name="mobilenet_v3_small",
