@@ -29,5 +29,8 @@ class BackboneExperimentConfig:
 # exists in BACKBONE_REGISTRY.
 BACKBONE_CONFIGS: dict[str, BackboneExperimentConfig] = {
     "efficientnet_b0": BackboneExperimentConfig(),
+    "efficientnet_b1": BackboneExperimentConfig(),
+    "efficientnet_b2": BackboneExperimentConfig(),
+    "efficientnet_b3": BackboneExperimentConfig(),
     "efficientnet_b4": BackboneExperimentConfig(),
 }
