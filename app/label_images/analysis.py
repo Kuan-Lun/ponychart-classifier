@@ -3,13 +3,21 @@
 import threading
 import tkinter as tk
 from collections.abc import Callable
+from pathlib import Path
 
 import ponychart_classifier as _pkg
+from ponychart_classifier.inference import artifacts
 from ponychart_classifier.inference.label_selection import select_predictions
 from ponychart_classifier.training import OUTPUT_CHECKPOINT, recompute_checkpoint_val_f1
 from ponychart_classifier.training.sampling import Sample
 
-from .constants import CLASS_NAMES_LIST, LABEL_MAP, SUSPICIOUS_MARGIN
+from . import prob_cache
+from .constants import (
+    ANALYSIS_CACHE_FILE,
+    CLASS_NAMES_LIST,
+    LABEL_MAP,
+    SUSPICIOUS_MARGIN,
+)
 from .label_store import LabelStore
 from .navigator import ImageNavigator
 
@@ -23,6 +31,13 @@ class AnalysisManager:
         self._thread: threading.Thread | None = None
         self._result: tuple[dict[str, list[float]], list[float]] | None = None
         self._error: str | None = None
+        self._progress: tuple[int, int] | None = None
+        self._cache_path: Path = ANALYSIS_CACHE_FILE
+        self._model_path: Path = artifacts.DEFAULT_MODEL_PATH
+        cached = prob_cache.load(self._cache_path, self._model_path)
+        if cached is not None:
+            self.model_probs = cached.probs
+            self.model_thresholds = cached.thresholds
 
     @property
     def is_running(self) -> bool:
@@ -60,6 +75,7 @@ class AnalysisManager:
         on_complete: Callable[[], None],
         on_error: Callable[[str], None],
         root: tk.Tk,
+        on_progress: Callable[[int, int], None] | None = None,
     ) -> None:
         """啟動背景分析。新預測一律合併進 ``model_probs``，不會覆蓋舊資料。"""
         if self.is_running:
@@ -67,6 +83,7 @@ class AnalysisManager:
 
         self._result = None
         self._error = None
+        self._progress = None
         self._thread = threading.Thread(
             target=self._run,
             args=(samples, keys),
@@ -76,6 +93,9 @@ class AnalysisManager:
 
         def poll() -> None:
             if self.is_running:
+                if on_progress is not None and self._progress is not None:
+                    done, total = self._progress
+                    on_progress(done, total)
                 root.after(200, poll)
                 return
             self._thread = None
@@ -94,6 +114,13 @@ class AnalysisManager:
                     merged.update(new_probs)
                     self.model_probs = merged
                 self.model_thresholds = new_thresholds
+                if self.model_probs is not None and self.model_thresholds is not None:
+                    prob_cache.save(
+                        self._cache_path,
+                        self._model_path,
+                        self.model_probs,
+                        self.model_thresholds,
+                    )
                 on_complete()
 
         root.after(200, poll)
@@ -107,7 +134,8 @@ class AnalysisManager:
             _pkg.update()
             thresholds = _pkg.get_thresholds().as_list()
             result: dict[str, list[float]] = {}
-            for (img_path, _labels), key in zip(samples, keys):
+            total = len(samples)
+            for i, ((img_path, _labels), key) in enumerate(zip(samples, keys)):
                 pred = _pkg.predict(img_path)
                 result[key] = [
                     pred.twilight_sparkle,
@@ -117,6 +145,7 @@ class AnalysisManager:
                     pred.pinkie_pie,
                     pred.applejack,
                 ]
+                self._progress = (i + 1, total)
             self._result = (result, thresholds)
             # Update checkpoint val_f1 based on current dataset
             if OUTPUT_CHECKPOINT.exists():

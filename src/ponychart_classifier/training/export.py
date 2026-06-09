@@ -65,6 +65,7 @@ def export_onnx(
                 output_names=["logits"],
                 opset_version=18,
                 dynamo=False,
+                dynamic_axes={"input": {0: "batch_size"}, "logits": {0: "batch_size"}},
             )
     finally:
         for name, level in saved_levels.items():

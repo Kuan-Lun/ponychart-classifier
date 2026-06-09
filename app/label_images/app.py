@@ -198,13 +198,16 @@ class _AnalysisActions:
         self._launch(samples, keys, scope="", full=True)
 
     def start_unlabeled_only(self) -> None:
-        """僅未標註模式：對尚未手動標註的圖片跑推論。"""
+        """僅未標註模式：對尚未手動標註且尚未分析的圖片跑推論。"""
         a = self._app
+        existing = a.analysis.model_probs or {}
         samples, keys = a.analysis.collect_samples(
-            a.nav, a.store, key_filter=lambda k: not a.store.has(k)
+            a.nav,
+            a.store,
+            key_filter=lambda k: not a.store.has(k) and k not in existing,
         )
         if not samples:
-            messagebox.showinfo("Info", "目前沒有未標註的圖片。")
+            messagebox.showinfo("Info", "目前沒有未標註且未分析的圖片。")
             return
         self._launch(samples, keys, scope="unlabeled ", full=False)
 
@@ -221,7 +224,7 @@ class _AnalysisActions:
             return
         a.analyze_btn.configure(state="disabled")
         a.analyze_unlabeled_btn.configure(state="disabled")
-        a.analyze_status.configure(text=f"Analyzing {len(samples)} {scope}images...")
+        a.analyze_status.configure(text=f"Analyzing 0 / {len(samples)}...")
         self._just_ran_full = full
 
         a.analysis.start(
@@ -230,6 +233,7 @@ class _AnalysisActions:
             on_complete=self._on_complete,
             on_error=self._on_error,
             root=a.root,
+            on_progress=self._on_progress,
         )
 
     def _on_complete(self) -> None:
@@ -244,6 +248,9 @@ class _AnalysisActions:
         a.analyze_status.configure(text="")
         a.filter_panel.set_suspicious_state("normal")
         a.refresh()
+
+    def _on_progress(self, done: int, total: int) -> None:
+        self._app.analyze_status.configure(text=f"Analyzing {done} / {total}...")
 
     def _on_error(self, error: str) -> None:
         a = self._app
@@ -323,6 +330,8 @@ class LabelApp:
 
         self.current_labels: list[int] = []
         root.bind("<Key>", self._key_handler.handle)
+        if self.analysis.model_probs is not None:
+            self.filter_panel.set_suspicious_state("normal")
         self.refresh()
 
     # ── UI 建構 ──────────────────────────────────────────────

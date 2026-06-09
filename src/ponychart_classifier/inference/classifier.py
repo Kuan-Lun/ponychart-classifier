@@ -29,6 +29,15 @@ from .results import (
 )
 
 
+def _select_providers() -> list[str]:
+    """Return the best available ONNX Runtime execution providers."""
+    available = set(ort.get_available_providers())
+    for preferred in ("CoreMLExecutionProvider", "CUDAExecutionProvider"):
+        if preferred in available:
+            return [preferred, "CPUExecutionProvider"]
+    return ["CPUExecutionProvider"]
+
+
 def _read_input_size(session: Any) -> ImageSize:
     """Recover ``(H, W)`` from the ONNX session's input shape ``[N, C, H, W]``."""
     shape = session.get_inputs()[0].shape
@@ -87,7 +96,7 @@ class PonyChartClassifier:
         artifacts.ensure_artifact(self._thresholds_path, artifacts.THRESHOLDS_FILENAME)
         self._session = ort.InferenceSession(
             str(self._model_path),
-            providers=["CPUExecutionProvider"],
+            providers=_select_providers(),
         )
         self._input_size = _read_input_size(self._session)
         with self._thresholds_path.open(encoding="utf-8") as f:
