@@ -64,7 +64,7 @@ GOF_RECENT_ORIG_LIMIT = 9999
 
 # Expected label-size ratios (single / double / triple)
 # Automatically normalized to probabilities; values only need to be proportional.
-_LABEL_SIZE_RATIOS: list[float] = [1061.64, 1047.56, 449.80]
+_LABEL_SIZE_RATIOS: list[float] = [2631.71, 2738.32, 1212.97]
 if any(v < 0 for v in _LABEL_SIZE_RATIOS):
     raise ValueError(
         f"_LABEL_SIZE_RATIOS contains negative values: {_LABEL_SIZE_RATIOS}"
