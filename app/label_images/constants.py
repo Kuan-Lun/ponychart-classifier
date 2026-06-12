@@ -2,7 +2,11 @@
 
 from pathlib import Path
 
-from ponychart_classifier.model_spec import DISPLAY_NAME_BY_CLASS, PONY_CLASSES
+from ponychart_classifier.model_spec import (
+    DISPLAY_NAME_BY_CLASS,
+    INPUT_SIZE,
+    PONY_CLASSES,
+)
 
 # 所有路徑以 repo root 為基準
 REPO_DIR = Path(__file__).resolve().parent.parent.parent
@@ -11,6 +15,25 @@ IMAGE_DIR = REPO_DIR / "rawimage"
 LABEL_FILE = IMAGE_DIR / "labels.json"
 ANALYSIS_CACHE_FILE = IMAGE_DIR / "analysis_cache.json"
 MAX_SIZE = 1004
+
+# 裁切框：長寬比鎖定為 INPUT_SIZE，確保訓練時 resize 不會造成比例失真
+CROP_ASPECT_RATIO = INPUT_SIZE.width / INPUT_SIZE.height
+# 裁切寬度（原圖像素）下限，避免訓練 resize 時過度放大造成模糊
+CROP_MIN_WIDTH_ORIG = INPUT_SIZE.width
+# 進入裁切模式時，預設裁切框最大可佔畫面比例
+CROP_INITIAL_FRACTION = 0.6
+# WASD 每次移動的畫面像素
+CROP_MOVE_STEP = 10
+# QE 每次旋轉的角度（度）
+CROP_ROTATE_STEP_DEG = 1.0
+# RF 每次縮放的倍率
+CROP_SCALE_STEP = 1.05
+# 按住 Shift 時，WASD 每次移動的畫面像素
+CROP_MOVE_STEP_FAST = 30
+# 按住 Shift 時，QE 每次旋轉的角度（度）
+CROP_ROTATE_STEP_DEG_FAST = 5.0
+# 按住 Shift 時，RF 每次縮放的倍率
+CROP_SCALE_STEP_FAST = 1.20
 
 LABEL_MAP: dict[int, str] = {
     index: DISPLAY_NAME_BY_CLASS[pony_class]

@@ -29,12 +29,29 @@ class _KeyHandler:
         a = self._app
 
         if a.viewer.crop.active:
+            fast = e.keysym.isupper()
             match k:
                 case "return":
                     a.crop_actions.save()
                 case "escape":
                     a.viewer.crop.exit()
                     a.refresh()
+                case "w":
+                    a.viewer.crop.move_up(fast)
+                case "s":
+                    a.viewer.crop.move_down(fast)
+                case "a":
+                    a.viewer.crop.move_left(fast)
+                case "d":
+                    a.viewer.crop.move_right(fast)
+                case "q":
+                    a.viewer.crop.rotate_ccw(fast)
+                case "e":
+                    a.viewer.crop.rotate_cw(fast)
+                case "r":
+                    a.viewer.crop.scale_up(fast)
+                case "f":
+                    a.viewer.crop.scale_down(fast)
             return
 
         match k:
@@ -137,11 +154,11 @@ class _CropActions:
 
     def enter(self) -> None:
         a = self._app
-        a.viewer.crop.enter()
-        a.info_label.configure(text="裁切模式：拖曳選取區域，Enter 確認，Escape 取消")
-
-    def on_selection_complete(self) -> None:
-        self._app.info_label.configure(text="裁切模式：Enter 確認儲存，Escape 取消")
+        a.viewer.crop.enter(a.viewer.display_size, a.viewer.scale)
+        a.info_label.configure(
+            text="裁切模式：WASD 移動、QE 旋轉、RF 縮放（按住 Shift 加大幅度），"
+            "Enter 確認，Escape 取消"
+        )
 
     def save(self) -> None:
         a = self._app
@@ -284,9 +301,7 @@ class LabelApp:
         )
 
         # 圖片顯示
-        self.viewer = ImageViewer(
-            root, on_crop_complete=self.crop_actions.on_selection_complete
-        )
+        self.viewer = ImageViewer(root)
 
         # 數字與角色對應
         mapping_text = "  |  ".join(f"{k}: {v}" for k, v in LABEL_MAP.items())

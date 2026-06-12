@@ -2,7 +2,6 @@
 
 import re
 import tkinter as tk
-from collections.abc import Callable
 from pathlib import Path
 from tkinter import messagebox
 
@@ -15,21 +14,14 @@ from .crop_handler import CropHandler
 class ImageViewer:
     """管理 Canvas 上的圖片顯示、縮放與裁切互動。"""
 
-    def __init__(
-        self,
-        root: tk.Tk,
-        *,
-        on_crop_complete: Callable[[], None],
-    ) -> None:
+    def __init__(self, root: tk.Tk) -> None:
         self.canvas = tk.Canvas(root, highlightthickness=0)
         self.canvas.pack()
         self._canvas_image_id: int | None = None
 
-        self.crop = CropHandler(
-            self.canvas,
-            on_selection_complete=on_crop_complete,
-        )
+        self.crop = CropHandler(self.canvas)
         self.scale: float = 1.0
+        self.display_size: tuple[int, int] = (0, 0)
         self.current_pil_image: Image.Image | None = None
         self._tk_im: ImageTk.PhotoImage | None = None
 
@@ -50,6 +42,7 @@ class ImageViewer:
 
         self._tk_im = ImageTk.PhotoImage(display_im)
         dw, dh = display_im.size
+        self.display_size = (dw, dh)
         self.canvas.configure(width=dw, height=dh)
         if self._canvas_image_id is not None:
             self.canvas.delete(self._canvas_image_id)
@@ -61,20 +54,17 @@ class ImageViewer:
         """裁切目前圖片並儲存，回傳新檔案路徑；失敗時回傳 None。"""
         if self.current_pil_image is None:
             return None
-        sel = self.crop.get_selection()
-        if sel is None:
-            messagebox.showwarning("裁切", "選取區域太小，請重新拖曳。")
-            return None
 
-        x1, y1, x2, y2 = sel
-        w, h = self.current_pil_image.size
-        orig = (
-            max(0, min(int(x1 / self.scale), w)),
-            max(0, min(int(y1 / self.scale), h)),
-            max(0, min(int(x2 / self.scale), w)),
-            max(0, min(int(y2 / self.scale), h)),
+        corners = self.crop.get_corners()
+        quad = tuple(c / self.scale for c in corners.as_quad())
+        width_orig, height_orig = self.crop.get_size_orig()
+
+        cropped = self.current_pil_image.transform(
+            (width_orig, height_orig),
+            Image.Transform.QUAD,
+            quad,
+            Image.Resampling.BICUBIC,
         )
-        cropped = self.current_pil_image.crop(orig)
 
         base_stem = re.sub(r"_crop\d+$", "", current_path.stem)
         base_path = current_path.parent / f"{base_stem}{current_path.suffix}"
