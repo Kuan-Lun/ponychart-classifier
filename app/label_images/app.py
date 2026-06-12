@@ -342,8 +342,13 @@ class LabelApp:
         )
 
         # 標籤與檔名資訊
-        self.info_label = tk.Label(root, text="", font=("Consolas", 12))
-        self.info_label.pack()
+        path_frame = tk.Frame(root)
+        path_frame.pack()
+        self.info_label = tk.Label(path_frame, text="", font=("Consolas", 12))
+        self.info_label.pack(side="left")
+        self.sort_toggle_btn = tk.Button(path_frame, command=self._toggle_sort)
+        self.sort_toggle_btn.pack(side="left", padx=(8, 0))
+        self._update_sort_toggle_btn()
 
         self.current_labels: list[int] = []
         root.bind("<Key>", self._key_handler.handle)
@@ -417,6 +422,15 @@ class LabelApp:
         self._delete_btn.pack(side="left")
 
     # ── UI 更新 ──────────────────────────────────────────────
+
+    def _toggle_sort(self) -> None:
+        self.nav.toggle_sort_mode()
+        self._update_sort_toggle_btn()
+        self.refresh()
+
+    def _update_sort_toggle_btn(self) -> None:
+        label = "路徑" if self.nav.sort_mode == "path" else "檔名"
+        self.sort_toggle_btn.configure(text=f"排序：{label}")
 
     def update_display(self, extra: str = "") -> None:
         self.counter_label.configure(text=f"{self.nav.index + 1} / {self.nav.total}")

@@ -2,8 +2,11 @@
 
 from collections.abc import Callable
 from pathlib import Path
+from typing import Literal
 
 from .label_store import LabelStore
+
+SortMode = Literal["path", "filename"]
 
 
 class ImageNavigator:
@@ -15,6 +18,7 @@ class ImageNavigator:
         self._paths = list(all_paths)
         self._idx = 0
         self._filter_fn: Callable[[Path], bool] | None = None
+        self._sort_mode: SortMode = "path"
 
     @property
     def total(self) -> int:
@@ -43,6 +47,24 @@ class ImageNavigator:
     @property
     def all_paths(self) -> list[Path]:
         return self._all_paths
+
+    @property
+    def sort_mode(self) -> SortMode:
+        return self._sort_mode
+
+    def toggle_sort_mode(self) -> None:
+        """切換排序模式（依路徑 / 依檔案名稱），保留目前所在圖片。"""
+        self._sort_mode = "filename" if self._sort_mode == "path" else "path"
+        current_key = self.current_key if not self.is_empty else None
+        self._all_paths.sort(key=self._sort_key)
+        self.refresh_filter()
+        if current_key:
+            self._idx = self._find_index_by_key(current_key)
+
+    def _sort_key(self, p: Path) -> tuple[str, str]:
+        if self._sort_mode == "filename":
+            return (p.name, str(p))
+        return (str(p), p.name)
 
     def go_next(self) -> None:
         self._idx = (self._idx + 1) % len(self._paths)
@@ -117,7 +139,7 @@ class ImageNavigator:
     def add_path(self, path: Path) -> None:
         """加入新圖片（裁切產生）並跳轉到該圖片。"""
         self._all_paths.append(path)
-        self._all_paths.sort()
+        self._all_paths.sort(key=self._sort_key)
         self.refresh_filter()
         try:
             self._idx = next(i for i, p in enumerate(self._paths) if p == path)
