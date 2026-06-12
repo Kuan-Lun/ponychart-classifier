@@ -52,6 +52,8 @@ class _KeyHandler:
                     a.viewer.crop.scale_up(fast)
                 case "f":
                     a.viewer.crop.scale_down(fast)
+                case "2":
+                    a.viewer.crop.toggle_orientation()
             return
 
         match k:

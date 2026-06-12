@@ -276,3 +276,58 @@ def test_status_overlay_drawn_and_cleared(
 
     handler.exit()
     assert canvas.find_all() == ()
+
+
+def test_toggle_orientation_swaps_dimensions(handler: CropHandler) -> None:
+    handler.enter((1000, 600), 1.0)
+    width0, height0 = handler.get_canvas_size()
+
+    handler.toggle_orientation()
+    width1, height1 = handler.get_canvas_size()
+
+    assert width1 == pytest.approx(height0)
+    assert height1 == pytest.approx(width0)
+    assert width1 / height1 == pytest.approx(1.0 / CROP_ASPECT_RATIO)
+
+
+def test_toggle_orientation_round_trip(handler: CropHandler) -> None:
+    handler.enter((1000, 600), 1.0)
+    baseline = handler.get_corners()
+
+    handler.toggle_orientation()
+    handler.toggle_orientation()
+
+    assert _corners_approx(handler.get_corners(), baseline)
+
+
+def test_toggle_orientation_preserves_center(handler: CropHandler) -> None:
+    handler.enter((1000, 600), 1.0)
+    cx, cy = _center(handler.get_corners())
+
+    handler.toggle_orientation()
+
+    acx, acy = _center(handler.get_corners())
+    assert acx == pytest.approx(cx)
+    assert acy == pytest.approx(cy)
+
+
+def test_toggle_orientation_blocked_when_out_of_bounds(handler: CropHandler) -> None:
+    # 畫面比例較扁，橫向裁切框可放入，但交換寬高後的直向框會超出畫布。
+    cw, ch = 1000, 500
+    handler.enter((cw, ch), 1.0)
+    before = handler.get_corners()
+
+    handler.toggle_orientation()
+
+    assert _corners_approx(handler.get_corners(), before)
+
+
+def test_toggle_orientation_updates_size_orig(handler: CropHandler) -> None:
+    handler.enter((1000, 600), 1.0)
+    width_orig0, height_orig0 = handler.get_size_orig()
+
+    handler.toggle_orientation()
+    width_orig1, height_orig1 = handler.get_size_orig()
+
+    assert width_orig1 == height_orig0
+    assert height_orig1 == width_orig0
