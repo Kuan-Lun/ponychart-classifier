@@ -311,15 +311,22 @@ def test_toggle_orientation_preserves_center(handler: CropHandler) -> None:
     assert acy == pytest.approx(cy)
 
 
-def test_toggle_orientation_blocked_when_out_of_bounds(handler: CropHandler) -> None:
-    # 畫面比例較扁，橫向裁切框可放入，但交換寬高後的直向框會超出畫布。
+def test_toggle_orientation_shrinks_and_repositions_when_oversized(
+    handler: CropHandler,
+) -> None:
+    # 畫面比例較扁，橫向裁切框可放入，但交換寬高後的直向框放不進畫布高度，
+    # 需先縮小到貼齊上下邊緣，再平移回畫布範圍內。
     cw, ch = 1000, 500
     handler.enter((cw, ch), 1.0)
-    before = handler.get_corners()
+    _, height0 = handler.get_canvas_size()
 
     handler.toggle_orientation()
+    width1, height1 = handler.get_canvas_size()
 
-    assert _corners_approx(handler.get_corners(), before)
+    assert handler.get_corners().all_in_bounds(cw, ch)
+    assert width1 / height1 == pytest.approx(1.0 / CROP_ASPECT_RATIO)
+    assert width1 < height0
+    assert height1 == pytest.approx(ch)
 
 
 def test_toggle_orientation_updates_size_orig(handler: CropHandler) -> None:

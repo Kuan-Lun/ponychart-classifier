@@ -105,7 +105,7 @@ class CropHandler:
         self._center = Point(cw / 2.0, ch / 2.0)
         self._angle_rad = 0.0
 
-        self._min_width_canvas = self._min_width_for(self._portrait)
+        self._min_width_canvas = self._min_width_for(self._portrait, self._angle_rad)
         self._width = max(self._width, self._min_width_canvas)
 
         self._redraw()
@@ -172,20 +172,33 @@ class CropHandler:
     def toggle_orientation(self) -> None:
         """切換裁切框為橫向/直向（寬高互換）。
 
-        直接以目標方向檢查邊界，不經過旋轉的中間角度，因此不受旋轉
+        直接以目標方向計算結果，不經過旋轉的中間角度，因此不受旋轉
         dead zone（AABB 在 0°~90° 之間先升到對角線峰值再降回交換後的
-        寬高）影響；若目標方向放不進畫布，則維持原狀。
+        寬高）影響。若交換後在目前角度下放不進畫布，會先縮小到該角度
+        下置中可容納的最大尺寸，再將裁切框平移回畫布範圍內。
         """
         candidate_portrait = not self._portrait
-        candidate_width = self._height(self._width, self._portrait)
-        corners = self._compute_corners(
-            self._center, candidate_width, self._angle_rad, candidate_portrait
+        angle = self._angle_rad
+
+        max_width = self._max_width_canvas(candidate_portrait, angle)
+        min_width = self._min_width_for(candidate_portrait, angle)
+        ideal_width = self._height(self._width, self._portrait)
+        candidate_width = min(max(ideal_width, min_width), max_width)
+        candidate_height = self._height(candidate_width, candidate_portrait)
+
+        cos_a, sin_a = abs(math.cos(angle)), abs(math.sin(angle))
+        half_w = (candidate_width * cos_a + candidate_height * sin_a) / 2.0
+        half_h = (candidate_width * sin_a + candidate_height * cos_a) / 2.0
+
+        cw, ch = self._canvas_size
+        self._center = Point(
+            min(max(self._center.x, half_w), cw - half_w),
+            min(max(self._center.y, half_h), ch - half_h),
         )
-        if corners.all_in_bounds(*self._canvas_size):
-            self._width = candidate_width
-            self._portrait = candidate_portrait
-            self._min_width_canvas = self._min_width_for(candidate_portrait)
-            self._redraw()
+        self._width = candidate_width
+        self._portrait = candidate_portrait
+        self._min_width_canvas = min_width
+        self._redraw()
 
     # ── 內部實作 ────────────────────────────────────────────────
 
@@ -193,20 +206,25 @@ class CropHandler:
     def _height(width: float, portrait: bool) -> float:
         return width * CROP_ASPECT_RATIO if portrait else width / CROP_ASPECT_RATIO
 
-    def _min_width_for(self, portrait: bool) -> float:
-        """計算指定方向下，裁切框寬度（畫布像素）的下限。
-
-        下限對應原圖長邊 >= :data:`CROP_MIN_WIDTH_ORIG`，並依目前畫面
-        尺寸封頂，避免裁切框在小圖上超出畫布範圍。
-        """
+    def _max_width_canvas(self, portrait: bool, angle_rad: float) -> float:
+        """計算指定方向與角度下，置中於畫布時可容納的最大寬度。"""
         cw, ch = self._canvas_size
-        if portrait:
-            image_max_canvas_width = min(cw, ch / CROP_ASPECT_RATIO)
-            floor_orig = CROP_MIN_WIDTH_ORIG / CROP_ASPECT_RATIO
-        else:
-            image_max_canvas_width = min(cw, ch * CROP_ASPECT_RATIO)
-            floor_orig = CROP_MIN_WIDTH_ORIG
-        return min(floor_orig * self._scale, image_max_canvas_width)
+        k = CROP_ASPECT_RATIO if portrait else 1.0 / CROP_ASPECT_RATIO
+        cos_a, sin_a = abs(math.cos(angle_rad)), abs(math.sin(angle_rad))
+        return min(cw / (cos_a + k * sin_a), ch / (sin_a + k * cos_a))
+
+    def _min_width_for(self, portrait: bool, angle_rad: float) -> float:
+        """計算指定方向與角度下，裁切框寬度（畫布像素）的下限。
+
+        下限對應原圖長邊 >= :data:`CROP_MIN_WIDTH_ORIG`，並以
+        :meth:`_max_width_canvas` 封頂，避免裁切框超出畫布範圍。
+        """
+        floor_orig = (
+            CROP_MIN_WIDTH_ORIG / CROP_ASPECT_RATIO if portrait else CROP_MIN_WIDTH_ORIG
+        )
+        return min(
+            floor_orig * self._scale, self._max_width_canvas(portrait, angle_rad)
+        )
 
     def _move(self, dx: float, dy: float) -> None:
         candidate = Point(self._center.x + dx, self._center.y + dy)
