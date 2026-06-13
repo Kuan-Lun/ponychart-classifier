@@ -202,7 +202,6 @@ class _AnalysisActions:
 
     def __init__(self, app: "LabelApp") -> None:
         self._app = app
-        self._just_ran_full = False
 
     def start(self) -> None:
         """完整模式：對所有尚未有預測的圖片補跑推論。"""
@@ -214,7 +213,7 @@ class _AnalysisActions:
         if not samples:
             messagebox.showinfo("Info", "所有圖片皆已分析過。")
             return
-        self._launch(samples, keys, scope="", full=True)
+        self._launch(samples, keys)
 
     def start_unlabeled_only(self) -> None:
         """僅未標註模式：對尚未手動標註且尚未分析的圖片跑推論。"""
@@ -228,23 +227,15 @@ class _AnalysisActions:
         if not samples:
             messagebox.showinfo("Info", "目前沒有未標註且未分析的圖片。")
             return
-        self._launch(samples, keys, scope="unlabeled ", full=False)
+        self._launch(samples, keys)
 
-    def _launch(
-        self,
-        samples: list[Sample],
-        keys: list[str],
-        *,
-        scope: str,
-        full: bool,
-    ) -> None:
+    def _launch(self, samples: list[Sample], keys: list[str]) -> None:
         a = self._app
         if a.analysis.is_running:
             return
         a.analyze_btn.configure(state="disabled")
         a.analyze_unlabeled_btn.configure(state="disabled")
         a.analyze_status.configure(text=f"Analyzing 0 / {len(samples)}...")
-        self._just_ran_full = full
 
         a.analysis.start(
             samples=samples,
@@ -255,15 +246,34 @@ class _AnalysisActions:
             on_progress=self._on_progress,
         )
 
+    def update_button_states(self) -> None:
+        """重新計算兩個自動標註按鈕是否可用。
+
+        分析完成後按鈕會被停用；但之後若新增圖片（例如裁切出新圖）或變更標籤，
+        可能又出現尚未分析、甚至尚未標註的圖片，因此每次 refresh 都要重新評估，
+        而不是只在分析完成的那一刻一次性決定。
+        """
+        a = self._app
+        if a.analysis.is_running:
+            return
+        existing = a.analysis.model_probs or {}
+        has_unanalyzed = False
+        has_unlabeled_unanalyzed = False
+        for p in a.nav.all_paths:
+            key = a.store.path_to_key(p)
+            if key in existing:
+                continue
+            has_unanalyzed = True
+            if not a.store.has(key):
+                has_unlabeled_unanalyzed = True
+                break
+        a.analyze_btn.configure(state="normal" if has_unanalyzed else "disabled")
+        a.analyze_unlabeled_btn.configure(
+            state="normal" if has_unlabeled_unanalyzed else "disabled"
+        )
+
     def _on_complete(self) -> None:
         a = self._app
-        # 「僅未標註」跑完它涵蓋的圖片後就沒有事可做（兩種模式都會涵蓋未標註集合）。
-        a.analyze_unlabeled_btn.configure(state="disabled")
-        if self._just_ran_full:
-            # 完整模式跑完後，model_probs 已涵蓋所有圖片，「自動標註」自身也無事可做。
-            a.analyze_btn.configure(state="disabled")
-        else:
-            a.analyze_btn.configure(state="normal")
         a.analyze_status.configure(text="")
         a.filter_panel.set_suspicious_state("normal")
         a.refresh()
@@ -273,9 +283,8 @@ class _AnalysisActions:
 
     def _on_error(self, error: str) -> None:
         a = self._app
-        a.analyze_btn.configure(state="normal")
-        a.analyze_unlabeled_btn.configure(state="normal")
         a.analyze_status.configure(text="")
+        self.update_button_states()
         messagebox.showerror("Analysis Error", error)
 
 
@@ -447,6 +456,7 @@ class LabelApp:
         )
 
     def refresh(self) -> None:
+        self.analysis_actions.update_button_states()
         if self.nav.is_empty:
             if self.nav.is_filtered:
                 messagebox.showinfo("Info", "篩選結果為空。")
