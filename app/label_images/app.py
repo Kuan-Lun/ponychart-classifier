@@ -415,12 +415,6 @@ class LabelApp:
         batch_frame = tk.Frame(root)
         batch_frame.pack(pady=(0, 4))
 
-        tk.Button(
-            batch_frame,
-            text="全部整理",
-            command=self._organize_all,
-        ).pack(side="left", padx=(0, 16))
-
         self._delete_btn = tk.Button(
             batch_frame,
             text="刪除此裁切圖",
@@ -428,7 +422,19 @@ class LabelApp:
             command=self._delete_crop,
             state="disabled",
         )
-        self._delete_btn.pack(side="left")
+        self._delete_btn.pack(side="left", padx=(0, 16))
+
+        tk.Button(
+            batch_frame,
+            text="全部整理",
+            command=self._organize_all,
+        ).pack(side="left", padx=(0, 16))
+
+        tk.Button(
+            batch_frame,
+            text="重新載入",
+            command=self._reload,
+        ).pack(side="left")
 
     # ── UI 更新 ──────────────────────────────────────────────
 
@@ -497,4 +503,12 @@ class LabelApp:
 
     def _organize_all(self) -> None:
         self._file_actions.organize_all()
+        self.refresh()
+
+    def _reload(self) -> None:
+        n = self._file_actions.reload()
+        if n:
+            messagebox.showinfo("重新載入", f"已新增 {n} 張圖片。")
+        else:
+            messagebox.showinfo("重新載入", "沒有新增的圖片。")
         self.refresh()

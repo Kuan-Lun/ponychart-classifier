@@ -1,5 +1,6 @@
 """檔案操作：整理、去重、hash、清理空資料夾。"""
 
+import glob
 import hashlib
 import shutil
 from pathlib import Path
@@ -17,6 +18,16 @@ from .constants import (
     NEAR_DUP_MAX_RATIO,
     UNLABELED_SUBDIR,
 )
+
+
+def scan_image_paths(base: Path) -> list[Path]:
+    """掃描資料夾下所有圖片檔案（png/jpg/jpeg/webp）路徑。"""
+    paths = [Path(p) for p in glob.glob(str(base / "**" / "*"), recursive=True)]
+    return [
+        p
+        for p in paths
+        if p.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp") and p.is_file()
+    ]
 
 
 def labels_to_subdir(labels: list[int]) -> str:

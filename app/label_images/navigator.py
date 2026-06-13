@@ -146,6 +146,20 @@ class ImageNavigator:
         except StopIteration:
             pass
 
+    def sync_with_disk(self, disk_paths: list[Path]) -> int:
+        """加入磁碟上新出現的圖片，保留目前所在圖片，回傳新增數量。"""
+        existing = set(self._all_paths)
+        new_paths = [p for p in disk_paths if p not in existing]
+        if not new_paths:
+            return 0
+        current_key = self.current_key if not self.is_empty else None
+        self._all_paths.extend(new_paths)
+        self._all_paths.sort(key=self._sort_key)
+        self.refresh_filter()
+        if current_key:
+            self._idx = self._find_index_by_key(current_key)
+        return len(new_paths)
+
     def replace_path(self, old_path: Path, new_path: Path) -> None:
         """替換路徑（檔案搬移後用），保持目前索引位置。"""
         for i, p in enumerate(self._all_paths):

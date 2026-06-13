@@ -69,6 +69,62 @@ def test_toggle_sort_mode_preserves_current_image(tmp_path: Path) -> None:
     assert nav.current_path == crop_path
 
 
+def test_sync_with_disk_adds_new_paths(tmp_path: Path) -> None:
+    paths = _make_paths(tmp_path)
+    original_count = len(paths)
+    nav = ImageNavigator(paths, _FakeStore())  # type: ignore[arg-type]
+
+    new_path = tmp_path / "unlabeled" / "pony_chart_20260103_000000.png"
+    new_path.parent.mkdir(parents=True, exist_ok=True)
+    new_path.write_bytes(b"img")
+
+    added = nav.sync_with_disk([*paths, new_path])
+
+    assert added == 1
+    assert new_path in nav.all_paths
+    assert nav.total == original_count + 1
+
+
+def test_sync_with_disk_returns_zero_when_nothing_new(tmp_path: Path) -> None:
+    paths = _make_paths(tmp_path)
+    nav = ImageNavigator(paths, _FakeStore())  # type: ignore[arg-type]
+
+    assert nav.sync_with_disk(paths) == 0
+    assert nav.all_paths == paths
+
+
+def test_sync_with_disk_preserves_current_image(tmp_path: Path) -> None:
+    paths = _make_paths(tmp_path)
+    nav = ImageNavigator(paths, _FakeStore())  # type: ignore[arg-type]
+
+    crop_path = next(p for p in paths if "crop1" in p.name)
+    nav.go_to_key(str(crop_path))
+
+    new_path = tmp_path / "unlabeled" / "pony_chart_20260103_000000.png"
+    new_path.parent.mkdir(parents=True, exist_ok=True)
+    new_path.write_bytes(b"img")
+    nav.sync_with_disk([*paths, new_path])
+
+    assert nav.current_path == crop_path
+
+
+def test_sync_with_disk_respects_filter(tmp_path: Path) -> None:
+    paths = _make_paths(tmp_path)
+    nav = ImageNavigator(paths, _FakeStore())  # type: ignore[arg-type]
+
+    nav.apply_filter(lambda p: "crop1" not in p.name)
+    assert nav.total == 2
+
+    new_path = tmp_path / "1" / "twilight" / "pony_chart_20260103_000000_crop1.png"
+    new_path.parent.mkdir(parents=True, exist_ok=True)
+    new_path.write_bytes(b"img")
+    added = nav.sync_with_disk([*paths, new_path])
+
+    assert added == 1
+    assert new_path in nav.all_paths
+    assert nav.total == 2
+
+
 def test_toggle_sort_mode_respects_filter(tmp_path: Path) -> None:
     paths = _make_paths(tmp_path)
     nav = ImageNavigator(paths, _FakeStore())  # type: ignore[arg-type]

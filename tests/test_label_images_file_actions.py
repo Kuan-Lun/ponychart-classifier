@@ -39,6 +39,13 @@ class _FakeNav:
         self._all_paths = [new_path if p == old_path else p for p in self._all_paths]
         self._paths = [new_path if p == old_path else p for p in self._paths]
 
+    def sync_with_disk(self, disk_paths: list[Path]) -> int:
+        existing = set(self._all_paths)
+        new_paths = [p for p in disk_paths if p not in existing]
+        self._all_paths.extend(new_paths)
+        self._paths.extend(new_paths)
+        return len(new_paths)
+
 
 class _FakeStore:
     def __init__(self, labels: dict[str, list[int]]) -> None:
@@ -110,6 +117,28 @@ def test_organize_all_preserves_analysis_results_after_move(
     assert store._labels == {"organized.png": [1]}
     assert nav.all_paths == [new_path]
     assert store.saved
+
+
+def test_reload_adds_new_images_found_on_disk(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    existing = tmp_path / "old.png"
+    existing.write_bytes(b"img")
+    new_image = tmp_path / "new.png"
+
+    nav = _FakeNav([existing])
+    store = _FakeStore({"old.png": [1]})
+    analysis = AnalysisManager()
+
+    monkeypatch.setattr("app.label_images.file_actions.IMAGE_DIR", tmp_path)
+
+    actions = FileActions(nav, store, analysis)  # type: ignore[arg-type]
+    assert actions.reload() == 0
+
+    new_image.write_bytes(b"img")
+    assert actions.reload() == 1
+    assert new_image in nav.all_paths
 
 
 def test_delete_crop_removes_analysis_results(

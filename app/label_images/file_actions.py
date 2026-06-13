@@ -14,6 +14,7 @@ from .file_ops import (
     dedup_near_images,
     is_raw_image,
     organize_single,
+    scan_image_paths,
     target_path_for,
 )
 from .label_store import LabelStore
@@ -115,6 +116,10 @@ class FileActions:
         self._nav.remove_path(path)
         path.unlink(missing_ok=True)
         return True
+
+    def reload(self) -> int:
+        """掃描 rawimage 資料夾，加入磁碟上新出現的圖片，回傳新增數量。"""
+        return self._nav.sync_with_disk(scan_image_paths(IMAGE_DIR))
 
     def organize_all(self) -> None:
         """去重、清理孤兒標籤、並將所有圖片搬到正確的子資料夾。"""
