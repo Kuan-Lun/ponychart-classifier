@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from app.label_images.analysis import AnalysisManager
-from app.label_images.app import _AnalysisActions
+from app.label_images.app import _AnalysisActions, _CropActions
 
 
 class _FakeWidget:
@@ -145,3 +145,94 @@ def test_on_error_recomputes_button_states_instead_of_forcing_normal(
     assert app.analyze_status.text == ""
     assert app.analyze_btn.state == "disabled"
     assert app.analyze_unlabeled_btn.state == "disabled"
+
+
+class _FakeCropViewer:
+    def __init__(self, save_path: Path | None) -> None:
+        self.save_crop_calls: list[Path] = []
+        self._save_path = save_path
+
+    def save_crop(self, current_path: Path) -> Path | None:
+        self.save_crop_calls.append(current_path)
+        return self._save_path
+
+
+class _FakeCropNav:
+    def __init__(self, current_path: Path) -> None:
+        self.current_path = current_path
+        self.added_paths: list[Path] = []
+
+    def add_path(self, path: Path) -> None:
+        self.added_paths.append(path)
+        self.current_path = path
+
+
+class _FakeCropStore:
+    def path_to_key(self, p: Path) -> str:
+        return p.name
+
+    def get(self, key: str) -> list[int]:
+        del key
+        return []
+
+
+class _FakeCropAnalysis:
+    def __init__(self) -> None:
+        self.seed_calls: list[tuple[str, list[int]]] = []
+
+    def seed_prediction_from_labels(self, key: str, labels: list[int]) -> None:
+        self.seed_calls.append((key, list(labels)))
+
+
+class _FakeCropApp:
+    def __init__(
+        self, current_path: Path, save_path: Path | None, current_labels: list[int]
+    ) -> None:
+        self.viewer = _FakeCropViewer(save_path)
+        self.nav = _FakeCropNav(current_path)
+        self.store = _FakeCropStore()
+        self.analysis = _FakeCropAnalysis()
+        self.current_labels = current_labels
+        self.refresh_calls = 0
+        self.update_display_calls: list[str] = []
+
+    def refresh(self) -> None:
+        self.refresh_calls += 1
+        # 模擬 LabelApp.refresh()：新裁切圖在 labels.json 中尚無紀錄，故清空。
+        key = self.store.path_to_key(self.nav.current_path)
+        self.current_labels = self.store.get(key)
+
+    def update_display(self, extra: str = "") -> None:
+        self.update_display_calls.append(extra)
+
+
+def test_crop_save_seeds_analysis_cache_with_source_labels(tmp_path: Path) -> None:
+    """裁切完成後，應以來源圖目前的標籤合成一筆分析快取（建議標籤），
+
+    不直接寫入 labels.json，新裁切圖仍維持未標註，待使用者確認。
+    """
+    src = tmp_path / "src.png"
+    crop_path = tmp_path / "src_crop1.png"
+    app = _FakeCropApp(current_path=src, save_path=crop_path, current_labels=[1, 3])
+
+    actions = _CropActions(app)  # type: ignore[arg-type]
+    actions.save()
+
+    assert app.analysis.seed_calls == [(crop_path.name, [1, 3])]
+    assert app.current_labels == []
+    assert app.nav.added_paths == [crop_path]
+    assert app.refresh_calls == 1
+    assert app.update_display_calls == [f"已儲存裁切圖：{crop_path.name}"]
+
+
+def test_crop_save_noop_when_save_crop_fails(tmp_path: Path) -> None:
+    src = tmp_path / "src.png"
+    app = _FakeCropApp(current_path=src, save_path=None, current_labels=[2])
+
+    actions = _CropActions(app)  # type: ignore[arg-type]
+    actions.save()
+
+    assert app.refresh_calls == 0
+    assert app.update_display_calls == []
+    assert app.analysis.seed_calls == []
+    assert app.current_labels == [2]
