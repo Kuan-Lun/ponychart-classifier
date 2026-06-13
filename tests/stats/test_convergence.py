@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import platform
 import subprocess
 import time
@@ -308,10 +309,21 @@ def _compute_rejection_rates(
 _cache: dict[str, _CacheValue] = {}
 
 
+def _stable_seed(label: str) -> int:
+    """Derive a reproducible seed from a label.
+
+    Python's built-in ``hash()`` for strings is salted per-process
+    (PYTHONHASHSEED), so it would give a different Monte Carlo seed on every
+    run and make this calibration test flaky. SHA-256 is stable across runs.
+    """
+    digest = hashlib.sha256(label.encode()).digest()
+    return int.from_bytes(digest[:4], "big") % (2**31)
+
+
 def _get_rates(scenario: _Scenario) -> _CacheValue:
     """Return cached rejection rates, computing on first access."""
     if scenario.label not in _cache:
-        base_seed = hash(scenario.label) % (2**31)
+        base_seed = _stable_seed(scenario.label)
         _cache[scenario.label] = _compute_rejection_rates(scenario, base_seed)
     return _cache[scenario.label]
 
