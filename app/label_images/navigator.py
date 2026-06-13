@@ -4,9 +4,12 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Literal
 
+from PIL import Image
+
 from .label_store import LabelStore
 
-SortMode = Literal["path", "filename"]
+SortMode = Literal["path", "filename", "size"]
+_SORT_MODES: tuple[SortMode, ...] = ("path", "filename", "size")
 
 
 class ImageNavigator:
@@ -19,6 +22,7 @@ class ImageNavigator:
         self._idx = 0
         self._filter_fn: Callable[[Path], bool] | None = None
         self._sort_mode: SortMode = "path"
+        self._size_cache: dict[Path, int] = {}
 
     @property
     def total(self) -> int:
@@ -53,8 +57,9 @@ class ImageNavigator:
         return self._sort_mode
 
     def toggle_sort_mode(self) -> None:
-        """切換排序模式（依路徑 / 依檔案名稱），保留目前所在圖片。"""
-        self._sort_mode = "filename" if self._sort_mode == "path" else "path"
+        """切換排序模式（依路徑 / 依檔案名稱 / 依尺寸），保留目前所在圖片。"""
+        next_idx = (_SORT_MODES.index(self._sort_mode) + 1) % len(_SORT_MODES)
+        self._sort_mode = _SORT_MODES[next_idx]
         current_key = self.current_key if not self.is_empty else None
         self._all_paths.sort(key=self._sort_key)
         self.refresh_filter()
@@ -64,7 +69,23 @@ class ImageNavigator:
     def _sort_key(self, p: Path) -> tuple[str, str]:
         if self._sort_mode == "filename":
             return (p.name, str(p))
+        if self._sort_mode == "size":
+            return (f"{self._min_dimension(p):010d}", str(p))
         return (str(p), p.name)
+
+    def _min_dimension(self, p: Path) -> int:
+        """回傳圖片的 min(寬, 高)，並快取結果。"""
+        cached = self._size_cache.get(p)
+        if cached is not None:
+            return cached
+        try:
+            with Image.open(p) as im:
+                w, h = im.size
+                size: int = min(w, h)
+        except OSError:
+            size = 0
+        self._size_cache[p] = size
+        return size
 
     def go_next(self) -> None:
         self._idx = (self._idx + 1) % len(self._paths)

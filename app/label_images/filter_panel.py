@@ -48,6 +48,14 @@ class FilterPanel:
         )
         self._uncropped_only_cb.pack(side="left", padx=(0, 8))
 
+        self.crop_only_var = tk.BooleanVar(value=False)
+        tk.Checkbutton(
+            filter_frame,
+            text="只顯示裁切圖",
+            variable=self.crop_only_var,
+            command=self._on_crop_only_toggle,
+        ).pack(side="left", padx=(0, 8))
+
         self.crop_mismatch_var = tk.BooleanVar(value=False)
         tk.Checkbutton(
             filter_frame,
@@ -112,7 +120,9 @@ class FilterPanel:
     # ── 篩選邏輯 ─────────────────────────────────────────────
 
     def _on_raw_toggle(self) -> None:
-        if not self.raw_only_var.get():
+        if self.raw_only_var.get():
+            self.crop_only_var.set(False)
+        else:
             self.uncropped_only_var.set(False)
             self._uncropped_only_cb.configure(state="normal")
         self._on_filter_changed()
@@ -121,8 +131,17 @@ class FilterPanel:
         if self.uncropped_only_var.get():
             self.raw_only_var.set(True)
             self._raw_only_cb.configure(state="disabled")
+            self.crop_only_var.set(False)
         else:
             self._raw_only_cb.configure(state="normal")
+        self._on_filter_changed()
+
+    def _on_crop_only_toggle(self) -> None:
+        if self.crop_only_var.get():
+            self.raw_only_var.set(False)
+            self.uncropped_only_var.set(False)
+            self._raw_only_cb.configure(state="normal")
+            self._uncropped_only_cb.configure(state="normal")
         self._on_filter_changed()
 
     def build_filter_fn(
@@ -137,6 +156,7 @@ class FilterPanel:
         config = FilterConfig(
             raw_only=self.raw_only_var.get(),
             uncropped_only=self.uncropped_only_var.get(),
+            crop_only=self.crop_only_var.get(),
             unlabeled_only=self.filter_var.get(),
             crop_mismatch=self.crop_mismatch_var.get(),
             train_only=self.train_only_var.get(),
@@ -152,6 +172,7 @@ class FilterPanel:
         """重設所有篩選條件。"""
         self.raw_only_var.set(False)
         self.uncropped_only_var.set(False)
+        self.crop_only_var.set(False)
         self.crop_mismatch_var.set(False)
         self.filter_var.set(False)
         self.train_only_var.set(False)

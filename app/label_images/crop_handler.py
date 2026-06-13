@@ -66,6 +66,15 @@ class CropCorners:
             for p in (self.ul, self.ll, self.lr, self.ur)
         )
 
+    def translated(self, dx: float, dy: float) -> "CropCorners":
+        """回傳所有角點平移 ``(dx, dy)`` 後的新 :class:`CropCorners`。"""
+        return CropCorners(
+            ul=Point(self.ul.x + dx, self.ul.y + dy),
+            ll=Point(self.ll.x + dx, self.ll.y + dy),
+            lr=Point(self.lr.x + dx, self.lr.y + dy),
+            ur=Point(self.ur.x + dx, self.ur.y + dy),
+        )
+
 
 class CropHandler:
     """裁切模式的狀態管理與畫布繪製。
@@ -89,12 +98,23 @@ class CropHandler:
         self._status_text_id: int | None = None
         self._min_width_canvas: float = 0.0
         self._canvas_size: tuple[float, float] = (0.0, 0.0)
+        self._offset: tuple[float, float] = (0.0, 0.0)
 
-    def enter(self, canvas_size: tuple[int, int], scale: float) -> None:
-        """進入裁切模式：以畫面置中、橫向、比例鎖定的預設矩形重置狀態。"""
+    def enter(
+        self,
+        canvas_size: tuple[int, int],
+        scale: float,
+        offset: tuple[float, float] = (0.0, 0.0),
+    ) -> None:
+        """進入裁切模式：以畫面置中、橫向、比例鎖定的預設矩形重置狀態。
+
+        ``offset`` 為圖片左上角在畫布上的位置（圖片置中顯示時的偏移量），
+        裁切框內部座標仍以圖片左上角為原點，僅在繪製到畫布時加上此偏移。
+        """
         self.active = True
         cw, ch = float(canvas_size[0]), float(canvas_size[1])
         self._canvas_size = (cw, ch)
+        self._offset = offset
         self._scale = scale
         self._portrait = False
 
@@ -281,7 +301,7 @@ class CropHandler:
 
     def _redraw(self) -> None:
         self._clear_polygon()
-        corners = self.get_corners()
+        corners = self.get_corners().translated(*self._offset)
         self._polygon_id = self._canvas.create_polygon(
             *corners.as_quad(),
             outline="red",
@@ -306,9 +326,10 @@ class CropHandler:
             f"縮放: x{CROP_SCALE_STEP:.2f} (Shift x{CROP_SCALE_STEP_FAST:.2f})\n"
             f"方向: 2 (橫向/直向切換)"
         )
+        ox, oy = self._offset
         self._status_text_id = self._canvas.create_text(
-            8,
-            8,
+            8 + ox,
+            8 + oy,
             anchor="nw",
             text=text,
             fill="red",

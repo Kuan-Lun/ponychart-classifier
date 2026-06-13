@@ -278,6 +278,30 @@ def test_status_overlay_drawn_and_cleared(
     assert canvas.find_all() == ()
 
 
+def test_enter_with_offset_shifts_drawn_polygon(
+    handler: CropHandler, canvas: tk.Canvas
+) -> None:
+    offset = (50.0, 20.0)
+    handler.enter((1000, 600), 1.0, offset)
+
+    corners = handler.get_corners().translated(*offset)
+    assert handler._polygon_id is not None
+    drawn = canvas.coords(handler._polygon_id)
+
+    assert drawn == pytest.approx(list(corners.as_quad()))
+
+
+def test_enter_with_offset_shifts_status_overlay(
+    handler: CropHandler, canvas: tk.Canvas
+) -> None:
+    offset = (50.0, 20.0)
+    handler.enter((1000, 600), 1.0, offset)
+
+    assert handler._status_text_id is not None
+    x, y = canvas.coords(handler._status_text_id)
+    assert (x, y) == pytest.approx((8 + offset[0], 8 + offset[1]))
+
+
 def test_toggle_orientation_swaps_dimensions(handler: CropHandler) -> None:
     handler.enter((1000, 600), 1.0)
     width0, height0 = handler.get_canvas_size()

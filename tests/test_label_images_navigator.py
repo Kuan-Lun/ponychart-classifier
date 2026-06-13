@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from PIL import Image
+
 from app.label_images.navigator import ImageNavigator
 
 
@@ -21,6 +23,11 @@ def _make_paths(base: Path) -> list[Path]:
         p.write_bytes(b"img")
     paths.sort()
     return paths
+
+
+def _make_image(path: Path, size: tuple[int, int]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    Image.new("RGB", size).save(path)
 
 
 def test_default_sort_mode_is_path(tmp_path: Path) -> None:
@@ -45,15 +52,61 @@ def test_toggle_sort_mode_groups_crops_by_filename(tmp_path: Path) -> None:
     ]
 
 
-def test_toggle_sort_mode_twice_restores_path_order(tmp_path: Path) -> None:
+def test_toggle_sort_mode_cycles_through_three_modes(tmp_path: Path) -> None:
+    paths = _make_paths(tmp_path)
+    nav = ImageNavigator(paths, _FakeStore())  # type: ignore[arg-type]
+
+    nav.toggle_sort_mode()
+    mode = nav.sort_mode
+    assert mode == "filename"
+    nav.toggle_sort_mode()
+    mode = nav.sort_mode
+    assert mode == "size"
+    nav.toggle_sort_mode()
+    mode = nav.sort_mode
+    assert mode == "path"
+
+
+def test_toggle_sort_mode_three_times_restores_path_order(tmp_path: Path) -> None:
     paths = _make_paths(tmp_path)
     nav = ImageNavigator(paths, _FakeStore())  # type: ignore[arg-type]
 
     nav.toggle_sort_mode()
     nav.toggle_sort_mode()
+    nav.toggle_sort_mode()
 
     assert nav.sort_mode == "path"
     assert nav.all_paths == paths
+
+
+def test_size_sort_mode_orders_by_min_dimension_ascending(tmp_path: Path) -> None:
+    small = tmp_path / "small.png"
+    medium = tmp_path / "medium.png"
+    large = tmp_path / "large.png"
+    _make_image(small, (100, 80))
+    _make_image(medium, (300, 200))
+    _make_image(large, (600, 500))
+
+    nav = ImageNavigator([large, small, medium], _FakeStore())  # type: ignore[arg-type]
+
+    nav.toggle_sort_mode()  # filename
+    nav.toggle_sort_mode()  # size
+
+    assert nav.all_paths == [small, medium, large]
+
+
+def test_size_sort_mode_treats_unreadable_files_as_smallest(tmp_path: Path) -> None:
+    fake = tmp_path / "fake.png"
+    fake.write_bytes(b"not an image")
+    real = tmp_path / "real.png"
+    _make_image(real, (100, 80))
+
+    nav = ImageNavigator([real, fake], _FakeStore())  # type: ignore[arg-type]
+
+    nav.toggle_sort_mode()  # filename
+    nav.toggle_sort_mode()  # size
+
+    assert nav.all_paths == [fake, real]
 
 
 def test_toggle_sort_mode_preserves_current_image(tmp_path: Path) -> None:

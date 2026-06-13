@@ -24,6 +24,7 @@ class FilterConfig:
         *,
         raw_only: bool = False,
         uncropped_only: bool = False,
+        crop_only: bool = False,
         unlabeled_only: bool = False,
         crop_mismatch: bool = False,
         train_only: bool = False,
@@ -35,6 +36,7 @@ class FilterConfig:
     ):
         self.raw_only = raw_only
         self.uncropped_only = uncropped_only
+        self.crop_only = crop_only
         self.unlabeled_only = unlabeled_only
         self.crop_mismatch = crop_mismatch
         self.train_only = train_only
@@ -59,6 +61,7 @@ def build_filter_fn(
     if (
         not config.raw_only
         and not config.uncropped_only
+        and not config.crop_only
         and not config.unlabeled_only
         and not config.crop_mismatch
         and not config.train_only
@@ -124,6 +127,7 @@ def build_filter_fn(
     show_missing = config.show_missing
     raw_only = config.raw_only
     uncropped_only = config.uncropped_only
+    crop_only = config.crop_only
     unlabeled_only = config.unlabeled_only
 
     # Suspicious checks: use selected classes if any, otherwise all 6
@@ -137,6 +141,8 @@ def build_filter_fn(
         if raw_only or uncropped_only:
             if not is_raw_image(p):
                 return False
+        if crop_only and is_raw_image(p):
+            return False
         if raw_stems_with_crops is not None and p.stem in raw_stems_with_crops:
             return False
         if unlabeled_only and store.has(store.path_to_key(p)):

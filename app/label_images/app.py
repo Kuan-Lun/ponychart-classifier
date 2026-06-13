@@ -156,7 +156,9 @@ class _CropActions:
 
     def enter(self) -> None:
         a = self._app
-        a.viewer.crop.enter(a.viewer.display_size, a.viewer.scale)
+        a.viewer.crop.enter(
+            a.viewer.display_size, a.viewer.scale, a.viewer.image_offset
+        )
         a.info_label.configure(
             text="裁切模式：WASD 移動、QE 旋轉、RF 縮放（按住 Shift 加大幅度），"
             "Enter 確認，Escape 取消"
@@ -444,13 +446,17 @@ class LabelApp:
         self.refresh()
 
     def _update_sort_toggle_btn(self) -> None:
-        label = "路徑" if self.nav.sort_mode == "path" else "檔名"
-        self.sort_toggle_btn.configure(text=f"排序：{label}")
+        labels = {"path": "路徑", "filename": "檔名", "size": "尺寸"}
+        self.sort_toggle_btn.configure(text=f"排序：{labels[self.nav.sort_mode]}")
 
     def update_display(self, extra: str = "") -> None:
         self.counter_label.configure(text=f"{self.nav.index + 1} / {self.nav.total}")
         label_names = [LABEL_MAP.get(i, str(i)) for i in self.current_labels]
-        info = f"labels: {label_names}\n{self.nav.current_key}"
+        size_text = ""
+        if self.viewer.current_pil_image is not None:
+            w, h = self.viewer.current_pil_image.size
+            size_text = f"  ({w}x{h}px)"
+        info = f"labels: {label_names}\n{self.nav.current_key}{size_text}"
         if extra:
             info += f"  ({extra})"
         self.info_label.configure(text=info)

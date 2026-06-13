@@ -18,6 +18,10 @@ MAX_SIZE = 1004
 
 # 裁切框：長寬比鎖定為 INPUT_SIZE，確保訓練時 resize 不會造成比例失真
 CROP_ASPECT_RATIO = INPUT_SIZE.width / INPUT_SIZE.height
+# 主視窗圖片顯示區域的固定尺寸；圖片超過則等比縮小，
+# 確保切換圖片時視窗大小不會改變
+DISPLAY_WIDTH = MAX_SIZE
+DISPLAY_HEIGHT = round(MAX_SIZE / CROP_ASPECT_RATIO)
 # 裁切寬度（原圖像素）下限，避免訓練 resize 時過度放大造成模糊
 CROP_MIN_WIDTH_ORIG = INPUT_SIZE.width
 # 進入裁切模式時，預設裁切框最大可佔畫面比例

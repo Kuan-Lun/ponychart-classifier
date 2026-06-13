@@ -7,7 +7,7 @@ from tkinter import messagebox
 
 from PIL import Image, ImageTk
 
-from .constants import MAX_SIZE
+from .constants import DISPLAY_HEIGHT, DISPLAY_WIDTH
 from .crop_handler import CropHandler
 
 
@@ -22,11 +22,12 @@ class ImageViewer:
         self.crop = CropHandler(self.canvas)
         self.scale: float = 1.0
         self.display_size: tuple[int, int] = (0, 0)
+        self.image_offset: tuple[float, float] = (0.0, 0.0)
         self.current_pil_image: Image.Image | None = None
         self._tk_im: ImageTk.PhotoImage | None = None
 
     def load(self, path: Path) -> None:
-        """載入並顯示圖片，自動縮放至 MAX_SIZE。"""
+        """載入並顯示圖片，等比縮小至固定顯示區域內。"""
         try:
             im = Image.open(path).convert("RGB")
         except Exception as e:
@@ -35,7 +36,7 @@ class ImageViewer:
 
         self.current_pil_image = im
         w, h = im.size
-        self.scale = min(MAX_SIZE / max(1, w), MAX_SIZE / max(1, h), 1.0)
+        self.scale = min(DISPLAY_WIDTH / max(1, w), DISPLAY_HEIGHT / max(1, h), 1.0)
         display_im = im
         if self.scale < 1.0:
             display_im = im.resize((int(w * self.scale), int(h * self.scale)))
@@ -43,11 +44,12 @@ class ImageViewer:
         self._tk_im = ImageTk.PhotoImage(display_im)
         dw, dh = display_im.size
         self.display_size = (dw, dh)
-        self.canvas.configure(width=dw, height=dh)
+        self.image_offset = ((DISPLAY_WIDTH - dw) / 2, (DISPLAY_HEIGHT - dh) / 2)
+        self.canvas.configure(width=DISPLAY_WIDTH, height=DISPLAY_HEIGHT)
         if self._canvas_image_id is not None:
             self.canvas.delete(self._canvas_image_id)
         self._canvas_image_id = self.canvas.create_image(
-            0, 0, anchor="nw", image=self._tk_im
+            *self.image_offset, anchor="nw", image=self._tk_im
         )
 
     def save_crop(self, current_path: Path) -> Path | None:

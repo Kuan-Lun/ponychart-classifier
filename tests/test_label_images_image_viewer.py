@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from app.label_images.constants import CROP_ASPECT_RATIO
+from app.label_images.constants import CROP_ASPECT_RATIO, DISPLAY_HEIGHT, DISPLAY_WIDTH
 from app.label_images.image_viewer import ImageViewer
 
 _RED = (255, 0, 0)
@@ -60,6 +60,30 @@ def test_save_crop_axis_aligned(tmp_path: Path, viewer: ImageViewer) -> None:
     assert cropped.getpixel((w - margin, margin)) == _GREEN
     assert cropped.getpixel((margin, h - margin)) == _BLUE
     assert cropped.getpixel((w - margin, h - margin)) == _YELLOW
+
+
+def test_load_centers_small_image(tmp_path: Path, viewer: ImageViewer) -> None:
+    src = tmp_path / "small.png"
+    _make_quad_image(src, (100, 100))
+
+    viewer.load(src)
+
+    expected_offset = ((DISPLAY_WIDTH - 100) / 2, (DISPLAY_HEIGHT - 100) / 2)
+    assert viewer.image_offset == expected_offset
+    assert viewer._canvas_image_id is not None
+    assert tuple(viewer.canvas.coords(viewer._canvas_image_id)) == expected_offset
+
+
+def test_load_full_size_image_has_zero_offset(
+    tmp_path: Path, viewer: ImageViewer
+) -> None:
+    src = tmp_path / "large.png"
+    _make_quad_image(src, (DISPLAY_WIDTH * 2, DISPLAY_HEIGHT * 2))
+
+    viewer.load(src)
+
+    assert viewer.image_offset == (0.0, 0.0)
+    assert viewer.display_size == (DISPLAY_WIDTH, DISPLAY_HEIGHT)
 
 
 def test_save_crop_rotated_derotates(tmp_path: Path, viewer: ImageViewer) -> None:
