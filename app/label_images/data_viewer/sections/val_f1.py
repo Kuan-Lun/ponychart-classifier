@@ -6,7 +6,7 @@ import tkinter as tk
 from typing import Any
 
 from ...constants import CLASS_NAMES_LIST
-from ..widgets import FONT, FONT_BOLD, grid_cell, section_frame, section_header
+from ..widgets import FONT_BOLD, grid_cell, section_frame, section_header
 
 
 class ValF1Section:
@@ -20,16 +20,7 @@ class ValF1Section:
 
     def render(self, parent: tk.Widget) -> None:
         section_header(parent, "驗證集 F1")
-        per_class_f1: list[float] | None = self._m.get("per_class_f1")
-        if per_class_f1 is None:
-            tk.Label(
-                parent,
-                text="尚無 F1 資料，請重新執行自動標註。",
-                font=FONT,
-                fg="#999",
-                padx=16,
-            ).pack(anchor="w")
-            return
+        per_class_f1: list[float] = self._m["per_class_f1"]
 
         frame = section_frame(parent)
         grid_cell(frame, "角色", 0, 0, font=FONT_BOLD, width=self._NAME_W, anchor="w")

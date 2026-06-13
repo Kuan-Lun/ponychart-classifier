@@ -10,7 +10,6 @@ import ponychart_classifier as _pkg
 from ponychart_classifier.inference import artifacts
 from ponychart_classifier.inference.label_selection import select_predictions
 from ponychart_classifier.model_spec import PONY_CLASSES, parse_class_key
-from ponychart_classifier.training import OUTPUT_CHECKPOINT, recompute_checkpoint_val_f1
 from ponychart_classifier.training.sampling import Sample
 
 from . import prob_cache
@@ -162,9 +161,6 @@ class AnalysisManager:
                 ]
                 self._progress = (i + 1, total)
             self._result = (result, thresholds)
-            # Update checkpoint val_f1 based on current dataset
-            if OUTPUT_CHECKPOINT.exists():
-                recompute_checkpoint_val_f1(OUTPUT_CHECKPOINT)
         except Exception as e:
             self._error = str(e)
 

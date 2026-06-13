@@ -18,6 +18,13 @@ def load_checkpoint(path: Path) -> dict[str, Any]:
     return result
 
 
+def recompute_val_f1(path: Path) -> None:
+    """背景執行緒呼叫：以目前資料集重新計算 val_f1 / per_class_f1 並寫回 checkpoint。"""
+    from ponychart_classifier.training import recompute_checkpoint_val_f1
+
+    recompute_checkpoint_val_f1(path)
+
+
 def extract_counts(ckpt: dict[str, Any]) -> dict[str, Any]:
     """從 checkpoint 萃取圖片數量統計。
 

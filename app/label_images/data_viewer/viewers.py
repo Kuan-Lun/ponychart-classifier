@@ -26,6 +26,7 @@ from .extractors import (
     extract_model,
     extract_split_counts,
     load_checkpoint,
+    recompute_val_f1,
 )
 from .sections import (
     ChangesSection,
@@ -235,6 +236,7 @@ class ValF1Viewer(_CheckpointViewer):
     _title = "分析結果"
 
     def _load_async(self, ui_state: dict[str, Any]) -> dict[str, Any]:
+        recompute_val_f1(CHECKPOINT_PATH)
         ckpt = load_checkpoint(CHECKPOINT_PATH)
         return {
             "model": extract_model(ckpt),
