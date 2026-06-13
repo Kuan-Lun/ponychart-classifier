@@ -49,7 +49,9 @@ class _BaseViewer:
     子類別實作：
     - `_preflight()`：視窗開啟前的同步檢查（可選）。
     - `_snapshot_ui_state()`：在 UI 執行緒抓取當前 UI/store 狀態（可選）。
-    - `_load_async(ui_state)`：背景執行緒載入資料。
+    - `_load_async(ui_state, refresh=...)`：背景執行緒載入資料。
+      `refresh` 為 True 表示使用者按下「重新載入」，可據此決定是否
+      重新計算較昂貴的衍生資料；首次開啟視窗時為 False。
     - `_build_sections(data)`：由資料建立 sections 列表。
     """
 
@@ -75,9 +77,9 @@ class _BaseViewer:
         self._win = tk.Toplevel(self._parent)
         self._win.title(self._title)
         self._win.resizable(False, False)
-        self._start_load()
+        self._start_load(refresh=False)
 
-    def _start_load(self) -> None:
+    def _start_load(self, *, refresh: bool) -> None:
         assert self._win is not None
         self._loading_label = tk.Label(
             self._win, text="載入中...", font=FONT, padx=40, pady=20
@@ -85,16 +87,16 @@ class _BaseViewer:
         self._loading_label.pack()
         ui_state = self._snapshot_ui_state()
         self._thread = threading.Thread(
-            target=self._load, args=(ui_state,), daemon=True
+            target=self._load, args=(ui_state, refresh), daemon=True
         )
         self._thread.start()
         self._poll()
 
-    def _load(self, ui_state: dict[str, Any]) -> None:
+    def _load(self, ui_state: dict[str, Any], refresh: bool) -> None:
         self._result = None
         self._error = None
         try:
-            data = self._load_async(ui_state)
+            data = self._load_async(ui_state, refresh=refresh)
             self._result = {**ui_state, **data}
         except Exception as e:
             self._error = str(e)
@@ -134,7 +136,7 @@ class _BaseViewer:
             return
         for w in self._win.winfo_children():
             w.destroy()
-        self._start_load()
+        self._start_load(refresh=True)
 
     # ── Hooks for subclasses ───────────────────────────────
 
@@ -144,7 +146,7 @@ class _BaseViewer:
     def _snapshot_ui_state(self) -> dict[str, Any]:
         return {}
 
-    def _load_async(self, ui_state: dict[str, Any]) -> dict[str, Any]:
+    def _load_async(self, ui_state: dict[str, Any], *, refresh: bool) -> dict[str, Any]:
         raise NotImplementedError
 
     def _build_sections(self, data: dict[str, Any]) -> list[Section]:
@@ -182,7 +184,7 @@ class DataOverviewViewer(_BaseViewer):
         # 在 UI 執行緒抓取 store 快照，避免和標註動作競爭。
         return {"orig_samples": snapshot_orig_samples(self._store)}
 
-    def _load_async(self, ui_state: dict[str, Any]) -> dict[str, Any]:
+    def _load_async(self, ui_state: dict[str, Any], *, refresh: bool) -> dict[str, Any]:
         if not CHECKPOINT_PATH.exists():
             return {"checkpoint": None}
         ckpt = load_checkpoint(CHECKPOINT_PATH)
@@ -215,7 +217,7 @@ class ModelInfoViewer(_CheckpointViewer):
 
     _title = "模型資訊"
 
-    def _load_async(self, ui_state: dict[str, Any]) -> dict[str, Any]:
+    def _load_async(self, ui_state: dict[str, Any], *, refresh: bool) -> dict[str, Any]:
         ckpt = load_checkpoint(CHECKPOINT_PATH)
         return {
             "file_size_mb": CHECKPOINT_PATH.stat().st_size / 1024 / 1024,
@@ -235,8 +237,9 @@ class ValF1Viewer(_CheckpointViewer):
 
     _title = "分析結果"
 
-    def _load_async(self, ui_state: dict[str, Any]) -> dict[str, Any]:
-        recompute_val_f1(CHECKPOINT_PATH)
+    def _load_async(self, ui_state: dict[str, Any], *, refresh: bool) -> dict[str, Any]:
+        if refresh:
+            recompute_val_f1(CHECKPOINT_PATH)
         ckpt = load_checkpoint(CHECKPOINT_PATH)
         return {
             "model": extract_model(ckpt),
