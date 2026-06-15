@@ -166,6 +166,7 @@ class FileActions:
         n_orphan = len(orphans)
         if n_orphan:
             self._analysis.delete_keys(orphans)
+            self._analysis.save_cache()
             self._store.save()
 
         pending: list[tuple[Path, str]] = []

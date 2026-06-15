@@ -188,6 +188,11 @@ class AnalysisManager:
         for key in keys:
             self.delete_key(key)
 
+    def save_cache(self) -> None:
+        """將目前的 model_probs 寫回 analysis_cache.json。"""
+        if self.model_probs is not None:
+            prob_cache.save(self._cache_path, self._model_path, self.model_probs)
+
 
 class AnalysisTable:
     """模型分析結果的表格 UI 元件。"""

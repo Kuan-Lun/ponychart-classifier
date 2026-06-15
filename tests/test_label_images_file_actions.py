@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -48,8 +49,11 @@ class _FakeNav:
 
 
 class _FakeStore:
-    def __init__(self, labels: dict[str, list[int]]) -> None:
+    def __init__(
+        self, labels: dict[str, list[int]], orphans: list[str] | None = None
+    ) -> None:
         self._labels = dict(labels)
+        self._orphans = orphans or []
         self.saved = False
 
     def get(self, key: str) -> list[int]:
@@ -63,7 +67,9 @@ class _FakeStore:
 
     def purge_orphans(self, base_dir: Path) -> list[str]:
         del base_dir
-        return []
+        for key in self._orphans:
+            self._labels.pop(key, None)
+        return list(self._orphans)
 
     def rename_key(self, old_key: str, new_key: str) -> None:
         if old_key in self._labels:
@@ -117,6 +123,47 @@ def test_organize_all_preserves_analysis_results_after_move(
     assert store._labels == {"organized.png": [1]}
     assert nav.all_paths == [new_path]
     assert store.saved
+
+
+def test_organize_all_persists_analysis_cache_after_orphan_cleanup(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    kept_path = tmp_path / "kept.png"
+    kept_path.write_bytes(b"img")
+
+    nav = _FakeNav([kept_path])
+    store = _FakeStore({"kept.png": [1]}, orphans=["deleted.png"])
+    analysis = AnalysisManager()
+    analysis.model_probs = {
+        "kept.png": [0.9, 0.1, 0.1, 0.1, 0.1, 0.1],
+        "deleted.png": [0.1, 0.1, 0.1, 0.1, 0.1, 0.9],
+    }
+    cache_path = tmp_path / "analysis_cache.json"
+    analysis._cache_path = cache_path
+
+    monkeypatch.setattr("app.label_images.file_actions.dedup_images", lambda paths: [])
+    monkeypatch.setattr(
+        "app.label_images.file_actions.dedup_near_images", lambda paths: []
+    )
+    monkeypatch.setattr(
+        "app.label_images.file_actions.target_path_for",
+        lambda filename, labels: kept_path,
+    )
+    monkeypatch.setattr(
+        "app.label_images.file_actions.cleanup_empty_dirs", lambda base: None
+    )
+    monkeypatch.setattr(
+        "app.label_images.file_actions.messagebox.showinfo",
+        lambda title, message: None,
+    )
+
+    actions = FileActions(nav, store, analysis)  # type: ignore[arg-type]
+    actions.organize_all()
+
+    assert analysis.model_probs == {"kept.png": [0.9, 0.1, 0.1, 0.1, 0.1, 0.1]}
+    saved = json.loads(cache_path.read_text(encoding="utf-8"))
+    assert saved["probs"] == {"kept.png": [0.9, 0.1, 0.1, 0.1, 0.1, 0.1]}
 
 
 def test_reload_adds_new_images_found_on_disk(
