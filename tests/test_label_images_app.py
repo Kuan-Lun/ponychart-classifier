@@ -7,6 +7,7 @@ import pytest
 
 from app.label_images.analysis import AnalysisManager
 from app.label_images.app import _AnalysisActions, _CropActions
+from ponychart_classifier.training.sampling import Sample
 
 
 class _FakeWidget:
@@ -176,12 +177,12 @@ class _FakeCropStore:
         return []
 
 
-class _FakeCropAnalysis:
+class _FakeCropAnalysisActions:
     def __init__(self) -> None:
-        self.seed_calls: list[tuple[str, list[int]]] = []
+        self.analyze_new_crop_calls: list[tuple[Path, str]] = []
 
-    def seed_prediction_from_labels(self, key: str, labels: list[int]) -> None:
-        self.seed_calls.append((key, list(labels)))
+    def analyze_new_crop(self, path: Path, key: str) -> None:
+        self.analyze_new_crop_calls.append((path, key))
 
 
 class _FakeCropApp:
@@ -191,7 +192,7 @@ class _FakeCropApp:
         self.viewer = _FakeCropViewer(save_path)
         self.nav = _FakeCropNav(current_path)
         self.store = _FakeCropStore()
-        self.analysis = _FakeCropAnalysis()
+        self.analysis_actions = _FakeCropAnalysisActions()
         self.current_labels = current_labels
         self.refresh_calls = 0
         self.update_display_calls: list[str] = []
@@ -206,8 +207,8 @@ class _FakeCropApp:
         self.update_display_calls.append(extra)
 
 
-def test_crop_save_seeds_analysis_cache_with_source_labels(tmp_path: Path) -> None:
-    """裁切完成後，應以來源圖目前的標籤合成一筆分析快取（建議標籤），
+def test_crop_save_triggers_auto_analysis_for_new_crop(tmp_path: Path) -> None:
+    """裁切完成後，應自動對新裁切圖觸發模型推論（寫入 analysis_cache.json）。
 
     不直接寫入 labels.json，新裁切圖仍維持未標註，待使用者確認。
     """
@@ -218,7 +219,7 @@ def test_crop_save_seeds_analysis_cache_with_source_labels(tmp_path: Path) -> No
     actions = _CropActions(app)  # type: ignore[arg-type]
     actions.save()
 
-    assert app.analysis.seed_calls == [(crop_path.name, [1, 3])]
+    assert app.analysis_actions.analyze_new_crop_calls == [(crop_path, crop_path.name)]
     assert app.current_labels == []
     assert app.nav.added_paths == [crop_path]
     assert app.refresh_calls == 1
@@ -234,5 +235,19 @@ def test_crop_save_noop_when_save_crop_fails(tmp_path: Path) -> None:
 
     assert app.refresh_calls == 0
     assert app.update_display_calls == []
-    assert app.analysis.seed_calls == []
+    assert app.analysis_actions.analyze_new_crop_calls == []
     assert app.current_labels == [2]
+
+
+def test_analyze_new_crop_launches_single_sample_analysis(tmp_path: Path) -> None:
+    """裁切觸發的自動分析應對單張新圖啟動推論，而非整批重新分析。"""
+    crop_path = tmp_path / "src_crop1.png"
+    app = _FakeApp([crop_path], labels={})
+
+    calls: list[tuple[list[Sample], list[str]]] = []
+    actions = _AnalysisActions(app)  # type: ignore[arg-type]
+    actions._launch = lambda samples, keys: calls.append((samples, keys))  # type: ignore[method-assign]
+
+    actions.analyze_new_crop(crop_path, "src_crop1.png")
+
+    assert calls == [([Sample(str(crop_path), [])], ["src_crop1.png"])]

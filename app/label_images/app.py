@@ -166,20 +166,17 @@ class _CropActions:
 
     def save(self) -> None:
         a = self._app
-        # 以來源圖目前的標籤合成一筆分析快取（如同自動標註的建議），
-        # 供裁切圖在分析表格中顯示建議標籤；不直接寫入 labels.json，
-        # 仍需使用者確認後按 S 儲存。
-        source_labels = list(a.current_labels)
         save_path = a.viewer.save_crop(a.nav.current_path)
         if save_path is None:
             return
 
         new_key = a.store.path_to_key(save_path)
-        a.analysis.seed_prediction_from_labels(new_key, source_labels)
-
         a.nav.add_path(save_path)
         a.refresh()
         a.update_display(f"已儲存裁切圖：{save_path.name}")
+        # 自動對裁切出的新圖執行模型推論，結果寫入 analysis_cache.json，
+        # 不影響 labels.json；仍需使用者確認後按 S 儲存標籤。
+        a.analysis_actions.analyze_new_crop(save_path, new_key)
 
 
 class _FilterActions:
@@ -238,6 +235,14 @@ class _AnalysisActions:
             messagebox.showinfo("Info", "目前沒有未標註且未分析的圖片。")
             return
         self._launch(samples, keys)
+
+    def analyze_new_crop(self, path: Path, key: str) -> None:
+        """裁切完成後自動對單張新圖執行推論，結果寫入 analysis_cache.json。
+
+        若此時已有其他分析在背景執行，則略過；該圖會在下次 refresh 時
+        被 :meth:`update_button_states` 視為尚未分析，可再手動觸發。
+        """
+        self._launch([Sample(str(path), [])], [key])
 
     def _launch(self, samples: list[Sample], keys: list[str]) -> None:
         a = self._app

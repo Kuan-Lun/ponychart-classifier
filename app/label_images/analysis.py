@@ -188,21 +188,6 @@ class AnalysisManager:
         for key in keys:
             self.delete_key(key)
 
-    def seed_prediction_from_labels(self, key: str, labels: list[int]) -> None:
-        """以指定標籤合成一筆預測機率，寫入分析快取（建議標籤用）。
-
-        僅在已有有效快取（已執行過自動標註）時才寫入；`labels` 為空時
-        略過，避免 :func:`select_predictions` 在無任一機率達標時，
-        以 min_k fallback 選出無意義的建議標籤。
-        """
-        if self.model_probs is None or not labels:
-            return
-        label_set = set(labels)
-        self.model_probs[key] = [
-            1.0 if (i + 1) in label_set else 0.0 for i in range(len(PONY_CLASSES))
-        ]
-        prob_cache.save(self._cache_path, self._model_path, self.model_probs)
-
 
 class AnalysisTable:
     """模型分析結果的表格 UI 元件。"""
