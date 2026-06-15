@@ -7,7 +7,7 @@ from tkinter import messagebox
 
 from PIL import Image, ImageTk
 
-from .constants import DISPLAY_HEIGHT, DISPLAY_WIDTH
+from .constants import DISPLAY_HEIGHT, DISPLAY_WIDTH, IMAGE_DIR
 from .crop_handler import CropHandler
 
 
@@ -69,20 +69,28 @@ class ImageViewer:
         )
 
         base_stem = re.sub(r"_crop\d+$", "", current_path.stem)
-        base_path = current_path.parent / f"{base_stem}{current_path.suffix}"
-        save_path = self._next_crop_name(base_path)
+        save_path = self._next_crop_name(
+            current_path.parent, base_stem, current_path.suffix
+        )
 
         cropped.save(save_path)
         return save_path
 
     @staticmethod
-    def _next_crop_name(base_path: Path) -> Path:
-        stem = base_path.stem
-        suffix = base_path.suffix
-        parent = base_path.parent
+    def _next_crop_name(parent: Path, base_stem: str, suffix: str) -> Path:
+        """找出 base_stem 尚未使用的最小 _cropN 編號。
+
+        裁切圖標註後會被搬到依標籤分類的子資料夾，因此已用過的編號在
+        `parent` 目錄中可能已不存在；必須在整個 IMAGE_DIR 樹狀結構中
+        檢查，避免編號重複造成不同裁切圖檔名衝突。
+        """
+        pattern = re.compile(rf"^{re.escape(base_stem)}_crop(\d+){re.escape(suffix)}$")
+        used = {
+            int(m.group(1))
+            for p in IMAGE_DIR.rglob(f"{base_stem}_crop*{suffix}")
+            if (m := pattern.match(p.name))
+        }
         n = 1
-        while True:
-            candidate = parent / f"{stem}_crop{n}{suffix}"
-            if not candidate.exists():
-                return candidate
+        while n in used:
             n += 1
+        return parent / f"{base_stem}_crop{n}{suffix}"

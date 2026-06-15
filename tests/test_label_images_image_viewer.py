@@ -86,6 +86,21 @@ def test_load_full_size_image_has_zero_offset(
     assert viewer.display_size == (DISPLAY_WIDTH, DISPLAY_HEIGHT)
 
 
+def test_next_crop_name_skips_numbers_used_in_other_subdirs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """已標註的裁切圖會被搬到標籤子資料夾，編號仍須視為已使用。"""
+    monkeypatch.setattr("app.label_images.image_viewer.IMAGE_DIR", tmp_path)
+
+    organized = tmp_path / "1" / "twilight"
+    organized.mkdir(parents=True)
+    (organized / "pony_chart_20260101_000000_crop1.png").touch()
+
+    result = ImageViewer._next_crop_name(tmp_path, "pony_chart_20260101_000000", ".png")
+
+    assert result == tmp_path / "pony_chart_20260101_000000_crop2.png"
+
+
 def test_save_crop_rotated_derotates(tmp_path: Path, viewer: ImageViewer) -> None:
     src = tmp_path / "source.png"
     _make_quad_image(src, (1000, 600))
