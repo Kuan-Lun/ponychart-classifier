@@ -1,13 +1,12 @@
 """
-清理過小且原圖已被模型正確且有信心預測的裁切圖。
+清理過小且原圖已被模型正確預測的裁切圖。
 
 需同時滿足以下兩個條件的裁切圖才會被列為候選：
   1. 短邊（min(width, height)）小於裁切框短邊下限（裁切框長寬比鎖定為
      CROP_ASPECT_RATIO，短邊下限 = CROP_MIN_WIDTH_ORIG / CROP_ASPECT_RATIO；
      短於此下限代表訓練時 resize 會放大、產生模糊）
-  2. 對應原圖的模型推論與標籤完全一致（無漏判、無誤判），且每個
-     標籤類別都滿足 AnalysisTable 的 "=="（信心足夠，
-     |prob - threshold| >= SUSPICIOUS_MARGIN）
+  2. 對應原圖的模型推論與標籤完全一致（無漏判、無誤判），
+     涵蓋 AnalysisTable 的 "=" 與 "=="（不限信心程度）
 
 預設為 dry-run，僅列出符合條件的檔案；加上 --execute 才會實際刪除。
 刪除後請在 app.label_images 執行一次「整理全部」，
@@ -32,7 +31,6 @@ from app.label_images.constants import (
     IMAGE_DIR,
     IMAGE_SUBDIR,
     LABEL_FILE,
-    SUSPICIOUS_MARGIN,
 )
 from app.label_images.file_ops import scan_image_paths
 from app.label_images.label_store import LabelStore
@@ -51,14 +49,12 @@ def _is_too_small(path: Path) -> bool:
     return size < _CROP_MIN_SHORT_SIDE
 
 
-def _is_fully_confident_match(
+def _is_correct_match(
     probs: list[float], thresholds: list[float], labels: list[int]
 ) -> bool:
     predicted = set(select_predictions(probs, thresholds))
     label_set = {c - 1 for c in labels}
-    if predicted != label_set:
-        return False
-    return all(abs(probs[c] - thresholds[c]) >= SUSPICIOUS_MARGIN for c in label_set)
+    return predicted == label_set
 
 
 def find_candidates() -> list[Path]:
@@ -90,7 +86,7 @@ def find_candidates() -> list[Path]:
         probs = analysis.get_image_probs(orig_key)
         if probs is None:
             continue
-        if _is_fully_confident_match(probs, thresholds, labels):
+        if _is_correct_match(probs, thresholds, labels):
             candidates.append(p)
     return candidates
 

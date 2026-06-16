@@ -24,7 +24,7 @@ def _make_image(path: Path, size: tuple[int, int]) -> None:
     Image.new("RGB", size).save(path)
 
 
-def test_find_candidates_filters_by_size_and_confidence(
+def test_find_candidates_filters_by_size_and_match(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     orig_name = "pony_chart_20240101_000000.png"
@@ -43,7 +43,8 @@ def test_find_candidates_filters_by_size_and_confidence(
     monkeypatch.setattr(script, "LABEL_FILE", tmp_path / "labels.json")
     monkeypatch.setattr("app.label_images.label_store.IMAGE_DIR", tmp_path)
 
-    probs = {orig_name: [0.9, 0.9, 0.1, 0.1, 0.1, 0.1]}
+    # Low-confidence correct match (|0.6-0.5|=0.1 < SUSPICIOUS_MARGIN): "=" case.
+    probs = {orig_name: [0.6, 0.6, 0.1, 0.1, 0.1, 0.1]}
     thresholds = [0.5] * 6
     monkeypatch.setattr(
         script, "AnalysisManager", lambda: _FakeAnalysis(probs, thresholds)
