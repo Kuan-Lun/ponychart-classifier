@@ -194,6 +194,7 @@ class ImageNavigator:
 
     def remove_path(self, path: Path) -> None:
         """移除圖片並調整索引。"""
+        self._size_cache.pop(path, None)
         self._all_paths = [p for p in self._all_paths if p != path]
         self._paths = [p for p in self._paths if p != path]
         if self._paths:
