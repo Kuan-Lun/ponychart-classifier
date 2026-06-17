@@ -1,6 +1,5 @@
 """裁切模式的狀態管理與畫布繪製：鍵盤驅動的可旋轉、比例鎖定裁切框。"""
 
-import dataclasses
 import math
 import tkinter as tk
 
@@ -15,65 +14,12 @@ from .constants import (
     CROP_SCALE_STEP,
     CROP_SCALE_STEP_FAST,
 )
+from .crop_geometry import CropCorners, Point, compute_corners, half_extents
+from .crop_geometry import height_for as _height_for
+from .crop_geometry import max_width as _max_width
+from .crop_geometry import min_width as _min_width
 
-# 浮點誤差容許值（畫布像素），用於邊界判斷
-_BOUNDS_EPS = 1e-6
-
-
-@dataclasses.dataclass(frozen=True)
-class Point:
-    """畫布座標系中的一個 2D 點。"""
-
-    x: float
-    y: float
-
-
-@dataclasses.dataclass(frozen=True)
-class CropCorners:
-    """裁切框的 4 個角點，依 PIL QUAD 所需順序排列。
-
-    順序為「裁切框自身座標系」的 upper-left, lower-left, lower-right,
-    upper-right；當旋轉角度為 0 時，分別對應畫面的左上、左下、右下、右上。
-    """
-
-    ul: Point
-    ll: Point
-    lr: Point
-    ur: Point
-
-    def as_quad(self) -> tuple[float, float, float, float, float, float, float, float]:
-        """展開為 PIL ``Image.transform(..., QUAD, data)`` 所需的 8-tuple。"""
-        return (
-            self.ul.x,
-            self.ul.y,
-            self.ll.x,
-            self.ll.y,
-            self.lr.x,
-            self.lr.y,
-            self.ur.x,
-            self.ur.y,
-        )
-
-    def all_in_bounds(self, max_x: float, max_y: float) -> bool:
-        """判斷 4 個角點是否都落在 ``[0, max_x] x [0, max_y]`` 範圍內。
-
-        容許 :data:`_BOUNDS_EPS` 的浮點誤差，避免角點剛好落在邊界時
-        因捨入誤差被誤判為超界。
-        """
-        return all(
-            -_BOUNDS_EPS <= p.x <= max_x + _BOUNDS_EPS
-            and -_BOUNDS_EPS <= p.y <= max_y + _BOUNDS_EPS
-            for p in (self.ul, self.ll, self.lr, self.ur)
-        )
-
-    def translated(self, dx: float, dy: float) -> "CropCorners":
-        """回傳所有角點平移 ``(dx, dy)`` 後的新 :class:`CropCorners`。"""
-        return CropCorners(
-            ul=Point(self.ul.x + dx, self.ul.y + dy),
-            ll=Point(self.ll.x + dx, self.ll.y + dy),
-            lr=Point(self.lr.x + dx, self.lr.y + dy),
-            ur=Point(self.ur.x + dx, self.ur.y + dy),
-        )
+__all__ = ["CropCorners", "CropHandler", "Point"]
 
 
 class CropHandler:
@@ -200,15 +146,13 @@ class CropHandler:
         candidate_portrait = not self._portrait
         angle = self._angle_rad
 
-        max_width = self._max_width_canvas(candidate_portrait, angle)
-        min_width = self._min_width_for(candidate_portrait, angle)
+        max_w = self._max_width_canvas(candidate_portrait, angle)
+        min_w = self._min_width_for(candidate_portrait, angle)
         ideal_width = self._height(self._width, self._portrait)
-        candidate_width = min(max(ideal_width, min_width), max_width)
+        candidate_width = min(max(ideal_width, min_w), max_w)
         candidate_height = self._height(candidate_width, candidate_portrait)
 
-        cos_a, sin_a = abs(math.cos(angle)), abs(math.sin(angle))
-        half_w = (candidate_width * cos_a + candidate_height * sin_a) / 2.0
-        half_h = (candidate_width * sin_a + candidate_height * cos_a) / 2.0
+        half_w, half_h = half_extents(candidate_width, candidate_height, angle)
 
         cw, ch = self._canvas_size
         self._center = Point(
@@ -217,21 +161,19 @@ class CropHandler:
         )
         self._width = candidate_width
         self._portrait = candidate_portrait
-        self._min_width_canvas = min_width
+        self._min_width_canvas = min_w
         self._redraw()
 
     # ── 內部實作 ────────────────────────────────────────────────
 
     @staticmethod
     def _height(width: float, portrait: bool) -> float:
-        return width * CROP_ASPECT_RATIO if portrait else width / CROP_ASPECT_RATIO
+        return _height_for(width, CROP_ASPECT_RATIO, portrait)
 
     def _max_width_canvas(self, portrait: bool, angle_rad: float) -> float:
         """計算指定方向與角度下，置中於畫布時可容納的最大寬度。"""
         cw, ch = self._canvas_size
-        k = CROP_ASPECT_RATIO if portrait else 1.0 / CROP_ASPECT_RATIO
-        cos_a, sin_a = abs(math.cos(angle_rad)), abs(math.sin(angle_rad))
-        return min(cw / (cos_a + k * sin_a), ch / (sin_a + k * cos_a))
+        return _max_width(cw, ch, CROP_ASPECT_RATIO, portrait, angle_rad)
 
     def _min_width_for(self, portrait: bool, angle_rad: float) -> float:
         """計算指定方向與角度下，裁切框寬度（畫布像素）的下限。
@@ -239,11 +181,14 @@ class CropHandler:
         下限對應原圖長邊 >= :data:`CROP_MIN_WIDTH_ORIG`，並以
         :meth:`_max_width_canvas` 封頂，避免裁切框超出畫布範圍。
         """
-        floor_orig = (
-            CROP_MIN_WIDTH_ORIG / CROP_ASPECT_RATIO if portrait else CROP_MIN_WIDTH_ORIG
-        )
-        return min(
-            floor_orig * self._scale, self._max_width_canvas(portrait, angle_rad)
+        cw, ch = self._canvas_size
+        return _min_width(
+            cw,
+            ch,
+            CROP_ASPECT_RATIO,
+            CROP_MIN_WIDTH_ORIG * self._scale,
+            portrait,
+            angle_rad,
         )
 
     def _move(self, dx: float, dy: float) -> None:
@@ -279,25 +224,7 @@ class CropHandler:
     def _compute_corners(
         center: Point, width: float, angle_rad: float, portrait: bool
     ) -> CropCorners:
-        height = CropHandler._height(width, portrait)
-        cos_a, sin_a = math.cos(angle_rad), math.sin(angle_rad)
-        # width 軸方向 (ux,uy)；height 軸方向 (vx,vy)，與 width 軸垂直
-        ux, uy = cos_a, sin_a
-        vx, vy = -sin_a, cos_a
-        hw, hh = width / 2.0, height / 2.0
-
-        def corner(sx: float, sy: float) -> Point:
-            return Point(
-                center.x + sx * hw * ux + sy * hh * vx,
-                center.y + sx * hw * uy + sy * hh * vy,
-            )
-
-        return CropCorners(
-            ul=corner(-1.0, -1.0),
-            ll=corner(-1.0, 1.0),
-            lr=corner(1.0, 1.0),
-            ur=corner(1.0, -1.0),
-        )
+        return compute_corners(center, width, CROP_ASPECT_RATIO, angle_rad, portrait)
 
     def _redraw(self) -> None:
         self._clear_polygon()

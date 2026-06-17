@@ -2,6 +2,7 @@
 
 import glob
 import hashlib
+import re
 import shutil
 from pathlib import Path
 
@@ -165,3 +166,27 @@ def cleanup_empty_dirs(base: Path) -> None:
 def is_raw_image(p: Path) -> bool:
     """判斷是否為原始圖片（pony_chart_YYYYMMDD_HHMMSS，無額外後綴）。"""
     return is_original(p.name)
+
+
+def next_crop_name(parent: Path, base_stem: str, suffix: str) -> Path:
+    """找出 base_stem 尚未使用的最小 _cropN 編號，回傳 parent 下的新檔案路徑。
+
+    裁切圖標註後會被搬到依標籤分類的子資料夾，因此已用過的編號在 `parent`
+    目錄中可能已不存在；必須在整個 IMAGE_DIR 樹狀結構中檢查，避免編號重複
+    造成不同裁切圖檔名衝突。
+    """
+    pattern = re.compile(rf"^{re.escape(base_stem)}_crop(\d+){re.escape(suffix)}$")
+    used = {
+        int(m.group(1))
+        for p in IMAGE_DIR.rglob(f"{base_stem}_crop*{suffix}")
+        if (m := pattern.match(p.name))
+    }
+    n = 1
+    while n in used:
+        n += 1
+    return parent / f"{base_stem}_crop{n}{suffix}"
+
+
+def has_existing_crop(stem: str) -> bool:
+    """判斷某張原圖（依其 pony_chart_YYYYMMDD_HHMMSS stem）是否已有任何衍生裁切圖。"""
+    return any(IMAGE_DIR.rglob(f"{stem}_crop*"))
