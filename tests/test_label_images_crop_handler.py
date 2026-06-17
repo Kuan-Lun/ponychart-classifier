@@ -17,7 +17,8 @@ from app.label_images.constants import (
     CROP_SCALE_STEP,
     CROP_SCALE_STEP_FAST,
 )
-from app.label_images.crop_handler import CropCorners, CropHandler
+from app.label_images.crop_geometry import CropCorners
+from app.label_images.crop_handler import CropHandler
 
 
 @pytest.fixture

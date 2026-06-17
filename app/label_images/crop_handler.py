@@ -19,7 +19,7 @@ from .crop_geometry import height_for as _height_for
 from .crop_geometry import max_width as _max_width
 from .crop_geometry import min_width as _min_width
 
-__all__ = ["CropCorners", "CropHandler", "Point"]
+__all__ = ["CropHandler"]
 
 
 class CropHandler:
