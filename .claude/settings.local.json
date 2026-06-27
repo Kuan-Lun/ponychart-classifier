@@ -11,7 +11,8 @@
       "Bash(uv:*)",
       "Bash(grep:*)",
       "Bash(head:*)",
-      "Bash(tail:*)"
+      "Bash(tail:*)",
+      "Bash(echo:*)"
     ],
     "additionalDirectories": [
       "/private/tmp",
