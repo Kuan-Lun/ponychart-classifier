@@ -1,7 +1,5 @@
 """Training primitives and high-level training pipeline."""
 
-from __future__ import annotations
-
 import copy
 import logging
 from dataclasses import dataclass

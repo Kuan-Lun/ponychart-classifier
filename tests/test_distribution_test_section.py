@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import numpy as np
 
 from app.label_images.data_viewer.sections.distribution_test import (

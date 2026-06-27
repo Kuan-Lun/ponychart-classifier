@@ -1,7 +1,5 @@
 """圖片數量 section。"""
 
-from __future__ import annotations
-
 import tkinter as tk
 from typing import Any
 

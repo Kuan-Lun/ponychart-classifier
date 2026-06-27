@@ -4,8 +4,6 @@ Uses the chi-square distribution approximation for Pearson X^2 and
 likelihood-ratio G^2 statistics.
 """
 
-from __future__ import annotations
-
 import numpy as np
 from numpy.typing import NDArray
 from scipy.stats import chi2

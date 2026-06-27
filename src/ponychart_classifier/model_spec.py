@@ -1,7 +1,5 @@
 """Model specification constants shared by inference and training."""
 
-from __future__ import annotations
-
 import dataclasses
 from enum import StrEnum
 

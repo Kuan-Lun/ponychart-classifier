@@ -7,8 +7,6 @@ When the number of compositions C(n+k-1, k-1) exceeds ``MAX_COMPOSITIONS``,
 the caller should fall back to asymptotic tests instead.
 """
 
-from __future__ import annotations
-
 from collections.abc import Iterator
 from math import comb
 

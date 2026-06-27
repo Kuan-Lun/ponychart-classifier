@@ -1,7 +1,5 @@
 """資料分布檢定 section。"""
 
-from __future__ import annotations
-
 import tkinter as tk
 
 from ponychart_classifier.stats import GoFTestResult, goodness_of_fit_test

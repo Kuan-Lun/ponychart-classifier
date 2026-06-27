@@ -1,7 +1,5 @@
 """Inference result data models."""
 
-from __future__ import annotations
-
 import dataclasses
 from collections.abc import Iterable, Mapping
 

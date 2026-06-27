@@ -1,7 +1,5 @@
 """Shared thresholds and helpers for recommendation-style conclusions."""
 
-from __future__ import annotations
-
 SIGNIFICANT_DELTA = 0.005
 """Default threshold for calling an F1 change meaningful."""
 

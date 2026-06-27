@@ -22,10 +22,10 @@ from .navigator import ImageNavigator
 class _KeyHandler:
     """鍵盤事件分派：將按鍵對應到 LabelApp 操作。"""
 
-    def __init__(self, app: "LabelApp") -> None:
+    def __init__(self, app: LabelApp) -> None:
         self._app = app
 
-    def handle(self, e: "tk.Event[tk.Misc]") -> None:
+    def handle(self, e: tk.Event[tk.Misc]) -> None:
         k = e.keysym.lower()
         a = self._app
 
@@ -79,7 +79,7 @@ class _KeyHandler:
 class _LabelActions:
     """標籤操作：切換與儲存。"""
 
-    def __init__(self, app: "LabelApp") -> None:
+    def __init__(self, app: LabelApp) -> None:
         self._app = app
 
     def toggle(self, v: int) -> None:
@@ -134,7 +134,7 @@ class _LabelActions:
 class _NavigationActions:
     """導航操作：跳轉、隨機。"""
 
-    def __init__(self, app: "LabelApp") -> None:
+    def __init__(self, app: LabelApp) -> None:
         self._app = app
 
     def jump_to_random(self) -> None:
@@ -162,7 +162,7 @@ class _NavigationActions:
 class _CropActions:
     """裁切操作：進入裁切模式、儲存裁切。"""
 
-    def __init__(self, app: "LabelApp") -> None:
+    def __init__(self, app: LabelApp) -> None:
         self._app = app
 
     def enter(self) -> None:
@@ -193,7 +193,7 @@ class _CropActions:
 class _FilterActions:
     """篩選操作：套用與重置。"""
 
-    def __init__(self, app: "LabelApp") -> None:
+    def __init__(self, app: LabelApp) -> None:
         self._app = app
 
     def apply(self) -> None:
@@ -218,7 +218,7 @@ class _FilterActions:
 class _AnalysisActions:
     """模型分析操作：啟動、完成回呼、錯誤回呼。"""
 
-    def __init__(self, app: "LabelApp") -> None:
+    def __init__(self, app: LabelApp) -> None:
         self._app = app
 
     def start(self) -> None:

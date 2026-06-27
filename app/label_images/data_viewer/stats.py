@@ -1,7 +1,5 @@
 """原圖樣本的聚合統計 helper（無 UI 依賴）。"""
 
-from __future__ import annotations
-
 from collections import Counter
 from itertools import combinations
 

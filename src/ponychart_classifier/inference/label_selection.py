@@ -1,7 +1,5 @@
 """Inference-time label selection helpers."""
 
-from __future__ import annotations
-
 from collections.abc import Sequence
 
 MAX_K = 3

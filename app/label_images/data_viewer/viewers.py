@@ -10,8 +10,6 @@
 `_build_sections` 中加入即可，不需修改任何現有類別。
 """
 
-from __future__ import annotations
-
 import threading
 import tkinter as tk
 from tkinter import messagebox

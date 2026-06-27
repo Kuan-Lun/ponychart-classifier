@@ -1,7 +1,5 @@
 """Checkpoint 載入、資料萃取與訓練／驗證集分割計算（無 UI 依賴）。"""
 
-from __future__ import annotations
-
 from pathlib import Path
 from typing import Any
 

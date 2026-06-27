@@ -1,7 +1,5 @@
 """Low-level Tk layout helpers shared by data_viewer sections."""
 
-from __future__ import annotations
-
 import tkinter as tk
 
 FONT = ("Consolas", 11)

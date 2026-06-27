@@ -1,7 +1,5 @@
 """Training-specific constants for PonyChart ML scripts."""
 
-from __future__ import annotations
-
 from pathlib import Path
 
 from ponychart_classifier.model_spec import (  # noqa: F401

@@ -6,8 +6,6 @@ infeasible (too many compositions), it automatically falls back to the
 asymptotic chi-square approximation.
 """
 
-from __future__ import annotations
-
 from typing import Literal
 
 import numpy as np

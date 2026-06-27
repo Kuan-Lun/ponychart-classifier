@@ -5,8 +5,6 @@ seed initialisation, device detection, sample loading, holdout splitting,
 test-loader construction, and seed-resetting train helpers.
 """
 
-from __future__ import annotations
-
 import logging
 import os
 from collections.abc import Callable

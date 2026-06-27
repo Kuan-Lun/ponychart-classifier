@@ -5,8 +5,6 @@ making the split stable regardless of how many other samples are added or
 removed.  This prevents data leakage when resuming training with new data.
 """
 
-from __future__ import annotations
-
 import hashlib
 import logging
 import os

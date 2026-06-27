@@ -1,7 +1,5 @@
 """Device detection utilities."""
 
-from __future__ import annotations
-
 import os
 import platform
 import subprocess
@@ -21,7 +19,7 @@ def get_performance_cpu_count() -> int:
             )
             if result.returncode == 0:
                 return int(result.stdout.strip())
-        except (OSError, ValueError, subprocess.TimeoutExpired):
+        except OSError, ValueError, subprocess.TimeoutExpired:
             pass
     return max((os.cpu_count() or 1) - 2, 1)
 

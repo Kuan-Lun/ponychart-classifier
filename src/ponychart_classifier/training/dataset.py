@@ -1,7 +1,5 @@
 """Dataset, cache budget, transforms, and DataLoader factory."""
 
-from __future__ import annotations
-
 import logging
 
 import numpy as np

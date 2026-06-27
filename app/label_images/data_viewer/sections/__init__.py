@@ -1,7 +1,5 @@
 """Section Protocol 與所有具體 section class。"""
 
-from __future__ import annotations
-
 import tkinter as tk
 from typing import Protocol
 

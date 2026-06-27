@@ -1,7 +1,5 @@
 """Image preprocessing for ONNX inference."""
 
-from __future__ import annotations
-
 from typing import Any, cast
 
 import cv2 as cv

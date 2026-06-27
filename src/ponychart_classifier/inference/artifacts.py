@@ -1,7 +1,5 @@
 """Runtime artifact path resolution and download helpers."""
 
-from __future__ import annotations
-
 import functools
 import logging
 import os
@@ -119,7 +117,7 @@ def remote_etag(filename: str) -> str | None:
         with _opener().urlopen(req) as resp:
             etag: str | None = resp.headers.get("ETag")
             return etag
-    except (HTTPError, URLError):
+    except HTTPError, URLError:
         return None
 
 

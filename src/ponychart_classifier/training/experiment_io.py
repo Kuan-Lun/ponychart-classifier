@@ -20,8 +20,6 @@ Responsibilities:
   interpreted alongside the hardware they came from.
 """
 
-from __future__ import annotations
-
 import hashlib
 import json
 import logging

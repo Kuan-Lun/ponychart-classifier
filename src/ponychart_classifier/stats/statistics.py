@@ -6,8 +6,6 @@ Provides:
 - ``multinomial_logpmf``: Log of multinomial probability under H0
 """
 
-from __future__ import annotations
-
 import numpy as np
 from numpy.typing import NDArray
 from scipy.special import gammaln

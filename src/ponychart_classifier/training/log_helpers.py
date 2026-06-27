@@ -1,7 +1,5 @@
 """Logging helpers for structured report output."""
 
-from __future__ import annotations
-
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass

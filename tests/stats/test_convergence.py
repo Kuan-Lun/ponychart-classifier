@@ -1,7 +1,5 @@
 """Exact vs asymptotic convergence study and Type I error calibration via Monte Carlo."""
 
-from __future__ import annotations
-
 import hashlib
 import platform
 import subprocess

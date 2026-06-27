@@ -1,7 +1,5 @@
 """提示訊息 section。"""
 
-from __future__ import annotations
-
 import tkinter as tk
 
 from ..widgets import FONT

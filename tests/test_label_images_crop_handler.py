@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import math
 import tkinter as tk
 from collections.abc import Iterator

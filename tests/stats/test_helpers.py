@@ -1,7 +1,5 @@
 """Tests for helper statistics: pearson_stat, g_stat, multinomial_logpmf."""
 
-from __future__ import annotations
-
 import math
 
 import numpy as np

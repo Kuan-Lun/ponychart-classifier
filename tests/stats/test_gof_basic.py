@@ -1,7 +1,5 @@
 """Basic goodness-of-fit tests: uniform, deviation, small sample, zeros, errors."""
 
-from __future__ import annotations
-
 import numpy as np
 import pytest
 

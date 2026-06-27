@@ -1,7 +1,5 @@
 """模型架構 section。"""
 
-from __future__ import annotations
-
 import tkinter as tk
 from typing import Any
 

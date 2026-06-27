@@ -4,8 +4,6 @@
 模型更新後 cache 自動失效，下次分析會重新計算。
 """
 
-from __future__ import annotations
-
 import hashlib
 import json
 import tempfile

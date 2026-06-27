@@ -53,7 +53,7 @@ class CropCorners:
             for p in (self.ul, self.ll, self.lr, self.ur)
         )
 
-    def translated(self, dx: float, dy: float) -> "CropCorners":
+    def translated(self, dx: float, dy: float) -> CropCorners:
         """回傳所有角點平移 ``(dx, dy)`` 後的新 :class:`CropCorners`。"""
         return CropCorners(
             ul=Point(self.ul.x + dx, self.ul.y + dy),

@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from pathlib import Path
 
 from app.label_images.filter_builder import FilterConfig, build_filter_fn

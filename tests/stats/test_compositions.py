@@ -1,7 +1,5 @@
 """Tests for composition enumeration."""
 
-from __future__ import annotations
-
 import math
 
 from ponychart_classifier.stats.exact import (

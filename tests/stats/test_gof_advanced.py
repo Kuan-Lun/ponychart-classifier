@@ -1,7 +1,5 @@
 """Advanced goodness-of-fit tests: fallback, scipy validation, mid-p, result structure."""
 
-from __future__ import annotations
-
 import numpy as np
 import pytest
 from scipy.stats import chisquare
