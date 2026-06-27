@@ -8,8 +8,11 @@ from PIL import Image
 
 from .label_store import LabelStore
 
-SortMode = Literal["path", "filename", "size"]
-_SORT_MODES: tuple[SortMode, ...] = ("path", "filename", "size")
+SortMode = Literal["path", "filename", "size", "confidence"]
+_SORT_MODES: tuple[SortMode, ...] = ("path", "filename", "size", "confidence")
+
+# 機率缺失時的信心分數（高於任何 min(|0.5-p_i|) 的實際值），排在最後。
+_MISSING_CONFIDENCE = 1.0
 
 
 class ImageNavigator:
@@ -23,6 +26,11 @@ class ImageNavigator:
         self._filter_fn: Callable[[Path], bool] | None = None
         self._sort_mode: SortMode = "path"
         self._size_cache: dict[Path, int] = {}
+        self._probs_provider: Callable[[str], list[float] | None] | None = None
+
+    def set_probs_provider(self, fn: Callable[[str], list[float] | None]) -> None:
+        """設定查詢模型預測機率的函式，供「信心」排序模式使用。"""
+        self._probs_provider = fn
 
     @property
     def total(self) -> int:
@@ -57,9 +65,17 @@ class ImageNavigator:
         return self._sort_mode
 
     def toggle_sort_mode(self) -> None:
-        """切換排序模式（依路徑 / 依檔案名稱 / 依尺寸），保留目前所在圖片。"""
+        """切換排序模式（依路徑 / 檔名 / 尺寸 / 信心），保留目前所在圖片。"""
         next_idx = (_SORT_MODES.index(self._sort_mode) + 1) % len(_SORT_MODES)
         self._sort_mode = _SORT_MODES[next_idx]
+        self.resort()
+
+    def resort(self) -> None:
+        """依目前排序模式重新排序（不切換模式），保留目前所在圖片。
+
+        用於模型分析完成後刷新「信心」排序——新跑出的機率不會自動觸發排序，
+        需要呼叫端在分析完成的回呼中主動呼叫。
+        """
         current_key = self.current_key if not self.is_empty else None
         self._all_paths.sort(key=self._sort_key)
         self.refresh_filter()
@@ -71,7 +87,18 @@ class ImageNavigator:
             return (p.name, str(p))
         if self._sort_mode == "size":
             return (f"{self._min_dimension(p):010d}", str(p))
+        if self._sort_mode == "confidence":
+            return (f"{self._confidence(p):.6f}", str(p))
         return (str(p), p.name)
+
+    def _confidence(self, p: Path) -> float:
+        """回傳 min(|0.5-Probi|)，數值越低表示模型對該圖最不確定。"""
+        if self._probs_provider is None:
+            return _MISSING_CONFIDENCE
+        probs = self._probs_provider(self._store.path_to_key(p))
+        if probs is None:
+            return _MISSING_CONFIDENCE
+        return min(abs(0.5 - prob) for prob in probs)
 
     def _min_dimension(self, p: Path) -> int:
         """回傳圖片的 min(寬, 高)，並快取結果。"""

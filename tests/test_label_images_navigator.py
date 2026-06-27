@@ -52,7 +52,7 @@ def test_toggle_sort_mode_groups_crops_by_filename(tmp_path: Path) -> None:
     ]
 
 
-def test_toggle_sort_mode_cycles_through_three_modes(tmp_path: Path) -> None:
+def test_toggle_sort_mode_cycles_through_four_modes(tmp_path: Path) -> None:
     paths = _make_paths(tmp_path)
     nav = ImageNavigator(paths, _FakeStore())  # type: ignore[arg-type]
 
@@ -64,13 +64,17 @@ def test_toggle_sort_mode_cycles_through_three_modes(tmp_path: Path) -> None:
     assert mode == "size"
     nav.toggle_sort_mode()
     mode = nav.sort_mode
+    assert mode == "confidence"
+    nav.toggle_sort_mode()
+    mode = nav.sort_mode
     assert mode == "path"
 
 
-def test_toggle_sort_mode_three_times_restores_path_order(tmp_path: Path) -> None:
+def test_toggle_sort_mode_four_times_restores_path_order(tmp_path: Path) -> None:
     paths = _make_paths(tmp_path)
     nav = ImageNavigator(paths, _FakeStore())  # type: ignore[arg-type]
 
+    nav.toggle_sort_mode()
     nav.toggle_sort_mode()
     nav.toggle_sort_mode()
     nav.toggle_sort_mode()
@@ -107,6 +111,54 @@ def test_size_sort_mode_treats_unreadable_files_as_smallest(tmp_path: Path) -> N
     nav.toggle_sort_mode()  # size
 
     assert nav.all_paths == [fake, real]
+
+
+def test_confidence_sort_mode_orders_by_min_distance_from_half_ascending(
+    tmp_path: Path,
+) -> None:
+    confident = tmp_path / "confident.png"
+    uncertain = tmp_path / "uncertain.png"
+    no_probs = tmp_path / "no_probs.png"
+    for p in (confident, uncertain, no_probs):
+        p.write_bytes(b"img")
+
+    probs = {
+        str(confident): [0.95, 0.9, 0.1, 0.05, 0.99, 0.02],
+        str(uncertain): [0.95, 0.9, 0.51, 0.05, 0.99, 0.02],
+    }
+    nav = ImageNavigator([confident, uncertain, no_probs], _FakeStore())  # type: ignore[arg-type]
+    nav.set_probs_provider(lambda key: probs.get(key))
+
+    nav.toggle_sort_mode()  # filename
+    nav.toggle_sort_mode()  # size
+    nav.toggle_sort_mode()  # confidence
+
+    assert nav.all_paths == [uncertain, confident, no_probs]
+
+
+def test_resort_reapplies_confidence_order_without_changing_mode(
+    tmp_path: Path,
+) -> None:
+    a_path = tmp_path / "a.png"
+    b_path = tmp_path / "b.png"
+    for p in (a_path, b_path):
+        p.write_bytes(b"img")
+
+    probs: dict[str, list[float]] = {}
+    nav = ImageNavigator([a_path, b_path], _FakeStore())  # type: ignore[arg-type]
+    nav.set_probs_provider(lambda key: probs.get(key))
+
+    nav.toggle_sort_mode()  # filename
+    nav.toggle_sort_mode()  # size
+    nav.toggle_sort_mode()  # confidence
+    assert nav.all_paths == [a_path, b_path]  # both missing, order unchanged
+
+    # 模擬分析完成後，b 變成最不確定的圖片。
+    probs[str(b_path)] = [0.51, 0.9, 0.1, 0.05, 0.99, 0.02]
+    nav.resort()
+
+    assert nav.sort_mode == "confidence"
+    assert nav.all_paths == [b_path, a_path]
 
 
 def test_toggle_sort_mode_preserves_current_image(tmp_path: Path) -> None:

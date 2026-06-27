@@ -197,20 +197,25 @@ class AnalysisManager:
 class AnalysisTable:
     """模型分析結果的表格 UI 元件。"""
 
-    def __init__(self, parent: tk.Misc) -> None:
+    def __init__(self, parent: tk.Misc, on_confirm_all: Callable[[], None]) -> None:
         self._frame = tk.Frame(parent)
         self._labels: dict[tuple[int, int], tk.Label] = {}
-        self._build()
+        self._build(on_confirm_all)
 
     @property
     def frame(self) -> tk.Frame:
         return self._frame
 
-    def _build(self) -> None:
+    def _build(self, on_confirm_all: Callable[[], None]) -> None:
         row_headers = ["Prob", "Label"]
         col_headers = list(LABEL_MAP.values())
 
-        tk.Label(self._frame, text="", width=10).grid(row=0, column=0)
+        tk.Button(
+            self._frame,
+            text="✓ 套用預測",
+            width=10,
+            command=on_confirm_all,
+        ).grid(row=0, column=0)
         for c, name in enumerate(col_headers):
             tk.Label(
                 self._frame,

@@ -5,6 +5,7 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import messagebox, simpledialog
 
+from ponychart_classifier.inference.label_selection import select_predictions
 from ponychart_classifier.training.sampling import Sample
 
 from .analysis import AnalysisManager, AnalysisTable
@@ -89,6 +90,16 @@ class _LabelActions:
             labels.append(v)
             labels.sort()
         self._app.update_display()
+
+    def confirm_all_predictions(self) -> None:
+        """將目前圖片的標籤直接套用為模型預測結果並儲存（信心全對時快速確認）。"""
+        a = self._app
+        probs = a.analysis.get_image_probs(a.nav.current_key)
+        thresholds = a.analysis.model_thresholds
+        if probs is None or thresholds is None:
+            return
+        a.current_labels = sorted(c + 1 for c in select_predictions(probs, thresholds))
+        self.save()
 
     def save(self) -> None:
         a = self._app
@@ -291,6 +302,8 @@ class _AnalysisActions:
         a = self._app
         a.analyze_status.configure(text="")
         a.filter_panel.set_suspicious_state("normal")
+        if a.nav.sort_mode == "confidence":
+            a.nav.resort()
         a.refresh()
 
     def _on_progress(self, done: int, total: int) -> None:
@@ -311,6 +324,7 @@ class LabelApp:
         self.store = LabelStore(LABEL_FILE, IMAGE_SUBDIR)
         self.nav = ImageNavigator(image_paths, self.store)
         self.analysis = AnalysisManager()
+        self.nav.set_probs_provider(self.analysis.get_image_probs)
 
         # Action groups
         self.label_actions = _LabelActions(self)
@@ -354,7 +368,9 @@ class LabelApp:
         self._model_info_viewer = ModelInfoViewer(root)
         self._val_f1_viewer = ValF1Viewer(root)
         self._build_action_buttons(root)
-        self._analysis_table = AnalysisTable(root)
+        self._analysis_table = AnalysisTable(
+            root, on_confirm_all=self.label_actions.confirm_all_predictions
+        )
 
         # 計數器（可點擊跳轉）
         self.counter_label = tk.Label(
@@ -459,7 +475,12 @@ class LabelApp:
         self.refresh()
 
     def _update_sort_toggle_btn(self) -> None:
-        labels = {"path": "路徑", "filename": "檔名", "size": "尺寸"}
+        labels = {
+            "path": "路徑",
+            "filename": "檔名",
+            "size": "尺寸",
+            "confidence": "信心",
+        }
         self.sort_toggle_btn.configure(text=f"排序：{labels[self.nav.sort_mode]}")
 
     def update_display(self, extra: str = "") -> None:
