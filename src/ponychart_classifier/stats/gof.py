@@ -114,9 +114,10 @@ def goodness_of_fit_test(
         exact p-values — there is no single canonical two-sided exact test
         for multinomial goodness-of-fit.
     """
-    counts_arr = np.asarray(counts, dtype=np.int64)
+    counts_arr: NDArray[np.int64] = np.asarray(counts, dtype=np.int64)
     k = len(counts_arr)
 
+    probs_arr: NDArray[np.float64]
     if probs is None:
         probs_arr = np.full(k, 1.0 / k)
     else:
