@@ -9,10 +9,10 @@ description = "Multi-label image classifier for PonyChart character identificati
 readme = "README.md"
 authors = [{ name = "Kuan-Lun Wang" }]
 license = { text = "GNU Affero General Public License v3" }
-requires-python = ">=3.11,<3.14"
+requires-python = ">=3.12,<3.14"
 dependencies = [
     "certifi>=2026.2.25; sys_platform == 'darwin'",
-    "numpy>=2.4.4",
+    "numpy>=2.5.0",
     "opencv-python>=4.13.0.92",
     "onnxruntime>=1.24.4",
 ]
@@ -22,7 +22,6 @@ classifiers = [
     "Intended Audience :: Developers",
     "Operating System :: OS Independent",
     "License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)",
-    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
 ]

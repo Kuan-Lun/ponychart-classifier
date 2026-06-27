@@ -9,7 +9,7 @@ import re
 from collections import Counter, defaultdict
 from collections.abc import Callable, Iterable
 from itertools import combinations
-from typing import NamedTuple, TypeVar
+from typing import NamedTuple
 
 import numpy as np
 import torch
@@ -26,7 +26,6 @@ from .constants import (
 )
 
 logger = logging.getLogger(__name__)
-_T = TypeVar("_T")
 
 _ORIG_STEM_RE = re.compile(r"^pony_chart_\d{8}_\d{6}$")
 _RAW_STEM_RE = re.compile(r"(pony_chart_\d{8}_\d{6})")
@@ -70,15 +69,15 @@ def get_base_timestamp(filename: str) -> str:
     return "_".join(parts[:4])
 
 
-def _select_recent_original_items(
-    items: Iterable[_T],
+def _select_recent_original_items[T](
+    items: Iterable[T],
     *,
-    filename_getter: Callable[[_T], str],
-    identity_getter: Callable[[_T], str],
+    filename_getter: Callable[[T], str],
+    identity_getter: Callable[[T], str],
     limit: int = GOF_RECENT_ORIG_LIMIT,
-) -> list[_T]:
+) -> list[T]:
     """Return up to ``limit`` original items sorted by recency, newest first."""
-    ranked: list[tuple[str, str, _T]] = []
+    ranked: list[tuple[str, str, T]] = []
     for item in items:
         filename = filename_getter(item)
         raw_stem = extract_raw_stem(filename)

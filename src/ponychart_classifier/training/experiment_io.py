@@ -27,7 +27,7 @@ import json
 import logging
 from collections.abc import Callable, Hashable
 from pathlib import Path
-from typing import Protocol, TypedDict, TypeVar
+from typing import Protocol, TypedDict
 
 import torch
 
@@ -53,11 +53,6 @@ class HasDataHash(Protocol):
 
     @property
     def data_hash(self) -> str: ...
-
-
-T = TypeVar("T")
-R = TypeVar("R", bound=HasDataHash)
-K = TypeVar("K", bound=Hashable)
 
 
 def hash_samples(samples: list[Sample]) -> str:
@@ -86,7 +81,7 @@ def describe_device(device: torch.device) -> str:
     return device_type
 
 
-def load_all_json_results(
+def load_all_json_results[T](
     results_dir: Path,
     parser: Callable[[str], T],
     logger: logging.Logger,
@@ -118,7 +113,7 @@ def load_all_json_results(
     return results
 
 
-def select_consistent_results(
+def select_consistent_results[R: HasDataHash, K: Hashable](
     results: list[R],
     *,
     key: Callable[[R], K],
