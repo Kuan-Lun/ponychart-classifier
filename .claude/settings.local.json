@@ -4,15 +4,15 @@
       "Read(**/*)",
       "Write(**/*)",
       "Edit(**/*)",
-      "Bash(ls:*)",
-      "Bash(mkdir:*)",
-      "Bash(tree:*)",
+      "Bash(echo:*)",
       "Bash(find:*)",
-      "Bash(uv:*)",
       "Bash(grep:*)",
       "Bash(head:*)",
+      "Bash(ls:*)",
+      "Bash(mkdir:*)",
       "Bash(tail:*)",
-      "Bash(echo:*)"
+      "Bash(tree:*)",
+      "Bash(uv:*)"
     ],
     "additionalDirectories": [
       "/private/tmp",
