@@ -6,6 +6,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 PonyChart Classifier is a multi-label image classifier for HentaiVerse PonyChart characters (6 classes). It uses transfer learning with ImageNet-pretrained backbones, trains in PyTorch, and exports to ONNX for CPU-only inference.
 
+## Communication
+
+- Claude 必須以繁體中文回答所有對話內容，不論使用者以何種語言提問；程式碼、指令、檔名、專有名詞等仍維持原文。
+
 ## Commands
 
 ```bash
