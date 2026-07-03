@@ -1,18 +1,33 @@
 {
   "permissions": {
     "allow": [
-      "Read(**/*)",
-      "Write(**/*)",
-      "Edit(**/*)",
+      "Bash(cat:*)",
+      "Bash(docker:*)",
       "Bash(echo:*)",
       "Bash(find:*)",
+      "Bash(git -C * diff:*)",
+      "Bash(git -C * log:*)",
+      "Bash(git -C * show:*)",
+      "Bash(git add *)",
+      "Bash(git commit -m *)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git show:*)",
       "Bash(grep:*)",
       "Bash(head:*)",
       "Bash(ls:*)",
       "Bash(mkdir:*)",
+      "Bash(python3:*)",
       "Bash(tail:*)",
       "Bash(tree:*)",
-      "Bash(uv:*)"
+      "Bash(uv:*)",
+      "Bash(xargs cat)",
+      "Edit(**/*)",
+      "Read(**/*)",
+      "Read(//tmp/**)",
+      "Write(**/*)",
+      "Skill(update-config)",
+      "Skill(update-config:*)"
     ],
     "additionalDirectories": [
       "/private/tmp",
