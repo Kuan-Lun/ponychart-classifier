@@ -27,7 +27,8 @@
       "Read(//tmp/**)",
       "Write(**/*)",
       "Skill(update-config)",
-      "Skill(update-config:*)"
+      "Skill(update-config:*)",
+      "Bash(xargs ls)"
     ],
     "additionalDirectories": [
       "/private/tmp",
