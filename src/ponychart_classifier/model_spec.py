@@ -65,7 +65,7 @@ class ImageSize:
         return (self.width, self.height)
 
 
-INPUT_SIZE = ImageSize(277, 502)
+INPUT_SIZE = ImageSize(554, 1004)
 
 
 def parse_class_key(key: str) -> PonyClass:
