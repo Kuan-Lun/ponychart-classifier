@@ -11,16 +11,19 @@ from typing import NamedTuple
 
 import numpy as np
 import torch
+from PIL import Image
 
 from ponychart_classifier.stats import goodness_of_fit_test
 
 from .constants import (
     GOF_ALPHA,
     GOF_RECENT_ORIG_LIMIT,
+    INPUT_SIZE,
     LABEL_SIZE_PROBS,
     LABELS_FILE,
     NUM_CLASSES,
     RAWIMAGE_DIR,
+    ImageSize,
 )
 
 logger = logging.getLogger(__name__)
@@ -123,30 +126,51 @@ def load_labels() -> dict[str, list[int]]:
     return result
 
 
-def load_samples() -> list[Sample]:
+def _meets_min_size(filepath: str, min_size: ImageSize) -> bool:
+    """Check whether an image's dimensions meet the minimum required size."""
+    with Image.open(filepath) as img:
+        width, height = img.size
+    return width >= min_size.width and height >= min_size.height
+
+
+def load_samples(min_size: ImageSize = INPUT_SIZE) -> list[Sample]:
     """Load labeled samples from labels.json.
 
     Returns list of (image_path, [1-indexed labels]).
     Supports both flat (rawimage/xxx.png) and organized
     (rawimage/1/twilight/xxx.png) key formats.
+
+    Images smaller than *min_size* in either dimension are excluded,
+    since :data:`~.constants.INPUT_SIZE` is upscaled to by the training
+    pipeline and would otherwise silently degrade quality.
     """
     raw = load_labels()
     samples = []
+    n_undersized = 0
     for key, label_list in raw.items():
         # key 相對於 RAWIMAGE_DIR（例如 3/twilight/xxx.png）
         filepath_from_key = str(RAWIMAGE_DIR / key)
+        filepath: str | None
         if os.path.isfile(filepath_from_key):
-            samples.append(Sample(filepath_from_key, label_list))
+            filepath = filepath_from_key
         else:
             # Fallback: 僅用檔名在 RAWIMAGE_DIR 根目錄尋找
             filename = key.split("/")[-1]
-            filepath = str(RAWIMAGE_DIR / filename)
-            if os.path.isfile(filepath):
-                samples.append(Sample(filepath, label_list))
+            filepath_fallback = str(RAWIMAGE_DIR / filename)
+            filepath = filepath_fallback if os.path.isfile(filepath_fallback) else None
+
+        if filepath is None:
+            continue
+        if not _meets_min_size(filepath, min_size):
+            n_undersized += 1
+            continue
+        samples.append(Sample(filepath, label_list))
+
     logger.info(
-        "Loaded %s samples (of %s labels.json entries)",
+        "Loaded %s samples (of %s labels.json entries, %s excluded as undersized)",
         f"{len(samples):,}",
         f"{len(raw):,}",
+        f"{n_undersized:,}",
     )
     return samples
 
