@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ponychart-classifier"
-version = "0.8.0"
+version = "0.9.0"
 description = "Multi-label image classifier for PonyChart character identification."
 readme = "README.md"
 authors = [{ name = "Kuan-Lun Wang" }]
