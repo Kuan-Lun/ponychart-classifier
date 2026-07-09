@@ -28,7 +28,8 @@
       "Write(**/*)",
       "Skill(update-config)",
       "Skill(update-config:*)",
-      "Bash(xargs ls)"
+      "Bash(xargs ls)",
+      "Bash(uv run *)"
     ],
     "additionalDirectories": [
       "/private/tmp",
