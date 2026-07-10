@@ -11,7 +11,7 @@ cd "$(dirname "$0")/.."
 
 OUTPUT="${1:-rawimage-$(date +%Y%m%d-%H%M%S).zip}"
 
-zip -r -X "$OUTPUT" rawimage \
+zip -r -X -0 "$OUTPUT" rawimage \
   -x "*.DS_Store" \
   -x "*__MACOSX*" \
   -x "*/._*"
