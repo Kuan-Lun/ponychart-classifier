@@ -29,7 +29,8 @@
       "Skill(update-config)",
       "Skill(update-config:*)",
       "Bash(xargs ls)",
-      "Bash(uv run *)"
+      "Bash(uv run *)",
+      "Bash(echo \"EXIT: $?\")"
     ],
     "additionalDirectories": [
       "/private/tmp",
