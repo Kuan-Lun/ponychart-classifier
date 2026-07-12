@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 
+import ponychart_classifier
 from app.label_images.analysis import AnalysisManager
 from app.label_images.app import _AnalysisActions, _CropActions
 from ponychart_classifier.training.sampling import Sample
@@ -41,6 +42,57 @@ class _FakeApp:
         self.analyze_btn = _FakeWidget()
         self.analyze_unlabeled_btn = _FakeWidget()
         self.analyze_status = _FakeWidget()
+
+
+def test_refresh_staleness_clears_cache_when_model_updated(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager = AnalysisManager()
+    manager.model_probs = {"a.png": [0.1] * 6}
+    manager.model_thresholds = [0.5] * 6
+    monkeypatch.setattr(ponychart_classifier, "has_pending_update", lambda: True)
+
+    changed = manager.refresh_staleness()
+
+    assert changed is True
+    assert manager.model_probs is None
+    assert manager.model_thresholds is None
+
+
+def test_refresh_staleness_keeps_cache_when_model_unchanged(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager = AnalysisManager()
+    manager.model_probs = {"a.png": [0.1] * 6}
+    manager.model_thresholds = [0.5] * 6
+    monkeypatch.setattr(ponychart_classifier, "has_pending_update", lambda: False)
+
+    changed = manager.refresh_staleness()
+
+    assert changed is False
+    assert manager.model_probs == {"a.png": [0.1] * 6}
+
+
+def test_refresh_staleness_skips_network_check_when_no_cache(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager = AnalysisManager()
+    manager.model_probs = None
+    called = False
+
+    def fake_has_pending_update() -> bool:
+        nonlocal called
+        called = True
+        return True
+
+    monkeypatch.setattr(
+        ponychart_classifier, "has_pending_update", fake_has_pending_update
+    )
+
+    changed = manager.refresh_staleness()
+
+    assert changed is False
+    assert called is False
 
 
 def test_update_button_states_reenables_after_new_unanalyzed_crop(

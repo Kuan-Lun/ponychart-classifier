@@ -324,6 +324,7 @@ class LabelApp:
         self.store = LabelStore(LABEL_FILE, IMAGE_SUBDIR)
         self.nav = ImageNavigator(image_paths, self.store)
         self.analysis = AnalysisManager()
+        self.analysis.refresh_staleness()
         self.nav.set_probs_provider(self.analysis.get_image_probs)
 
         # Action groups

@@ -124,6 +124,17 @@ class PonyChartClassifier:
             self._input_size = None
         return updated
 
+    def has_pending_update(self) -> bool:
+        """Check, without downloading, whether newer artifacts exist remotely."""
+        for path, filename in (
+            (self._model_path, artifacts.MODEL_FILENAME),
+            (self._thresholds_path, artifacts.THRESHOLDS_FILENAME),
+        ):
+            remote = artifacts.remote_etag(filename)
+            if remote is not None and remote != artifacts.local_etag(path):
+                return True
+        return False
+
     def predict(
         self,
         img_path: str,

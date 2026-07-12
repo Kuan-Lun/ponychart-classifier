@@ -8,6 +8,7 @@ _classifier = PonyChartClassifier()
 
 predict = _classifier.predict
 update = _classifier.update
+has_pending_update = _classifier.has_pending_update
 
 
 def clear_artifacts() -> None:
@@ -42,6 +43,7 @@ __all__ = [
     "PredictionResult",
     "clear_artifacts",
     "get_thresholds",
+    "has_pending_update",
     "predict",
     "preload",
     "update",

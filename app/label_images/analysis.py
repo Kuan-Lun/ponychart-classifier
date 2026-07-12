@@ -54,6 +54,22 @@ class AnalysisManager:
         if self.model_probs is not None:
             self.model_thresholds = _load_thresholds(artifacts.DEFAULT_THRESHOLDS_PATH)
 
+    def refresh_staleness(self) -> bool:
+        """檢查遠端模型/thresholds 是否已更新；若是則捨棄記憶體中的舊預測結果。
+
+        prob_cache 以 model.onnx 的 sha256 作為整包 invalidation key，只有
+        在下一次全量分析寫回快取時才會更新；若模型在快取寫回前就已更新，
+        既有預測會被誤判為「已分析」而永遠不會重新推論。啟動時檢查一次，
+        讓所有圖片重新回到「尚未分析」狀態，交由既有的補跑邏輯全部重算。
+        """
+        if self.model_probs is None:
+            return False
+        if not _pkg.has_pending_update():
+            return False
+        self.model_probs = None
+        self.model_thresholds = None
+        return True
+
     @property
     def is_running(self) -> bool:
         return self._thread is not None and self._thread.is_alive()
