@@ -31,7 +31,8 @@
       "Bash(xargs ls)",
       "Bash(uv run *)",
       "Bash(echo \"EXIT: $?\")",
-      "Bash(uv run python -c ' *)"
+      "Bash(uv run python -c ' *)",
+      "Bash(git stash *)"
     ],
     "additionalDirectories": [
       "/private/tmp",
