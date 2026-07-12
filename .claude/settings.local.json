@@ -30,7 +30,8 @@
       "Skill(update-config:*)",
       "Bash(xargs ls)",
       "Bash(uv run *)",
-      "Bash(echo \"EXIT: $?\")"
+      "Bash(echo \"EXIT: $?\")",
+      "Bash(uv run python -c ' *)"
     ],
     "additionalDirectories": [
       "/private/tmp",
