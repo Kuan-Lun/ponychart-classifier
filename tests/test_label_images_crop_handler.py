@@ -18,6 +18,36 @@ from app.label_images.constants import (
 from app.label_images.crop_geometry import CropCorners
 from app.label_images.crop_handler import CropHandler
 
+# Keep the ordinary test canvas large enough that the configured minimum crop
+# does not consume the whole image. A square also leaves room for either
+# orientation when INPUT_SIZE (and therefore the crop ratio) changes.
+_INITIAL_WIDTH_FRACTION = CROP_INITIAL_FRACTION * min(1.0, CROP_ASPECT_RATIO)
+_CANVAS_SIDE = math.ceil(CROP_MIN_WIDTH_ORIG / _INITIAL_WIDTH_FRACTION * 1.1)
+_CANVAS_SIZE = (_CANVAS_SIDE, _CANVAS_SIDE)
+
+
+def _rotation_clamp_setup() -> tuple[tuple[int, int], float]:
+    """Return a crop-shaped canvas and scale that allow, then clamp, rotation."""
+    step = math.radians(CROP_ROTATE_STEP_DEG)
+    first_step_extent = max(
+        math.cos(step) + math.sin(step) / CROP_ASPECT_RATIO,
+        math.cos(step) + math.sin(step) * CROP_ASPECT_RATIO,
+    )
+    peak_extent = max(
+        math.hypot(1.0, 1.0 / CROP_ASPECT_RATIO),
+        math.hypot(1.0, CROP_ASPECT_RATIO),
+    )
+    lower_occupancy = max(CROP_INITIAL_FRACTION, 1.0 / peak_extent)
+    upper_occupancy = 1.0 / first_step_extent
+    assert lower_occupancy < upper_occupancy
+    occupancy = (lower_occupancy + upper_occupancy) / 2
+
+    cw = math.ceil(CROP_MIN_WIDTH_ORIG * 2)
+    ch = math.ceil(cw / CROP_ASPECT_RATIO)
+    max_width = min(cw, ch * CROP_ASPECT_RATIO)
+    scale = occupancy * max_width / CROP_MIN_WIDTH_ORIG
+    return (cw, ch), scale
+
 
 @pytest.fixture
 def canvas() -> Iterator[tk.Canvas]:
@@ -56,37 +86,38 @@ def _angle_of(corners: CropCorners) -> float:
 
 
 def test_enter_initial_geometry(handler: CropHandler) -> None:
-    handler.enter((1000, 600), 1.0)
+    cw, ch = _CANVAS_SIZE
+    handler.enter(_CANVAS_SIZE, 1.0)
 
     assert handler.active is True
 
     width, height = handler.get_canvas_size()
     assert width / height == pytest.approx(CROP_ASPECT_RATIO)
-    assert width <= 1000 * CROP_INITIAL_FRACTION + 1e-9
-    assert height <= 600 * CROP_INITIAL_FRACTION + 1e-9
+    assert width <= cw * CROP_INITIAL_FRACTION + 1e-9
+    assert height <= ch * CROP_INITIAL_FRACTION + 1e-9
     assert width == pytest.approx(
-        1000 * CROP_INITIAL_FRACTION
-    ) or height == pytest.approx(600 * CROP_INITIAL_FRACTION)
+        cw * CROP_INITIAL_FRACTION
+    ) or height == pytest.approx(ch * CROP_INITIAL_FRACTION)
 
     cx, cy = _center(handler.get_corners())
-    assert cx == pytest.approx(500)
-    assert cy == pytest.approx(300)
+    assert cx == pytest.approx(cw / 2)
+    assert cy == pytest.approx(ch / 2)
 
 
 def test_enter_resets_state(handler: CropHandler) -> None:
-    handler.enter((1000, 600), 1.0)
+    handler.enter(_CANVAS_SIZE, 1.0)
     baseline = handler.get_corners()
 
     handler.move_right()
     handler.rotate_cw()
     handler.scale_up()
 
-    handler.enter((1000, 600), 1.0)
+    handler.enter(_CANVAS_SIZE, 1.0)
     assert _corners_approx(handler.get_corners(), baseline)
 
 
 def test_move_all_directions(handler: CropHandler) -> None:
-    handler.enter((1000, 600), 1.0)
+    handler.enter(_CANVAS_SIZE, 1.0)
     start = handler.get_corners()
 
     handler.move_right()
@@ -101,7 +132,7 @@ def test_move_all_directions(handler: CropHandler) -> None:
 
 
 def test_move_fast_uses_larger_step(handler: CropHandler) -> None:
-    handler.enter((1000, 600), 1.0)
+    handler.enter(_CANVAS_SIZE, 1.0)
     before = handler.get_corners()
 
     handler.move_right(fast=True)
@@ -111,17 +142,16 @@ def test_move_fast_uses_larger_step(handler: CropHandler) -> None:
 
 
 def test_move_clamped_at_canvas_edge(handler: CropHandler) -> None:
-    cw, ch = 1000, 600
+    cw, ch = _CANVAS_SIZE
     handler.enter((cw, ch), 1.0)
 
-    for _ in range(100):
+    for _ in range(math.ceil(cw / CROP_MOVE_STEP) + 1):
         handler.move_right()
 
     corners = handler.get_corners()
     assert corners.all_in_bounds(cw, ch)
-    assert max(corners.ul.x, corners.ll.x, corners.lr.x, corners.ur.x) == pytest.approx(
-        cw
-    )
+    right_edge = max(corners.ul.x, corners.ll.x, corners.lr.x, corners.ur.x)
+    assert 0 <= cw - right_edge < CROP_MOVE_STEP
 
     before = handler.get_corners()
     handler.move_right()
@@ -129,7 +159,7 @@ def test_move_clamped_at_canvas_edge(handler: CropHandler) -> None:
 
 
 def test_rotate_changes_angle_about_center(handler: CropHandler) -> None:
-    handler.enter((1000, 600), 1.0)
+    handler.enter(_CANVAS_SIZE, 1.0)
     before = handler.get_corners()
     cx, cy = _center(before)
 
@@ -146,11 +176,11 @@ def test_rotate_changes_angle_about_center(handler: CropHandler) -> None:
 
 
 def test_rotate_fast_uses_larger_step(handler: CropHandler) -> None:
-    handler.enter((1000, 600), 1.0)
+    handler.enter(_CANVAS_SIZE, 1.0)
     handler.rotate_cw()
     normal_angle = _angle_of(handler.get_corners())
 
-    handler.enter((1000, 600), 1.0)
+    handler.enter(_CANVAS_SIZE, 1.0)
     handler.rotate_cw(fast=True)
     fast_angle = _angle_of(handler.get_corners())
 
@@ -159,10 +189,10 @@ def test_rotate_fast_uses_larger_step(handler: CropHandler) -> None:
 
 
 def test_rotate_clamped_when_corner_would_exit_bounds(handler: CropHandler) -> None:
-    cw, ch = 1000, 600
-    handler.enter((cw, ch), 1.0)
+    (cw, ch), scale = _rotation_clamp_setup()
+    handler.enter((cw, ch), scale)
 
-    for _ in range(200):
+    for _ in range(math.ceil(90 / CROP_ROTATE_STEP_DEG) + 1):
         handler.rotate_cw()
 
     settled = handler.get_corners()
@@ -174,7 +204,7 @@ def test_rotate_clamped_when_corner_would_exit_bounds(handler: CropHandler) -> N
 
 
 def test_scale_up_and_down_preserve_ratio(handler: CropHandler) -> None:
-    handler.enter((1000, 600), 1.0)
+    handler.enter(_CANVAS_SIZE, 1.0)
     width0, height0 = handler.get_canvas_size()
 
     handler.scale_up()
@@ -189,7 +219,7 @@ def test_scale_up_and_down_preserve_ratio(handler: CropHandler) -> None:
 
 
 def test_scale_fast_uses_larger_factor(handler: CropHandler) -> None:
-    handler.enter((1000, 600), 1.0)
+    handler.enter(_CANVAS_SIZE, 1.0)
     width0, _ = handler.get_canvas_size()
 
     handler.scale_up(fast=True)
@@ -202,7 +232,7 @@ def test_scale_fast_uses_larger_factor(handler: CropHandler) -> None:
 
 
 def test_scale_down_respects_min_width_floor(handler: CropHandler) -> None:
-    handler.enter((1000, 600), 1.0)
+    handler.enter(_CANVAS_SIZE, 1.0)
     floor = CROP_MIN_WIDTH_ORIG * 1.0
 
     for _ in range(100):
@@ -218,7 +248,8 @@ def test_scale_down_respects_min_width_floor(handler: CropHandler) -> None:
 
 
 def test_min_width_floor_degrades_for_small_images(handler: CropHandler) -> None:
-    cw, ch = 300, 166
+    cw = max(1, CROP_MIN_WIDTH_ORIG // 2)
+    ch = max(1, math.floor(cw / CROP_ASPECT_RATIO))
     handler.enter((cw, ch), 1.0)
 
     width, _ = handler.get_canvas_size()
@@ -232,7 +263,7 @@ def test_min_width_floor_degrades_for_small_images(handler: CropHandler) -> None
 
 
 def test_get_corners_ordering_and_quad_shape(handler: CropHandler) -> None:
-    handler.enter((1000, 600), 1.0)
+    handler.enter(_CANVAS_SIZE, 1.0)
     corners = handler.get_corners()
 
     assert corners.ul.x == pytest.approx(corners.ll.x)
@@ -248,7 +279,7 @@ def test_get_corners_ordering_and_quad_shape(handler: CropHandler) -> None:
 
 
 def test_exit_clears_polygon(handler: CropHandler, canvas: tk.Canvas) -> None:
-    handler.enter((1000, 600), 1.0)
+    handler.enter(_CANVAS_SIZE, 1.0)
     assert canvas.find_all() != ()
 
     handler.exit()
@@ -258,7 +289,7 @@ def test_exit_clears_polygon(handler: CropHandler, canvas: tk.Canvas) -> None:
 
 def test_get_size_orig_matches_scale(handler: CropHandler) -> None:
     scale = 0.5
-    handler.enter((1000, 600), scale)
+    handler.enter(_CANVAS_SIZE, scale)
 
     canvas_w, canvas_h = handler.get_canvas_size()
     width_orig, height_orig = handler.get_size_orig()
@@ -269,7 +300,7 @@ def test_get_size_orig_matches_scale(handler: CropHandler) -> None:
 def test_status_overlay_drawn_and_cleared(
     handler: CropHandler, canvas: tk.Canvas
 ) -> None:
-    handler.enter((1000, 600), 1.0)
+    handler.enter(_CANVAS_SIZE, 1.0)
     # 裁切框 + 狀態文字
     assert len(canvas.find_all()) == 2
 
@@ -281,7 +312,7 @@ def test_enter_with_offset_shifts_drawn_polygon(
     handler: CropHandler, canvas: tk.Canvas
 ) -> None:
     offset = (50.0, 20.0)
-    handler.enter((1000, 600), 1.0, offset)
+    handler.enter(_CANVAS_SIZE, 1.0, offset)
 
     corners = handler.get_corners().translated(*offset)
     assert handler._polygon_id is not None
@@ -294,7 +325,7 @@ def test_enter_with_offset_shifts_status_overlay(
     handler: CropHandler, canvas: tk.Canvas
 ) -> None:
     offset = (50.0, 20.0)
-    handler.enter((1000, 600), 1.0, offset)
+    handler.enter(_CANVAS_SIZE, 1.0, offset)
 
     assert handler._status_text_id is not None
     x, y = canvas.coords(handler._status_text_id)
@@ -302,7 +333,7 @@ def test_enter_with_offset_shifts_status_overlay(
 
 
 def test_toggle_orientation_swaps_dimensions(handler: CropHandler) -> None:
-    handler.enter((1000, 600), 1.0)
+    handler.enter(_CANVAS_SIZE, 1.0)
     width0, height0 = handler.get_canvas_size()
 
     handler.toggle_orientation()
@@ -314,7 +345,7 @@ def test_toggle_orientation_swaps_dimensions(handler: CropHandler) -> None:
 
 
 def test_toggle_orientation_round_trip(handler: CropHandler) -> None:
-    handler.enter((1000, 600), 1.0)
+    handler.enter(_CANVAS_SIZE, 1.0)
     baseline = handler.get_corners()
 
     handler.toggle_orientation()
@@ -324,7 +355,7 @@ def test_toggle_orientation_round_trip(handler: CropHandler) -> None:
 
 
 def test_toggle_orientation_preserves_center(handler: CropHandler) -> None:
-    handler.enter((1000, 600), 1.0)
+    handler.enter(_CANVAS_SIZE, 1.0)
     cx, cy = _center(handler.get_corners())
 
     handler.toggle_orientation()
@@ -339,7 +370,8 @@ def test_toggle_orientation_shrinks_and_repositions_when_oversized(
 ) -> None:
     # 畫面比例較扁，橫向裁切框可放入，但交換寬高後的直向框放不進畫布高度，
     # 需先縮小到貼齊上下邊緣，再平移回畫布範圍內。
-    cw, ch = 1000, 500
+    cw = math.ceil(CROP_MIN_WIDTH_ORIG * 2)
+    ch = math.ceil(CROP_MIN_WIDTH_ORIG * (1 + 1 / CROP_ASPECT_RATIO) / 2)
     handler.enter((cw, ch), 1.0)
     _, height0 = handler.get_canvas_size()
 
@@ -353,7 +385,7 @@ def test_toggle_orientation_shrinks_and_repositions_when_oversized(
 
 
 def test_toggle_orientation_updates_size_orig(handler: CropHandler) -> None:
-    handler.enter((1000, 600), 1.0)
+    handler.enter(_CANVAS_SIZE, 1.0)
     width_orig0, height_orig0 = handler.get_size_orig()
 
     handler.toggle_orientation()

@@ -1,5 +1,14 @@
 """Common utilities for PonyChart ML scripts."""
 
+from ponychart_classifier.image_names import (
+    extract_source_stem,
+    get_captured_at,
+    get_source_stem,
+    is_crop,
+    is_original,
+    parse_image_name,
+)
+
 from .checkpoint import recompute_checkpoint_val_f1
 from .constants import (
     ARTIFACTS_DIR,
@@ -95,9 +104,6 @@ from .sampling import (
     combo_counts_flat,
     compute_class_rates,
     compute_pos_weight,
-    extract_raw_stem,
-    get_base_timestamp,
-    is_original,
     labels_to_binary,
     load_labels,
     load_samples,
@@ -167,11 +173,12 @@ __all__ = [
     "evaluate",
     "export_onnx",
     "extract_original_test_samples",
-    "extract_raw_stem",
+    "extract_source_stem",
     "FeatureClassifierModel",
     "format_thresholds",
     "GOF_RECENT_ORIG_LIMIT",
-    "get_base_timestamp",
+    "get_captured_at",
+    "get_source_stem",
     "get_device",
     "get_performance_cpu_count",
     "get_transforms",
@@ -188,6 +195,7 @@ __all__ = [
     "IMAGENET_STD",
     "INPUT_SIZE",
     "ImageSize",
+    "is_crop",
     "is_original",
     "LABELS_FILE",
     "LABEL_SMOOTHING",
@@ -219,6 +227,7 @@ __all__ = [
     "PerClassPrecisionRecallBlock",
     "PonyChartDataset",
     "prepare_balanced_samples",
+    "parse_image_name",
     "prepare_balanced_train_val_for_group_keys",
     "prepare_group_holdout_setup_logged",
     "prepare_holdout_setup_logged",

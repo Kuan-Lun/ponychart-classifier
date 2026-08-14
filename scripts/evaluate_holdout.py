@@ -1,7 +1,7 @@
 """
 Holdout 評估：在僅原圖的 test set 上測量真實 F1。
 
-80% timestamp groups 用於訓練（原圖 + balanced crops），
+80% source-image groups 用於訓練（原圖 + balanced crops），
 20% groups 的原圖作為 holdout test set，模擬實際推論場景。
 
 Thresholds 在 val set 上 optimize，再套用到 test set 評估。

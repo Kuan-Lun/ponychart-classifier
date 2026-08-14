@@ -3,10 +3,8 @@
 from collections import Counter
 from itertools import combinations
 
-from ponychart_classifier.training.sampling import (
-    is_original,
-    select_recent_original_keys,
-)
+from ponychart_classifier.image_names import is_original
+from ponychart_classifier.training.sampling import select_recent_original_keys
 
 from ..constants import LABEL_MAP
 from ..label_store import LabelStore

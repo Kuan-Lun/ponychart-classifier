@@ -43,7 +43,7 @@ from ponychart_classifier.training import (
     WEIGHT_DECAY,
     compute_class_rates,
     export_onnx,
-    get_base_timestamp,
+    get_captured_at,
     get_transforms,
     group_hash_split,
     is_original,
@@ -219,8 +219,9 @@ def _run(args: argparse.Namespace) -> None:
     logger.info("Thresholds saved: %s", OUTPUT_THRESHOLDS)
 
     # Save checkpoint with metadata for future resume training
-    orig_timestamps = [get_base_timestamp(os.path.basename(p)) for p, _ in orig_samples]
-    latest_timestamp = max(orig_timestamps)
+    latest_timestamp = max(
+        get_captured_at(os.path.basename(path)) for path, _ in orig_samples
+    ).isoformat(timespec="microseconds")
     n_orig_current = len(orig_samples)
     n_crop_current = len(crop_samples)
 

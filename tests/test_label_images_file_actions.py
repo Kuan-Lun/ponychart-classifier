@@ -190,7 +190,7 @@ def test_delete_crop_removes_analysis_results(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    crop_path = tmp_path / "pony_chart_20240101_000000_1.png"
+    crop_path = tmp_path / "pony_chart_20240101_000000_000000_abcdefgh_crop1.png"
     crop_path.write_bytes(b"crop")
 
     nav = _FakeNav([crop_path])
@@ -213,3 +213,30 @@ def test_delete_crop_removes_analysis_results(
     assert analysis.model_probs == {}
     assert store._labels == {}
     assert not crop_path.exists()
+
+
+def test_delete_crop_rejects_unique_source_image(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    source_path = tmp_path / "pony_chart_20260812_134140_349047_py9p_4l3.png"
+    source_path.write_bytes(b"source")
+
+    nav = _FakeNav([source_path])
+    store = _FakeStore({source_path.name: [1]})
+    analysis = AnalysisManager()
+    analysis.model_probs = {source_path.name: [0.5, 0.2, 0.1, 0.1, 0.1, 0.1]}
+    warnings: list[tuple[str, str]] = []
+
+    monkeypatch.setattr(
+        "app.label_images.file_actions.messagebox.showwarning",
+        lambda title, message: warnings.append((title, message)),
+    )
+
+    actions = FileActions(nav, store, analysis)  # type: ignore[arg-type]
+
+    assert actions.delete_crop() is False
+    assert warnings == [("刪除", "只能刪除明確認出的裁切圖。")]
+    assert source_path.exists()
+    assert store._labels == {source_path.name: [1]}
+    assert source_path.name in analysis.model_probs

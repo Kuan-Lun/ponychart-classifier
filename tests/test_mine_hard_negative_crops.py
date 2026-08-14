@@ -83,20 +83,26 @@ def test_find_candidate_pool_excludes_unlabeled_and_already_cropped(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     samples = [
-        Sample("a/pony_chart_20260101_000000.png", [1]),
-        Sample("b/pony_chart_20260102_000000.png", []),  # no labels -> excluded
-        Sample("c/pony_chart_20260103_000000.png", [2]),  # already has a crop
+        Sample("a/pony_chart_20260101_000000_000000_abcdefgh.png", [1]),
+        Sample(
+            "b/pony_chart_20260102_000000_000000_abcdefgh.png", []
+        ),  # no labels -> excluded
+        Sample(
+            "c/pony_chart_20260103_000000_000000_abcdefgh.png", [2]
+        ),  # already has a crop
     ]
     monkeypatch.setattr(script, "load_samples", lambda: samples)
     monkeypatch.setattr(script, "separate_orig_crop", lambda s: (s, []))
     monkeypatch.setattr(
         script,
         "has_existing_crop",
-        lambda stem: stem == "pony_chart_20260103_000000",
+        lambda stem: stem == "pony_chart_20260103_000000_000000_abcdefgh",
     )
 
     pool = script.find_candidate_pool()
-    assert [s.path for s in pool] == ["a/pony_chart_20260101_000000.png"]
+    assert [s.path for s in pool] == [
+        "a/pony_chart_20260101_000000_000000_abcdefgh.png"
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -130,7 +136,7 @@ def test_random_crop_box_none_when_image_too_small() -> None:
 def test_try_one_crop_returns_none_when_not_misclassified(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    src = tmp_path / "pony_chart_20260101_000000.png"
+    src = tmp_path / "pony_chart_20260101_000000_000000_abcdefgh.png"
     _make_image(src, (1200, 900))
     sample = Sample(str(src), [1])
 
@@ -143,7 +149,7 @@ def test_try_one_crop_returns_none_when_not_misclassified(
 def test_try_one_crop_returns_tmp_path_and_hits_on_hit(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    src = tmp_path / "pony_chart_20260101_000000.png"
+    src = tmp_path / "pony_chart_20260101_000000_000000_abcdefgh.png"
     _make_image(src, (1200, 900))
     sample = Sample(str(src), [1])
 
@@ -167,7 +173,11 @@ def test_mine_stops_when_count_reached(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     samples = [
-        _make_sample(tmp_path, f"pony_chart_2026010{i}_000000") for i in range(3)
+        _make_sample(
+            tmp_path,
+            f"pony_chart_202601{i + 1:02d}_000000_000000_abcdefgh",
+        )
+        for i in range(3)
     ]
     monkeypatch.setattr(script, "find_candidate_pool", lambda: list(samples))
     monkeypatch.setattr(script, "IMAGE_DIR", tmp_path)
@@ -185,7 +195,7 @@ def test_mine_stops_when_count_reached(
 def test_mine_stops_on_max_consecutive_failures(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    samples = [_make_sample(tmp_path, "pony_chart_20260101_000000")]
+    samples = [_make_sample(tmp_path, "pony_chart_20260101_000000_000000_abcdefgh")]
     monkeypatch.setattr(script, "find_candidate_pool", lambda: list(samples))
     monkeypatch.setattr(script, "IMAGE_DIR", tmp_path)
     monkeypatch.setattr(ponychart_classifier, "get_thresholds", lambda: _THRESHOLDS)
@@ -198,7 +208,7 @@ def test_mine_stops_on_max_consecutive_failures(
 def test_mine_stops_when_pool_exhausted(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    samples = [_make_sample(tmp_path, "pony_chart_20260101_000000")]
+    samples = [_make_sample(tmp_path, "pony_chart_20260101_000000_000000_abcdefgh")]
     monkeypatch.setattr(script, "find_candidate_pool", lambda: list(samples))
     monkeypatch.setattr(script, "IMAGE_DIR", tmp_path)
     monkeypatch.setattr(ponychart_classifier, "get_thresholds", lambda: _THRESHOLDS)
@@ -216,7 +226,7 @@ def test_mine_stops_when_pool_exhausted(
 def test_mine_does_not_retry_succeeded_sample_within_run(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    samples = [_make_sample(tmp_path, "pony_chart_20260101_000000")]
+    samples = [_make_sample(tmp_path, "pony_chart_20260101_000000_000000_abcdefgh")]
     calls: list[Sample] = []
 
     def fake_try_one_crop(

@@ -15,11 +15,13 @@ import numpy as np
 import torch
 import torch.nn as nn
 
+from ponychart_classifier.image_names import is_original
+
 from .constants import BATCH_SIZE, CLASS_NAMES, HOLDOUT_TEST_SIZE, SEED, VAL_SIZE
 from .dataset import PonyChartDataset, TensorBatch, get_transforms, make_dataloader
 from .device import get_device, get_performance_cpu_count
 from .experiment_io import HASH_PREFIX_LEN, hash_samples
-from .sampling import Sample, is_original, load_samples, prepare_balanced_samples
+from .sampling import Sample, load_samples, prepare_balanced_samples
 from .splitting import (
     GroupSplit,
     HoldoutSplit,

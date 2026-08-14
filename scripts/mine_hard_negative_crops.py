@@ -40,7 +40,7 @@ from ponychart_classifier.inference import ClassThresholds, PredictionResult
 from ponychart_classifier.model_spec import PONY_CLASSES
 from ponychart_classifier.training import (
     Sample,
-    extract_raw_stem,
+    extract_source_stem,
     load_samples,
     separate_orig_crop,
 )
@@ -58,7 +58,7 @@ def find_candidate_pool() -> list[Sample]:
     for sample in originals:
         if not sample.labels:
             continue
-        stem = extract_raw_stem(Path(sample.path).name)
+        stem = extract_source_stem(Path(sample.path).name)
         if stem is not None and not has_existing_crop(stem):
             pool.append(sample)
     return pool
@@ -175,7 +175,7 @@ def mine(count: int, max_failures: int, rng: random.Random) -> int:
             continue
 
         tmp_path, hits = hit
-        stem = extract_raw_stem(Path(sample.path).name)
+        stem = extract_source_stem(Path(sample.path).name)
         assert stem is not None
         dest = next_crop_name(IMAGE_DIR / UNLABELED_SUBDIR, stem, tmp_path.suffix)
         dest.parent.mkdir(parents=True, exist_ok=True)

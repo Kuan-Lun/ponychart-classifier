@@ -41,7 +41,7 @@ def viewer() -> Iterator[ImageViewer]:
 
 
 def test_save_crop_axis_aligned(tmp_path: Path, viewer: ImageViewer) -> None:
-    src = tmp_path / "source.png"
+    src = tmp_path / "pony_chart_20260101_000000_000000_abcdefgh.png"
     _make_quad_image(src, (1000, 600))
 
     viewer.load(src)
@@ -93,15 +93,19 @@ def test_next_crop_name_skips_numbers_used_in_other_subdirs(
 
     organized = tmp_path / "1" / "twilight"
     organized.mkdir(parents=True)
-    (organized / "pony_chart_20260101_000000_crop1.png").touch()
+    (organized / "pony_chart_20260101_000000_000000_abcdefgh_crop1.png").touch()
 
-    result = next_crop_name(tmp_path, "pony_chart_20260101_000000", ".png")
+    result = next_crop_name(
+        tmp_path,
+        "pony_chart_20260101_000000_000000_abcdefgh",
+        ".png",
+    )
 
-    assert result == tmp_path / "pony_chart_20260101_000000_crop2.png"
+    assert result == (tmp_path / "pony_chart_20260101_000000_000000_abcdefgh_crop2.png")
 
 
 def test_save_crop_rotated_derotates(tmp_path: Path, viewer: ImageViewer) -> None:
-    src = tmp_path / "source.png"
+    src = tmp_path / "pony_chart_20260101_000000_000000_abcdefgh.png"
     _make_quad_image(src, (1000, 600))
 
     viewer.load(src)

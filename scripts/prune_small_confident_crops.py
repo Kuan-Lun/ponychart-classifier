@@ -46,7 +46,7 @@ from app.label_images.constants import (
 from app.label_images.file_ops import scan_image_paths
 from app.label_images.label_store import LabelStore
 from ponychart_classifier.inference import select_predictions
-from ponychart_classifier.training import extract_raw_stem, is_original
+from ponychart_classifier.training import extract_source_stem, is_crop, is_original
 
 # CROP_MIN_WIDTH_ORIG 是裁切框長邊下限；裁切框長寬比鎖定為 CROP_ASPECT_RATIO，
 # 換算成短邊下限（對應 crop_handler._min_width_for 在 portrait 方向的下限）。
@@ -94,7 +94,7 @@ def _all_states_acceptable(
 
 def find_candidates(require: frozenset[str] | None = None) -> list[Path]:
     all_paths = scan_image_paths(IMAGE_DIR)
-    small_crops = [p for p in all_paths if not is_original(p.name) and _is_too_small(p)]
+    small_crops = [p for p in all_paths if is_crop(p.name) and _is_too_small(p)]
 
     if require is None:
         return small_crops
@@ -111,7 +111,7 @@ def find_candidates(require: frozenset[str] | None = None) -> list[Path]:
 
     candidates: list[Path] = []
     for p in small_crops:
-        stem = extract_raw_stem(p.name)
+        stem = extract_source_stem(p.name)
         if stem is None:
             continue
         orig_path = originals_by_stem.get(stem)

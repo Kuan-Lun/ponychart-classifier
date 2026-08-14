@@ -12,9 +12,12 @@ class _FakeStore:
 
 def _make_paths(base: Path) -> list[Path]:
     paths = [
-        base / "1" / "rarity" / "pony_chart_20260102_000000.png",
-        base / "1" / "twilight" / "pony_chart_20260101_000000.png",
-        base / "2" / "twilight+rarity" / "pony_chart_20260101_000000_crop1.png",
+        base / "1" / "rarity" / "pony_chart_20260102_000000_000000_abcdefgh.png",
+        base / "1" / "twilight" / "pony_chart_20260101_000000_000000_abcdefgh.png",
+        base
+        / "2"
+        / "twilight+rarity"
+        / "pony_chart_20260101_000000_000000_abcdefgh_crop1.png",
     ]
     for p in paths:
         p.parent.mkdir(parents=True, exist_ok=True)
@@ -44,9 +47,9 @@ def test_toggle_sort_mode_groups_crops_by_filename(tmp_path: Path) -> None:
 
     assert nav.sort_mode == "filename"
     assert [p.name for p in nav.all_paths] == [
-        "pony_chart_20260101_000000.png",
-        "pony_chart_20260101_000000_crop1.png",
-        "pony_chart_20260102_000000.png",
+        "pony_chart_20260101_000000_000000_abcdefgh.png",
+        "pony_chart_20260101_000000_000000_abcdefgh_crop1.png",
+        "pony_chart_20260102_000000_000000_abcdefgh.png",
     ]
 
 
@@ -177,7 +180,7 @@ def test_sync_with_disk_adds_new_paths(tmp_path: Path) -> None:
     original_count = len(paths)
     nav = ImageNavigator(paths, _FakeStore())  # type: ignore[arg-type]
 
-    new_path = tmp_path / "unlabeled" / "pony_chart_20260103_000000.png"
+    new_path = tmp_path / "unlabeled" / "pony_chart_20260103_000000_000000_abcdefgh.png"
     new_path.parent.mkdir(parents=True, exist_ok=True)
     new_path.write_bytes(b"img")
 
@@ -203,7 +206,7 @@ def test_sync_with_disk_preserves_current_image(tmp_path: Path) -> None:
     crop_path = next(p for p in paths if "crop1" in p.name)
     nav.go_to_key(str(crop_path))
 
-    new_path = tmp_path / "unlabeled" / "pony_chart_20260103_000000.png"
+    new_path = tmp_path / "unlabeled" / "pony_chart_20260103_000000_000000_abcdefgh.png"
     new_path.parent.mkdir(parents=True, exist_ok=True)
     new_path.write_bytes(b"img")
     nav.sync_with_disk([*paths, new_path])
@@ -218,7 +221,12 @@ def test_sync_with_disk_respects_filter(tmp_path: Path) -> None:
     nav.apply_filter(lambda p: "crop1" not in p.name)
     assert nav.total == 2
 
-    new_path = tmp_path / "1" / "twilight" / "pony_chart_20260103_000000_crop1.png"
+    new_path = (
+        tmp_path
+        / "1"
+        / "twilight"
+        / "pony_chart_20260103_000000_000000_abcdefgh_crop1.png"
+    )
     new_path.parent.mkdir(parents=True, exist_ok=True)
     new_path.write_bytes(b"img")
     added = nav.sync_with_disk([*paths, new_path])

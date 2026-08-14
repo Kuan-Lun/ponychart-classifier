@@ -9,7 +9,11 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from ponychart_classifier.training.sampling import is_original
+from ponychart_classifier.image_names import (
+    SUPPORTED_IMAGE_SUFFIXES,
+    is_crop,
+    is_original,
+)
 
 from .constants import (
     CONFLICT_SUBDIR,
@@ -25,9 +29,7 @@ def scan_image_paths(base: Path) -> list[Path]:
     """掃描資料夾下所有圖片檔案（png/jpg/jpeg/webp）路徑。"""
     paths = [Path(p) for p in glob.glob(str(base / "**" / "*"), recursive=True)]
     return [
-        p
-        for p in paths
-        if p.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp") and p.is_file()
+        p for p in paths if p.suffix.lower() in SUPPORTED_IMAGE_SUFFIXES and p.is_file()
     ]
 
 
@@ -164,8 +166,13 @@ def cleanup_empty_dirs(base: Path) -> None:
 
 
 def is_raw_image(p: Path) -> bool:
-    """判斷是否為原始圖片（pony_chart_YYYYMMDD_HHMMSS，無額外後綴）。"""
+    """判斷是否為目前命名格式的原始圖片。"""
     return is_original(p.name)
+
+
+def is_crop_image(p: Path) -> bool:
+    """判斷是否為帶有明確裁切後綴的圖片；未知格式不視為裁切圖。"""
+    return is_crop(p.name)
 
 
 def next_crop_name(parent: Path, base_stem: str, suffix: str) -> Path:
@@ -188,5 +195,5 @@ def next_crop_name(parent: Path, base_stem: str, suffix: str) -> Path:
 
 
 def has_existing_crop(stem: str) -> bool:
-    """判斷某張原圖（依其 pony_chart_YYYYMMDD_HHMMSS stem）是否已有任何衍生裁切圖。"""
+    """依完整原圖 stem 判斷是否已有任何衍生裁切圖。"""
     return any(IMAGE_DIR.rglob(f"{stem}_crop*"))

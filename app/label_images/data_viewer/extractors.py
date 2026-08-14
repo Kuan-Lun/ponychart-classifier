@@ -30,8 +30,9 @@ def extract_counts(ckpt: dict[str, Any]) -> dict[str, Any]:
     避免掃描磁碟誤把未標註圖片計入。未標註數另外從 rawimage 根目錄
     與 rawimage/unlabeled 兩個位置取得。
     """
+    from ponychart_classifier.image_names import is_original
     from ponychart_classifier.training.constants import RAWIMAGE_DIR
-    from ponychart_classifier.training.sampling import is_original, load_samples
+    from ponychart_classifier.training.sampling import load_samples
 
     labels_full: dict[str, list[int]] = ckpt["labels_at_full_train"]
     labels_last: dict[str, list[int]] = ckpt["labels_at_last_save"]
@@ -78,8 +79,9 @@ def extract_counts(ckpt: dict[str, Any]) -> dict[str, Any]:
 
 def extract_changes(ckpt: dict[str, Any]) -> dict[str, Any]:
     """從 checkpoint 萃取變更明細。"""
+    from ponychart_classifier.image_names import is_original
     from ponychart_classifier.training.constants import RAWIMAGE_DIR
-    from ponychart_classifier.training.sampling import is_original, load_samples
+    from ponychart_classifier.training.sampling import load_samples
 
     labels_full: dict[str, list[int]] = ckpt["labels_at_full_train"]
     labels_last: dict[str, list[int]] = ckpt["labels_at_last_save"]
@@ -198,8 +200,9 @@ def extract_split_counts() -> dict[str, Any]:
     """計算目前資料的訓練／驗證集張數與比例。"""
     import os
 
+    from ponychart_classifier.image_names import is_original
     from ponychart_classifier.training.constants import VAL_SIZE
-    from ponychart_classifier.training.sampling import is_original, load_samples
+    from ponychart_classifier.training.sampling import load_samples
     from ponychart_classifier.training.splitting import group_hash_split
 
     samples = load_samples()

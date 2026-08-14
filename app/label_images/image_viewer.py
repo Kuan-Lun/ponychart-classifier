@@ -1,11 +1,12 @@
 """圖片顯示元件：管理 Canvas、圖片載入縮放與裁切模式。"""
 
-import re
 import tkinter as tk
 from pathlib import Path
 from tkinter import messagebox
 
 from PIL import Image, ImageTk
+
+from ponychart_classifier.image_names import extract_source_stem
 
 from .constants import DISPLAY_HEIGHT, DISPLAY_WIDTH
 from .crop_handler import CropHandler
@@ -57,6 +58,13 @@ class ImageViewer:
         """裁切目前圖片並儲存，回傳新檔案路徑；失敗時回傳 None。"""
         if self.current_pil_image is None:
             return None
+        base_stem = extract_source_stem(current_path.name)
+        if base_stem is None:
+            messagebox.showerror(
+                "裁切失敗",
+                f"圖片檔名不符合目前格式：\n{current_path.name}",
+            )
+            return None
 
         corners = self.crop.get_corners()
         quad = tuple(c / self.scale for c in corners.as_quad())
@@ -69,7 +77,6 @@ class ImageViewer:
             Image.Resampling.BICUBIC,
         )
 
-        base_stem = re.sub(r"_crop\d+$", "", current_path.stem)
         save_path = next_crop_name(current_path.parent, base_stem, current_path.suffix)
 
         cropped.save(save_path)

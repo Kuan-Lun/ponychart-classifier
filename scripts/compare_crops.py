@@ -39,7 +39,7 @@ from ponychart_classifier.training import (
     ThresholdRow,
     compute_class_rates,
     configure_logging,
-    get_base_timestamp,
+    get_source_stem,
     get_transforms,
     is_negligible_delta,
     is_original,
@@ -387,7 +387,7 @@ def main() -> None:
     train_crops = [
         s
         for s in train_val_crop
-        if get_base_timestamp(os.path.basename(s.path)) in train_gk_set
+        if get_source_stem(os.path.basename(s.path)) in train_gk_set
     ]
     crop_counts_per_class = [0] * NUM_CLASSES
     for s in train_crops:

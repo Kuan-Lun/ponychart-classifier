@@ -1,9 +1,8 @@
-"""Sample loading, balancing, and file-naming utilities."""
+"""Sample loading and class-distribution balancing."""
 
 import json
 import logging
 import os
-import re
 from collections import Counter, defaultdict
 from collections.abc import Callable, Iterable
 from itertools import combinations
@@ -13,6 +12,10 @@ import numpy as np
 import torch
 from PIL import Image
 
+from ponychart_classifier.image_names import (
+    extract_source_stem,
+    parse_image_name,
+)
 from ponychart_classifier.stats import goodness_of_fit_test
 
 from .constants import (
@@ -28,9 +31,6 @@ from .constants import (
 
 logger = logging.getLogger(__name__)
 
-_ORIG_STEM_RE = re.compile(r"^pony_chart_\d{8}_\d{6}$")
-_RAW_STEM_RE = re.compile(r"(pony_chart_\d{8}_\d{6})")
-
 
 class Sample(NamedTuple):
     """A labeled image sample: file path and 1-indexed label list."""
@@ -39,35 +39,25 @@ class Sample(NamedTuple):
     labels: list[int]
 
 
-# ---------------------------------------------------------------------------
-# File helpers
-# ---------------------------------------------------------------------------
-def is_original(filename: str) -> bool:
-    """Check if a filename (with or without extension) is an original image."""
-    stem = os.path.splitext(filename)[0]
-    return bool(_ORIG_STEM_RE.match(stem))
-
-
-def extract_raw_stem(filename: str) -> str | None:
-    """Extract pony_chart_YYYYMMDD_HHMMSS from any variant, or None."""
-    stem = os.path.splitext(filename)[0]
-    m = _RAW_STEM_RE.match(stem)
-    return m.group(1) if m else None
-
-
 def separate_orig_crop(
     samples: list[Sample],
 ) -> tuple[list[Sample], list[Sample]]:
-    """Separate samples into originals and crops based on filename pattern."""
-    orig = [s for s in samples if is_original(os.path.basename(s.path))]
-    crop = [s for s in samples if not is_original(os.path.basename(s.path))]
+    """Separate current-schema samples into originals and crops."""
+    orig: list[Sample] = []
+    crop: list[Sample] = []
+    for sample in samples:
+        filename = os.path.basename(sample.path)
+        parsed = parse_image_name(filename)
+        if parsed is None:
+            raise ValueError(
+                f"Unsupported image filename: {filename}. "
+                "Run scripts.migrate_rawimage_filenames first."
+            )
+        if parsed.is_original:
+            orig.append(sample)
+        else:
+            crop.append(sample)
     return orig, crop
-
-
-def get_base_timestamp(filename: str) -> str:
-    """Extract pony_chart_YYYYMMDD_HHMMSS from any variant."""
-    parts = filename.replace(".png", "").replace(".jpg", "").split("_")
-    return "_".join(parts[:4])
 
 
 def _select_recent_original_items[T](
@@ -81,11 +71,11 @@ def _select_recent_original_items[T](
     ranked: list[tuple[str, str, T]] = []
     for item in items:
         filename = filename_getter(item)
-        raw_stem = extract_raw_stem(filename)
-        if raw_stem is None:
+        source_stem = extract_source_stem(filename)
+        if source_stem is None:
             msg = f"Expected original image filename, got: {filename}"
             raise ValueError(msg)
-        ranked.append((raw_stem, identity_getter(item), item))
+        ranked.append((source_stem, identity_getter(item), item))
     ranked.sort(key=lambda row: (row[0], row[1]), reverse=True)
     return [item for _, _, item in ranked[:limit]]
 
@@ -161,6 +151,11 @@ def load_samples(min_size: ImageSize = INPUT_SIZE) -> list[Sample]:
 
         if filepath is None:
             continue
+        if parse_image_name(os.path.basename(filepath)) is None:
+            raise ValueError(
+                f"Unsupported image filename: {os.path.basename(filepath)}. "
+                "Run scripts.migrate_rawimage_filenames first."
+            )
         if not _meets_min_size(filepath, min_size):
             n_undersized += 1
             continue

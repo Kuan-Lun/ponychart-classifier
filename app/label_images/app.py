@@ -12,7 +12,7 @@ from .analysis import AnalysisManager, AnalysisTable
 from .constants import IMAGE_SUBDIR, LABEL_FILE, LABEL_MAP
 from .data_viewer import DataOverviewViewer, ModelInfoViewer, ValF1Viewer
 from .file_actions import FileActions
-from .file_ops import is_raw_image, organize_single
+from .file_ops import is_crop_image, organize_single
 from .filter_panel import FilterPanel
 from .image_viewer import ImageViewer
 from .label_store import LabelStore
@@ -518,10 +518,10 @@ class LabelApp:
         self.viewer.crop.exit()
         self.viewer.load(self.nav.current_path)
         self.current_labels = sorted(set(self.store.get(self.nav.current_key)))
-        if is_raw_image(self.nav.current_path):
-            self._delete_btn.configure(state="disabled")
-        else:
+        if is_crop_image(self.nav.current_path):
             self._delete_btn.configure(state="normal")
+        else:
+            self._delete_btn.configure(state="disabled")
         self.update_display()
 
     def _show_no_images(self) -> None:

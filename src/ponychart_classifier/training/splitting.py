@@ -13,10 +13,10 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from ponychart_classifier.image_names import get_source_stem, is_original
+
 from .sampling import (
     Sample,
-    get_base_timestamp,
-    is_original,
     prepare_balanced_samples,
 )
 
@@ -79,13 +79,11 @@ def _split_n_way(
 def build_groups(
     samples: list[Sample],
 ) -> dict[str, list[int]]:
-    """Build a mapping from base timestamp group key to sample indices."""
+    """Build a mapping from canonical source identity to sample indices."""
     groups: dict[str, list[int]] = defaultdict(list)
     for idx, (path, _) in enumerate(samples):
-        fname = os.path.basename(path).replace(".png", "").replace(".jpg", "")
-        parts = fname.split("_")
-        base = "_".join(parts[:4])
-        groups[base].append(idx)
+        source_stem = get_source_stem(os.path.basename(path))
+        groups[source_stem].append(idx)
     return groups
 
 
@@ -114,7 +112,7 @@ def split_by_groups(
     test_size: float,
     val_size: float = 0.0,
 ) -> GroupSplit:
-    """Split timestamp groups into train / val / test sets.
+    """Split source-image groups into train / val / test sets.
 
     Parameters
     ----------
@@ -135,8 +133,8 @@ def split_by_groups(
     groups: dict[str, list[int]] = defaultdict(list)
     for idx, (path, _) in enumerate(samples):
         fname = os.path.basename(path)
-        base = get_base_timestamp(fname)
-        groups[base].append(idx)
+        source_stem = get_source_stem(fname)
+        groups[source_stem].append(idx)
 
     group_keys = list(groups.keys())
 

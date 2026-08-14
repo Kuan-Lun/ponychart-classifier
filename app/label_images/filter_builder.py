@@ -3,16 +3,13 @@
 from collections.abc import Callable
 from pathlib import Path
 
+from ponychart_classifier.image_names import extract_source_stem, get_source_stem
 from ponychart_classifier.inference.label_selection import select_predictions
 from ponychart_classifier.training.constants import VAL_SIZE
-from ponychart_classifier.training.sampling import (
-    Sample,
-    extract_raw_stem,
-    get_base_timestamp,
-)
+from ponychart_classifier.training.sampling import Sample
 from ponychart_classifier.training.splitting import group_hash_split
 
-from .file_ops import is_raw_image
+from .file_ops import is_crop_image, is_raw_image
 from .label_store import LabelStore
 
 
@@ -70,8 +67,8 @@ def build_filter_fn(
     ):
         return None
 
-    # 預計算 train group 的 base timestamp 集合
-    train_base_timestamps: set[str] | None = None
+    # 預計算 train group 的完整原圖 identity 集合
+    train_source_stems: set[str] | None = None
     if config.train_only:
         samples = [
             Sample(str(p), store.get(store.path_to_key(p)))
@@ -79,8 +76,8 @@ def build_filter_fn(
             if store.has(store.path_to_key(p))
         ]
         train_idx, _ = group_hash_split(samples, test_size=VAL_SIZE)
-        train_base_timestamps = {
-            get_base_timestamp(Path(samples[i].path).name) for i in train_idx
+        train_source_stems = {
+            get_source_stem(Path(samples[i].path).name) for i in train_idx
         }
 
     # 預計算已有裁切圖的 raw stem 集合
@@ -88,8 +85,8 @@ def build_filter_fn(
     if config.uncropped_only:
         raw_stems_with_crops = set()
         for p in all_paths:
-            if not is_raw_image(p):
-                stem = extract_raw_stem(p.name)
+            if is_crop_image(p):
+                stem = extract_source_stem(p.name)
                 if stem:
                     raw_stems_with_crops.add(stem)
 
@@ -99,11 +96,13 @@ def build_filter_fn(
         crop_label_union: dict[str, set[int]] = {}
         raw_stem_to_path: dict[str, Path] = {}
         for p in all_paths:
-            stem = extract_raw_stem(p.name)
+            stem = extract_source_stem(p.name)
             if not stem:
                 continue
             if is_raw_image(p):
                 raw_stem_to_path[stem] = p
+                continue
+            if not is_crop_image(p):
                 continue
             raw_stem = stem
             key = store.path_to_key(p)
@@ -141,15 +140,15 @@ def build_filter_fn(
         if raw_only or uncropped_only:
             if not is_raw_image(p):
                 return False
-        if crop_only and is_raw_image(p):
+        if crop_only and not is_crop_image(p):
             return False
         if raw_stems_with_crops is not None and p.stem in raw_stems_with_crops:
             return False
         if unlabeled_only and store.has(store.path_to_key(p)):
             return False
-        if train_base_timestamps is not None:
-            base_ts = get_base_timestamp(p.name)
-            if base_ts not in train_base_timestamps:
+        if train_source_stems is not None:
+            source_stem = get_source_stem(p.name)
+            if source_stem not in train_source_stems:
                 return False
         if crop_mismatch_stems is not None:
             if not is_raw_image(p):

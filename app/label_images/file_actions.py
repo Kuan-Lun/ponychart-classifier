@@ -12,7 +12,7 @@ from .file_ops import (
     cleanup_empty_dirs,
     dedup_images,
     dedup_near_images,
-    is_raw_image,
+    is_crop_image,
     organize_single,
     scan_image_paths,
     target_path_for,
@@ -98,8 +98,8 @@ class FileActions:
         if self._nav.is_empty:
             return False
         path = self._nav.current_path
-        if is_raw_image(path):
-            messagebox.showwarning("刪除", "無法刪除原圖。")
+        if not is_crop_image(path):
+            messagebox.showwarning("刪除", "只能刪除明確認出的裁切圖。")
             return False
 
         confirm = messagebox.askyesno(

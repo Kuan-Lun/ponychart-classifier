@@ -8,6 +8,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
+from ponychart_classifier.image_names import is_original
 from ponychart_classifier.model_spec import ImageSize
 
 from .constants import (
@@ -19,7 +20,7 @@ from .constants import (
 from .dataset import build_cached_dataset, make_dataloader
 from .device import get_device, get_performance_cpu_count
 from .model import build_model
-from .sampling import is_original, load_samples, prepare_balanced_samples
+from .sampling import load_samples, prepare_balanced_samples
 from .splitting import group_hash_split
 from .training import evaluate
 
