@@ -34,7 +34,7 @@ OUTPUT_ONNX = ARTIFACTS_DIR / "model.onnx"
 OUTPUT_THRESHOLDS = ARTIFACTS_DIR / "thresholds.json"
 
 # Training hyperparameters (single source of truth)
-BACKBONE = "efficientnet_b0"
+BACKBONE = "efficientnet_b3"
 BATCH_SIZE = 64
 SEED = 42
 PHASE1_EPOCHS = 30

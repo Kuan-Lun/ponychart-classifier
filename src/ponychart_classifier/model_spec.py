@@ -66,7 +66,7 @@ class ImageSize:
 
 
 # INPUT_SIZE = ImageSize(554, 1004)
-INPUT_SIZE = ImageSize(277, 502)
+INPUT_SIZE = ImageSize(round(554 / 2.5), round(1004 / 2.5))
 
 
 def parse_class_key(key: str) -> PonyClass:
