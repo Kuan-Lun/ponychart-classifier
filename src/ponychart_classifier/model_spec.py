@@ -65,8 +65,12 @@ class ImageSize:
         return (self.width, self.height)
 
 
-# INPUT_SIZE = ImageSize(554, 1004)
-INPUT_SIZE = ImageSize(round(554 / 2.5), round(1004 / 2.5))
+# Native PonyChart crop dimensions (height, width), pre-downscale.
+ORIGINAL_IMAGE_SIZE = ImageSize(554, 1004)
+
+INPUT_SIZE = ImageSize(
+    round(ORIGINAL_IMAGE_SIZE.height / 2.5), round(ORIGINAL_IMAGE_SIZE.width / 2.5)
+)
 
 
 def parse_class_key(key: str) -> PonyClass:

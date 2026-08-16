@@ -33,6 +33,10 @@ class BackboneConfig:
     build_fn: Callable[[bool], nn.Module]
     classifier_layer_index: int
     description: str
+    # Native square input size the pretrained ImageNet weights were trained
+    # at. Used to derive an orig-divisor-scaled input size for a given
+    # backbone — see cli.compare_backbones.
+    imagenet_size: ImageSize
 
 
 def _build_mobilenet_v3_small(pretrained: bool) -> nn.Module:
@@ -92,42 +96,49 @@ BACKBONE_REGISTRY: dict[str, BackboneConfig] = {
         build_fn=_build_mobilenet_v3_small,
         classifier_layer_index=3,
         description="MobileNetV3-Small (2.5M params, ~4MB ONNX)",
+        imagenet_size=ImageSize(224, 224),
     ),
     "mobilenet_v3_large": BackboneConfig(
         name="mobilenet_v3_large",
         build_fn=_build_mobilenet_v3_large,
         classifier_layer_index=3,
         description="MobileNetV3-Large (5.4M params, ~9MB ONNX)",
+        imagenet_size=ImageSize(224, 224),
     ),
     "efficientnet_b0": BackboneConfig(
         name="efficientnet_b0",
         build_fn=_build_efficientnet_b0,
         classifier_layer_index=1,
         description="EfficientNet-B0 (5.3M params, ~11MB ONNX)",
+        imagenet_size=ImageSize(224, 224),
     ),
     "efficientnet_b1": BackboneConfig(
         name="efficientnet_b1",
         build_fn=_build_efficientnet_b1,
         classifier_layer_index=1,
         description="EfficientNet-B1 (7.8M params, ~15MB ONNX)",
+        imagenet_size=ImageSize(240, 240),
     ),
     "efficientnet_b2": BackboneConfig(
         name="efficientnet_b2",
         build_fn=_build_efficientnet_b2,
         classifier_layer_index=1,
         description="EfficientNet-B2 (9.1M params, ~18MB ONNX)",
+        imagenet_size=ImageSize(260, 260),
     ),
     "efficientnet_b3": BackboneConfig(
         name="efficientnet_b3",
         build_fn=_build_efficientnet_b3,
         classifier_layer_index=1,
         description="EfficientNet-B3 (12M params, ~24MB ONNX)",
+        imagenet_size=ImageSize(300, 300),
     ),
     "efficientnet_b4": BackboneConfig(
         name="efficientnet_b4",
         build_fn=_build_efficientnet_b4,
         classifier_layer_index=1,
         description="EfficientNet-B4 (19M params, ~67MB ONNX)",
+        imagenet_size=ImageSize(380, 380),
     ),
 }
 
