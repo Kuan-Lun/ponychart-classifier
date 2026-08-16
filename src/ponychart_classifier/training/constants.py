@@ -58,7 +58,7 @@ VAL_SIZE = 0.15
 
 # Balancing: goodness-of-fit significance level
 GOF_ALPHA = 0.05
-GOF_RECENT_ORIG_LIMIT = 3000
+GOF_RECENT_ORIG_LIMIT = 10000
 
 # Expected label-size ratios (single / double / triple)
 # Automatically normalized to probabilities; values only need to be proportional.
