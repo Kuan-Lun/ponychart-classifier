@@ -3,30 +3,48 @@
 
 此 CLI 拆成兩種模式，方便把不同 backbone 派到不同設備上跑：
 
-1. 單跑一個 backbone 並把結果寫成 JSON：
+1. 單跑一個 backbone 並把結果寫成 JSON（預設 ``--input-size-mode fixed``）：
      uv run --extra train python -m cli.compare_backbones --run efficientnet_b0
      uv run --extra train python -m cli.compare_backbones --run efficientnet_b4
 
-2. 讀取 results dir 內的 JSON 並印對照表：
+   若要改用每個 backbone 各自 orig-divisor 換算的 input size：
+     uv run --extra train python -m cli.compare_backbones --run efficientnet_b4 --input-size-mode matched
+
+2. 讀取 results dir 內的 JSON 並印對照表（模式要跟 --run 時一致）：
      uv run --extra train python -m cli.compare_backbones --report
+     uv run --extra train python -m cli.compare_backbones --report --input-size-mode matched
 
 預設 results dir 是 ``results/compare_backbones/``，
 可用 ``--results-dir`` 指定其他路徑。
 
+## 兩種 input-size 比較模式（``--input-size-mode``）
+
+- ``fixed``（預設）：所有 backbone 都用同一個 production ``INPUT_SIZE``，
+  單純比較架構本身的效果，解析度不是變因。
+- ``matched``：每個 backbone 依照自己的 orig divisor 換算專屬的
+  input size（見 ``training/model.py`` 的對照表），反映各 backbone
+  實際部署時會用的解析度。
+
+兩種模式的結果分開存檔、分開比較，``--report`` 時用同一個
+``--input-size-mode`` 篩選對應的 JSON。
+
 ## 跨機器一致性
 
-JSON 檔名包含「資料集 hash」(``<backbone>__<hash12>.json``)，
+JSON 檔名包含「backbone + 模式 + 資料集 hash」
+(``<backbone>__<mode>__<hash12>.json``)，
 hash 是從所有 sample (path + labels) 計算出來的指紋。
 - 同一份 ``rawimage`` + ``labels.json`` → 同 hash → 同檔名 → 重跑會覆蓋舊版
 - 任何新增 / 刪除 / 標籤異動 → 不同 hash → 不同檔名 → 兩者並存
-- ``--report`` 偵測到 results dir 同時存在多個 hash 時會直接報錯，
+- ``--report`` 偵測到篩選後的 results 同時存在多個 hash 時會直接報錯，
   避免不小心比較不同資料快照下的數字。
 
-要加新的 backbone，只要在 ``BACKBONE_CONFIGS`` 補一筆即可。
+要加新的 backbone，只要在 ``BACKBONE_KEYS`` 補一筆即可
+（同時要確保它已經在 ``BACKBONE_REGISTRY`` 中）。
 """
 
 from __future__ import annotations
 
+import argparse
 from pathlib import Path
 
 from cli.experiment import RESULTS_ROOT, ExperimentCLI
@@ -50,7 +68,7 @@ from ponychart_classifier.training import (
     select_consistent_results,
 )
 
-from .configs import BACKBONE_CONFIGS
+from .configs import BACKBONE_KEYS, InputSizeMode, backbone_config
 from .result import (
     ExperimentResult,
     measurements_to_result,
@@ -61,7 +79,7 @@ from .result import (
 
 def _ordered_backbones(loaded: dict[str, ExperimentResult]) -> list[str]:
     """Return loaded backbone names in canonical (config) order, then extras."""
-    canonical = [name for name in BACKBONE_CONFIGS if name in loaded]
+    canonical = [name for name in BACKBONE_KEYS if name in loaded]
     extras = sorted(set(loaded) - set(canonical))
     return canonical + extras
 
@@ -78,27 +96,44 @@ class CompareBackbonesCLI(ExperimentCLI):
         return RESULTS_ROOT / "compare_backbones"
 
     def available_keys(self) -> list[str]:
-        return list(BACKBONE_CONFIGS.keys())
+        return list(BACKBONE_KEYS)
+
+    def add_extra_args(self, parser: argparse.ArgumentParser) -> None:
+        parser.add_argument(
+            "--input-size-mode",
+            choices=["fixed", "matched"],
+            default="fixed",
+            help=(
+                "fixed (default): every backbone trains at the shared "
+                "production INPUT_SIZE, isolating architecture from "
+                "resolution. matched: each backbone trains at its own "
+                "orig-divisor-scaled input size (see training/model.py). "
+                "--run and --report must use the same mode; results for "
+                "each mode are stored/compared separately."
+            ),
+        )
 
     def run_one(self, key: str, results_dir: Path) -> None:
-        if key not in BACKBONE_CONFIGS:
-            available = ", ".join(BACKBONE_CONFIGS.keys())
+        if key not in BACKBONE_KEYS:
+            available = ", ".join(BACKBONE_KEYS)
             msg = (
                 f"Backbone {key!r} not configured. Add it to "
-                f"BACKBONE_CONFIGS first. Currently configured: {available}"
+                f"BACKBONE_KEYS first. Currently configured: {available}"
             )
             self.logger.error(msg)
             raise ValueError(msg)
-        config = BACKBONE_CONFIGS[key]
+        mode: InputSizeMode = self._args.input_size_mode
+        config = backbone_config(key, mode)
 
         setup = prepare_training_setup(self.logger)
 
         backbone_meta = BACKBONE_REGISTRY[key]
         log_section(self.logger, "BACKBONE: %s", backbone_meta.description, width=70)
         self.logger.info(
-            "  Resolution: input=%s  batch_size=%d",
+            "  Resolution: input=%s  batch_size=%d  mode=%s",
             config.input_size,
             config.batch_size,
+            mode,
         )
         self.logger.info("  Data hash: %s", setup.data_hash[:HASH_PREFIX_LEN])
 
@@ -116,23 +151,31 @@ class CompareBackbonesCLI(ExperimentCLI):
         )
 
         self.logger.info(
-            ">> %s @ %s: test Macro F1=%.4f  params=%dK  ONNX=%.1fMB  time=%.0fs",
+            ">> %s @ %s (%s): test Macro F1=%.4f  params=%dK  ONNX=%.1fMB  time=%.0fs",
             key,
             config.input_size,
+            mode,
             measurements.test_result.macro_f1,
             measurements.param_count // 1000,
             measurements.onnx_size_mb,
             measurements.train_time_s,
         )
 
-        experiment = measurements_to_result(key, config, measurements, setup)
+        experiment = measurements_to_result(key, mode, config, measurements, setup)
         out_path = save_result(experiment, results_dir)
         self.logger.info("Saved result to %s", out_path)
 
     def format_report(self, results_dir: Path) -> None:
-        raw_results = load_all_json_results(results_dir, parse_result_file, self.logger)
+        mode: InputSizeMode = self._args.input_size_mode
+        all_results = load_all_json_results(results_dir, parse_result_file, self.logger)
+        raw_results = [r for r in all_results if r.input_size_mode == mode]
         if not raw_results:
-            msg = f"No results found in {results_dir}"
+            msg = (
+                f"No results with input_size_mode={mode!r} found in "
+                f"{results_dir} ({len(all_results)} result(s) found for "
+                "other modes). Pass --input-size-mode to match the runs "
+                "you want to compare."
+            )
             self.logger.error(msg)
             raise FileNotFoundError(msg)
 
@@ -146,6 +189,7 @@ class CompareBackbonesCLI(ExperimentCLI):
         data_hash = next(iter(results.values())).data_hash
 
         log_section(self.logger, "BACKBONE COMPARISON RESULTS")
+        self.logger.info("  Input-size mode: %s", mode)
         self.logger.info("  Loaded %d result(s) from %s", len(results), results_dir)
         self.logger.info("  Data snapshot: %s", data_hash[:HASH_PREFIX_LEN])
 

@@ -25,7 +25,7 @@ from ponychart_classifier.training import (
     ImageSize,
 )
 
-from .configs import BackboneExperimentConfig
+from .configs import BackboneExperimentConfig, InputSizeMode
 
 # ---------------------------------------------------------------------------
 # Result type
@@ -44,6 +44,7 @@ class ExperimentResult:
     onnx_size_mb: float
     train_time_s: float
     input_size: ImageSize
+    input_size_mode: InputSizeMode
     batch_size: int
     train_size: int
     val_size: int
@@ -63,6 +64,7 @@ class ExperimentDict(TypedDict):
     backbone_name: str
     description: str
     input_size: list[int]
+    input_size_mode: InputSizeMode
     batch_size: int
     param_count: int
     onnx_size_mb: float
@@ -80,6 +82,7 @@ def experiment_to_dict(experiment: ExperimentResult) -> ExperimentDict:
         backbone_name=experiment.backbone_name,
         description=experiment.description,
         input_size=list(experiment.input_size.hw()),
+        input_size_mode=experiment.input_size_mode,
         batch_size=experiment.batch_size,
         param_count=experiment.param_count,
         onnx_size_mb=experiment.onnx_size_mb,
@@ -113,6 +116,7 @@ def experiment_from_dict(data: ExperimentDict) -> ExperimentResult:
         onnx_size_mb=data["onnx_size_mb"],
         train_time_s=data["train_time_s"],
         input_size=_to_image_size(data["input_size"]),
+        input_size_mode=data["input_size_mode"],
         batch_size=data["batch_size"],
         train_size=split["train_size"],
         val_size=split["val_size"],
@@ -128,14 +132,14 @@ def _parse_experiment_json(raw: str) -> ExperimentDict:
     return cast(ExperimentDict, parse_json_object(raw))
 
 
-def result_filename(backbone_name: str, data_hash: str) -> str:
-    return f"{backbone_name}__{data_hash[:HASH_PREFIX_LEN]}.json"
+def result_filename(backbone_name: str, mode: InputSizeMode, data_hash: str) -> str:
+    return f"{backbone_name}__{mode}__{data_hash[:HASH_PREFIX_LEN]}.json"
 
 
 def save_result(experiment: ExperimentResult, results_dir: Path) -> Path:
     results_dir.mkdir(parents=True, exist_ok=True)
     out_path = results_dir / result_filename(
-        experiment.backbone_name, experiment.data_hash
+        experiment.backbone_name, experiment.input_size_mode, experiment.data_hash
     )
     out_path.write_text(json.dumps(experiment_to_dict(experiment), indent=2))
     return out_path
@@ -147,6 +151,7 @@ def parse_result_file(raw: str) -> ExperimentResult:
 
 def measurements_to_result(
     backbone_name: str,
+    mode: InputSizeMode,
     config: BackboneExperimentConfig,
     m: TrainingMeasurements,
     setup: TrainingSetup,
@@ -162,6 +167,7 @@ def measurements_to_result(
         onnx_size_mb=metadata.onnx_size_mb,
         train_time_s=metadata.train_time_s,
         input_size=config.input_size,
+        input_size_mode=mode,
         batch_size=config.batch_size,
         train_size=metadata.train_size,
         val_size=metadata.val_size,
