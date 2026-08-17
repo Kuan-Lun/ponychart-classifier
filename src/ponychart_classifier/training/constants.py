@@ -54,7 +54,7 @@ SCHEDULER_MIN_LR = 1e-7
 
 # Data split ratios
 HOLDOUT_TEST_SIZE = 0.20
-VAL_SIZE = 0.15
+VAL_SIZE = 0.20
 
 # Balancing: goodness-of-fit significance level
 GOF_ALPHA = 0.05
