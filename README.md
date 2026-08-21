@@ -38,12 +38,13 @@ ponychart-classifier/
 │       └── navigator.py              # 圖片導覽
 ├── src/
 │   └── ponychart_classifier/          # PyPI 套件
-│       ├── __init__.py                # 公開 API (predict, update, preload, get_thresholds)
+│       ├── __init__.py                # 公開 API (predict, predict_bytes, preload 等)
 │       ├── model_spec.py              # 訓練與推論共用模型規格
 │       ├── inference/                 # 推論 package
 │       │   ├── __init__.py            # inference API re-export
 │       │   ├── classifier.py          # PonyChartClassifier
 │       │   ├── artifacts.py           # runtime cache 路徑、下載、ETag
+│       │   ├── image_decoding.py       # 路徑讀取與記憶體影像解碼
 │       │   ├── preprocessing.py       # 影像前處理
 │       │   ├── label_selection.py     # 閾值篩選與 top-k 規則
 │       │   └── results.py             # PredictionResult / ClassThresholds
@@ -145,6 +146,7 @@ mypyc 編譯的 extension 找不到內部模組，執行下列指令把 `.venv`
 from ponychart_classifier import (
     clear_artifacts,
     predict,
+    predict_bytes,
     preload,
     update,
     get_thresholds,
@@ -163,6 +165,10 @@ print(result.labels)  # frozenset({'Rarity', 'Fluttershy'})
 print(result.rarity)  # 0.95
 print(result.twilight_sparkle)  # 0.02
 
+# 已在記憶體中的 PNG/JPEG 等 encoded bytes 可直接推理，不需要暫存檔
+with open("path/to/image.png", "rb") as image_file:
+    result = predict_bytes(image_file.read())
+
 # 取得各角色的分類閾值
 thresholds: ClassThresholds = get_thresholds()
 
@@ -180,7 +186,12 @@ classifier = PonyChartClassifier(
     thresholds_path="artifacts/thresholds.json",
 )
 result = classifier.predict("path/to/image.png", min_k=1, max_k=3)
+with open("path/to/image.png", "rb") as image_file:
+    result = classifier.predict_bytes(image_file.read(), min_k=1, max_k=3)
 ```
+
+`predict_bytes()` 接受 OpenCV 可解碼的 immutable `bytes`，不會保留或修改輸入。
+若資料位於 `BytesIO`，請傳入 `buffer.getvalue()`。
 
 未顯式指定路徑時，`PonyChartClassifier` 會使用使用者 cache 目錄中的 runtime artifact：
 

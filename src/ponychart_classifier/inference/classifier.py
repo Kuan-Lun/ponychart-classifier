@@ -4,7 +4,6 @@ import json
 from pathlib import Path
 from typing import Any
 
-import cv2 as cv
 import numpy as np
 import onnxruntime as ort
 
@@ -17,6 +16,7 @@ from ponychart_classifier.model_spec import (
 )
 
 from . import artifacts
+from .image_decoding import decode_image_bytes, read_image_path
 from .label_selection import select_predictions
 from .preprocessing import preprocess_bgr
 from .results import (
@@ -137,19 +137,37 @@ class PonyChartClassifier:
 
     def predict(
         self,
-        img_path: str,
+        img_path: str | Path,
         min_k: int = 1,
         max_k: int = 3,
     ) -> PredictionResult:
-        """Predict characters in a PonyChart image."""
+        """Predict characters in an image read from a filesystem path."""
+        image = read_image_path(img_path)
+        return self._predict_bgr(image, min_k=min_k, max_k=max_k)
+
+    def predict_bytes(
+        self,
+        image: bytes,
+        min_k: int = 1,
+        max_k: int = 3,
+    ) -> PredictionResult:
+        """Predict characters directly from encoded in-memory image bytes."""
+        decoded = decode_image_bytes(image)
+        return self._predict_bgr(decoded, min_k=min_k, max_k=max_k)
+
+    def _predict_bgr(
+        self,
+        image: np.ndarray[Any, Any],
+        *,
+        min_k: int,
+        max_k: int,
+    ) -> PredictionResult:
+        """Run prediction for an already decoded OpenCV BGR image."""
         self.load()
-        img = cv.imread(img_path, cv.IMREAD_COLOR)
-        if img is None:
-            raise RuntimeError(f"Cannot read image: {img_path}")
         if self._input_size is None:
             raise RuntimeError("Classifier input size is unavailable after loading.")
 
-        input_tensor = preprocess_bgr(img, input_size=self._input_size)
+        input_tensor = preprocess_bgr(image, input_size=self._input_size)
         input_name: str = self._session.get_inputs()[0].name
         logits = self._session.run(None, {input_name: input_tensor})[0]
         probs = 1.0 / (1.0 + np.exp(-logits[0]))

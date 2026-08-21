@@ -2,11 +2,17 @@
 
 import sys
 
-from .inference import ClassThresholds, PonyChartClassifier, PredictionResult
+from .inference import (
+    ClassThresholds,
+    ImageDecodeError,
+    PonyChartClassifier,
+    PredictionResult,
+)
 
 _classifier = PonyChartClassifier()
 
 predict = _classifier.predict
+predict_bytes = _classifier.predict_bytes
 update = _classifier.update
 has_pending_update = _classifier.has_pending_update
 
@@ -44,7 +50,9 @@ __all__ = [
     "clear_artifacts",
     "get_thresholds",
     "has_pending_update",
+    "ImageDecodeError",
     "predict",
+    "predict_bytes",
     "preload",
     "update",
 ]
