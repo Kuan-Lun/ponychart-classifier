@@ -1,11 +1,20 @@
+import json
 import threading
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 import ponychart_classifier
+from app.label_images import __main__ as label_images_main
 from app.label_images.analysis import AnalysisManager
 from app.label_images.app import _AnalysisActions, _CropActions
+from app.label_images.mutation_guard import RawImageMutationGuard
+from app.label_images.retirement_journal import (
+    RetirementRecoveryError,
+    journal_path_for,
+    prepare_retirement_journal,
+)
 from ponychart_classifier.training.sampling import Sample
 
 
@@ -73,6 +82,29 @@ def test_refresh_staleness_keeps_cache_when_model_unchanged(
     assert manager.model_probs == {"a.png": [0.1] * 6}
 
 
+def test_save_cache_fail_safe_invalidates_stale_predictions(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager = AnalysisManager()
+    cache_path = tmp_path / "analysis_cache.json"
+    cache_path.write_text("stale", encoding="utf-8")
+    manager._cache_path = cache_path
+    manager.model_probs = {"old/path.png": [0.1] * 6}
+    manager.model_thresholds = [0.5] * 6
+
+    def fail_save(*args: object, **kwargs: object) -> None:
+        del args, kwargs
+        raise OSError("disk full")
+
+    monkeypatch.setattr("app.label_images.analysis.prob_cache.save", fail_save)
+
+    assert manager.save_cache_fail_safe() is False
+    assert manager.model_probs is None
+    assert manager.model_thresholds is None
+    assert not cache_path.exists()
+
+
 def test_refresh_staleness_skips_network_check_when_no_cache(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -93,6 +125,225 @@ def test_refresh_staleness_skips_network_check_when_no_cache(
 
     assert changed is False
     assert called is False
+
+
+def _prediction() -> SimpleNamespace:
+    return SimpleNamespace(
+        twilight_sparkle=0.1,
+        rarity=0.2,
+        fluttershy=0.3,
+        rainbow_dash=0.4,
+        pinkie_pie=0.5,
+        applejack=0.6,
+    )
+
+
+def test_background_result_is_tombstoned_when_key_deleted_during_predict(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager = AnalysisManager()
+    key = "1/twilight/pony_chart_20250101_000000_000000_old00001.png"
+    ready = threading.Event()
+    release = threading.Event()
+    manager._active_keys = {key}
+    monkeypatch.setattr(ponychart_classifier, "update", lambda: None)
+    monkeypatch.setattr(
+        ponychart_classifier,
+        "get_thresholds",
+        lambda: SimpleNamespace(as_list=lambda: [0.5] * 6),
+    )
+
+    def delayed_predict(path: str) -> SimpleNamespace:
+        del path
+        ready.set()
+        assert release.wait(timeout=2)
+        return _prediction()
+
+    monkeypatch.setattr(ponychart_classifier, "predict", delayed_predict)
+    worker = threading.Thread(
+        target=manager._run,
+        args=([Sample(str(tmp_path / "old.png"), [])], [key]),
+    )
+    worker.start()
+    assert ready.wait(timeout=2)
+    manager.delete_key(key)
+    release.set()
+    worker.join(timeout=2)
+
+    assert not worker.is_alive()
+    assert manager._error is None
+    assert manager._result == ({}, [0.5] * 6)
+    assert key in manager._tombstones
+
+
+def test_predict_failure_after_tombstone_is_safely_skipped(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager = AnalysisManager()
+    key = "1/twilight/pony_chart_20250101_000000_000000_old00001.png"
+    ready = threading.Event()
+    release = threading.Event()
+    manager._active_keys = {key}
+    monkeypatch.setattr(ponychart_classifier, "update", lambda: None)
+    monkeypatch.setattr(
+        ponychart_classifier,
+        "get_thresholds",
+        lambda: SimpleNamespace(as_list=lambda: [0.5] * 6),
+    )
+
+    def missing_predict(path: str) -> SimpleNamespace:
+        del path
+        ready.set()
+        assert release.wait(timeout=2)
+        raise FileNotFoundError("retired while inference was pending")
+
+    monkeypatch.setattr(ponychart_classifier, "predict", missing_predict)
+    worker = threading.Thread(
+        target=manager._run,
+        args=([Sample(str(tmp_path / "old.png"), [])], [key]),
+    )
+    worker.start()
+    assert ready.wait(timeout=2)
+    manager.delete_key(key)
+    release.set()
+    worker.join(timeout=2)
+
+    assert not worker.is_alive()
+    assert manager._error is None
+    assert manager._result == ({}, [0.5] * 6)
+
+
+def test_rename_updates_ready_result_and_tombstones_active_old_key() -> None:
+    manager = AnalysisManager()
+    old_key = "unlabeled/pony_chart_20250101_000000_000000_old00001.png"
+    new_key = "1/twilight/pony_chart_20250101_000000_000000_old00001.png"
+    manager._active_keys = {old_key}
+    manager._result = ({old_key: [0.1] * 6}, [0.5] * 6)
+
+    manager.rename_key(old_key, new_key)
+
+    assert old_key in manager._tombstones
+    assert manager._result == ({new_key: [0.1] * 6}, [0.5] * 6)
+
+
+def test_purge_source_removes_cache_pending_and_active_scoped_keys() -> None:
+    manager = AnalysisManager()
+    source = "pony_chart_20250101_000000_000000_old00001"
+    original = f"1/twilight/{source}.png"
+    canonical_conflict = f"_conflicts/{source}_crop1_conflict2.png"
+    legacy_conflict = f"_conflicts/{source}_crop2_1.png"
+    active_crop = f"2/twilight+rarity/{source}_crop3.png"
+    manual_similar = f"unlabeled/{source}_crop4_1.png"
+    other = "1/rarity/pony_chart_20250102_000000_000000_other001.png"
+    manager.model_probs = {
+        original: [0.1] * 6,
+        canonical_conflict: [0.2] * 6,
+        manual_similar: [0.3] * 6,
+        other: [0.4] * 6,
+    }
+    manager._result = (
+        {legacy_conflict: [0.5] * 6, other: [0.4] * 6},
+        [0.5] * 6,
+    )
+    manager._active_keys = {active_crop, manual_similar, other}
+
+    removed = manager.purge_source(source)
+
+    assert set(removed) == {
+        original,
+        canonical_conflict,
+        legacy_conflict,
+        active_crop,
+    }
+    assert manager.model_probs == {
+        manual_similar: [0.3] * 6,
+        other: [0.4] * 6,
+    }
+    assert manager._result == ({other: [0.4] * 6}, [0.5] * 6)
+    assert manager._tombstones == {active_crop}
+
+
+def test_startup_cache_orphan_purge_retains_any_existing_image(
+    tmp_path: Path,
+) -> None:
+    image_dir = tmp_path / "rawimage"
+    labeled = image_dir / "1" / "twilight" / "labeled.png"
+    unlabeled = image_dir / "unlabeled" / "unlabeled.png"
+    labeled.parent.mkdir(parents=True)
+    unlabeled.parent.mkdir(parents=True)
+    labeled.write_bytes(b"labeled")
+    unlabeled.write_bytes(b"unlabeled")
+    manager = AnalysisManager()
+    manager._cache_path = image_dir / "analysis_cache.json"
+    manager._model_path = tmp_path / "model.onnx"
+    manager._model_path.write_bytes(b"model")
+    manager.model_probs = {
+        "1/twilight/labeled.png": [0.1] * 6,
+        "unlabeled/unlabeled.png": [0.2] * 6,
+        "1/rarity/retired.png": [0.3] * 6,
+        "../outside.png": [0.4] * 6,
+    }
+
+    removed = manager.purge_missing_files(image_dir)
+    assert removed == ["../outside.png", "1/rarity/retired.png"]
+    assert manager.save_cache_fail_safe()
+
+    saved = json.loads(manager._cache_path.read_text(encoding="utf-8"))["probs"]
+    assert saved == {
+        "1/twilight/labeled.png": [0.1] * 6,
+        "unlabeled/unlabeled.png": [0.2] * 6,
+    }
+
+
+def test_startup_recovers_before_scanning_images(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    image_dir = tmp_path / "rawimage"
+    image_dir.mkdir()
+    events: list[str] = []
+    fake_root = SimpleNamespace(mainloop=lambda: events.append("mainloop"))
+    monkeypatch.setattr(label_images_main, "IMAGE_DIR", image_dir)
+    monkeypatch.setattr(label_images_main, "LABEL_FILE", image_dir / "labels.json")
+    monkeypatch.setattr(
+        label_images_main,
+        "RETIREMENT_RECEIPT_FILE",
+        image_dir / "retirement_receipts.json",
+    )
+
+    def recover(*args: object) -> bool:
+        del args
+        events.append("recover")
+        return False
+
+    monkeypatch.setattr(
+        label_images_main,
+        "recover_retirement_transaction",
+        recover,
+    )
+
+    def scan(path: Path) -> list[Path]:
+        del path
+        events.append("scan")
+        return []
+
+    monkeypatch.setattr(
+        label_images_main,
+        "scan_image_paths",
+        scan,
+    )
+    monkeypatch.setattr("app.label_images.__main__.tk.Tk", lambda: fake_root)
+    monkeypatch.setattr(
+        label_images_main,
+        "LabelApp",
+        lambda root, paths: events.append("app"),
+    )
+
+    label_images_main.main()
+
+    assert events == ["recover", "scan", "app", "mainloop"]
 
 
 def test_update_button_states_reenables_after_new_unanalyzed_crop(
@@ -240,6 +491,7 @@ class _FakeCropApp:
         self, current_path: Path, save_path: Path | None, current_labels: list[int]
     ) -> None:
         self.viewer = _FakeCropViewer(save_path)
+        self.mutation_guard = RawImageMutationGuard(current_path.parent)
         self.nav = _FakeCropNav(current_path)
         self.store = _FakeCropStore()
         self.analysis_actions = _FakeCropAnalysisActions()
@@ -287,6 +539,45 @@ def test_crop_save_noop_when_save_crop_fails(tmp_path: Path) -> None:
     assert app.update_display_calls == []
     assert app.analysis_actions.analyze_new_crop_calls == []
     assert app.current_labels == [2]
+
+
+@pytest.mark.parametrize("journal_kind", ["prepared", "malformed"])
+def test_crop_save_is_unchanged_when_recovery_journal_is_pending(
+    tmp_path: Path,
+    journal_kind: str,
+) -> None:
+    image_dir = tmp_path / "rawimage"
+    image_dir.mkdir()
+    source = image_dir / "pony_chart_20260826_000001_000000_source01.png"
+    crop = image_dir / "pony_chart_20260826_000001_000000_source01_crop1.png"
+    source.write_bytes(b"source")
+    journal = journal_path_for(image_dir)
+    if journal_kind == "prepared":
+        prepare_retirement_journal(
+            image_dir,
+            "pony_chart_20260826_000001_000000_source01",
+            (),
+            None,
+            None,
+        )
+    else:
+        journal.write_text("{malformed", encoding="utf-8")
+    journal_before = journal.read_bytes()
+    app = _FakeCropApp(source, crop, [1, 3])
+
+    with pytest.raises(RetirementRecoveryError, match="Pending retirement journal"):
+        _CropActions(app).save()  # type: ignore[arg-type]
+
+    assert source.read_bytes() == b"source"
+    assert not crop.exists()
+    assert journal.read_bytes() == journal_before
+    assert app.viewer.save_crop_calls == []
+    assert app.nav.current_path == source
+    assert app.nav.added_paths == []
+    assert app.current_labels == [1, 3]
+    assert app.refresh_calls == 0
+    assert app.update_display_calls == []
+    assert app.analysis_actions.analyze_new_crop_calls == []
 
 
 def test_analyze_new_crop_launches_single_sample_analysis(tmp_path: Path) -> None:

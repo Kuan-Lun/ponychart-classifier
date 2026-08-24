@@ -5,6 +5,12 @@ import pytest
 
 from app.label_images.analysis import AnalysisManager
 from app.label_images.file_actions import FileActions
+from app.label_images.mutation_guard import RawImageMutationGuard
+from app.label_images.retirement_journal import (
+    RetirementRecoveryError,
+    journal_path_for,
+    prepare_retirement_journal,
+)
 
 
 class _FakeNav:
@@ -75,6 +81,139 @@ class _FakeStore:
 
     def path_to_key(self, path: Path) -> str:
         return path.name
+
+
+def _pending_journal(image_dir: Path, journal_kind: str) -> Path:
+    journal = journal_path_for(image_dir)
+    if journal_kind == "prepared":
+        prepare_retirement_journal(
+            image_dir,
+            "pony_chart_20260826_000001_000000_journal1",
+            (),
+            None,
+            None,
+        )
+    else:
+        journal.write_text("{malformed", encoding="utf-8")
+    return journal
+
+
+@pytest.mark.parametrize("journal_kind", ["prepared", "malformed"])
+def test_delete_crop_is_unchanged_when_recovery_journal_is_pending(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    journal_kind: str,
+) -> None:
+    image_dir = tmp_path / "rawimage"
+    image_dir.mkdir()
+    crop = image_dir / "pony_chart_20260826_000001_000000_source01_crop1.png"
+    crop.write_bytes(b"crop")
+    nav = _FakeNav([crop])
+    store = _FakeStore({crop.name: [1]})
+    analysis = AnalysisManager()
+    probs = [0.5, 0.2, 0.1, 0.1, 0.1, 0.1]
+    analysis.model_probs = {crop.name: probs}
+    journal = _pending_journal(image_dir, journal_kind)
+    journal_before = journal.read_bytes()
+    confirmation_requested = False
+
+    def unexpected_confirmation(title: str, message: str) -> bool:
+        del title, message
+        nonlocal confirmation_requested
+        confirmation_requested = True
+        return True
+
+    monkeypatch.setattr(
+        "app.label_images.file_actions.messagebox.askyesno",
+        unexpected_confirmation,
+    )
+    guard = RawImageMutationGuard(image_dir)
+    actions = FileActions(nav, store, analysis, guard)  # type: ignore[arg-type]
+
+    with pytest.raises(RetirementRecoveryError, match="Pending retirement journal"):
+        actions.delete_crop()
+
+    assert confirmation_requested is False
+    assert crop.read_bytes() == b"crop"
+    assert nav.all_paths == [crop]
+    assert nav.current_path == crop
+    assert store._labels == {crop.name: [1]}
+    assert store.saved is False
+    assert analysis.model_probs == {crop.name: probs}
+    assert journal.read_bytes() == journal_before
+
+
+@pytest.mark.parametrize("journal_kind", ["prepared", "malformed"])
+def test_organize_all_is_unchanged_when_recovery_journal_is_pending(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    journal_kind: str,
+) -> None:
+    image_dir = tmp_path / "rawimage"
+    source = image_dir / "unlabeled" / "pony_chart_20260826_000001_000000_source01.png"
+    source.parent.mkdir(parents=True)
+    source.write_bytes(b"source")
+    nav = _FakeNav([source])
+    store = _FakeStore({source.name: [1]})
+    analysis = AnalysisManager()
+    probs = [0.9, 0.1, 0.1, 0.1, 0.1, 0.1]
+    analysis.model_probs = {source.name: probs}
+    journal = _pending_journal(image_dir, journal_kind)
+    journal_before = journal.read_bytes()
+    scan_started = False
+
+    def unexpected_dedup(paths: list[Path]) -> list[tuple[Path, Path]]:
+        del paths
+        nonlocal scan_started
+        scan_started = True
+        return []
+
+    monkeypatch.setattr(
+        "app.label_images.file_actions.dedup_images",
+        unexpected_dedup,
+    )
+    guard = RawImageMutationGuard(image_dir)
+    actions = FileActions(nav, store, analysis, guard)  # type: ignore[arg-type]
+
+    with pytest.raises(RetirementRecoveryError, match="Pending retirement journal"):
+        actions.organize_all()
+
+    assert scan_started is False
+    assert source.read_bytes() == b"source"
+    assert nav.all_paths == [source]
+    assert nav.current_path == source
+    assert store._labels == {source.name: [1]}
+    assert store.saved is False
+    assert analysis.model_probs == {source.name: probs}
+    assert journal.read_bytes() == journal_before
+
+
+def test_reload_remains_allowed_with_pending_recovery_journal(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    image_dir = tmp_path / "rawimage"
+    image_dir.mkdir()
+    existing = image_dir / "existing.png"
+    added = image_dir / "added.png"
+    existing.write_bytes(b"existing")
+    added.write_bytes(b"added")
+    nav = _FakeNav([existing])
+    store = _FakeStore({})
+    analysis = AnalysisManager()
+    journal = _pending_journal(image_dir, "malformed")
+    journal_before = journal.read_bytes()
+    monkeypatch.setattr("app.label_images.file_actions.IMAGE_DIR", image_dir)
+    monkeypatch.setattr(
+        "app.label_images.file_actions.scan_image_paths",
+        lambda base: [existing, added],
+    )
+    guard = RawImageMutationGuard(image_dir)
+    actions = FileActions(nav, store, analysis, guard)  # type: ignore[arg-type]
+
+    assert actions.reload() == 1
+    assert nav.all_paths == [existing, added]
+    assert journal.read_bytes() == journal_before
 
 
 def test_organize_all_preserves_analysis_results_after_move(

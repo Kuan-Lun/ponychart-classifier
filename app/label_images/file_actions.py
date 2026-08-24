@@ -18,6 +18,7 @@ from .file_ops import (
     target_path_for,
 )
 from .label_store import LabelStore
+from .mutation_guard import RawImageMutationGuard
 from .navigator import ImageNavigator
 
 
@@ -88,13 +89,16 @@ class FileActions:
         nav: ImageNavigator,
         store: LabelStore,
         analysis: AnalysisManager,
+        mutation_guard: RawImageMutationGuard | None = None,
     ) -> None:
         self._nav = nav
         self._store = store
         self._analysis = analysis
+        self._mutation_guard = mutation_guard or RawImageMutationGuard(IMAGE_DIR)
 
     def delete_crop(self) -> bool:
         """刪除目前的裁切圖。回傳 True 表示有刪除。"""
+        self._mutation_guard.ensure_allowed()
         if self._nav.is_empty:
             return False
         path = self._nav.current_path
@@ -123,6 +127,7 @@ class FileActions:
 
     def organize_all(self) -> None:
         """去重、清理孤兒標籤、並將所有圖片搬到正確的子資料夾。"""
+        self._mutation_guard.ensure_allowed()
         dups = dedup_images(list(self._nav.all_paths))
         n_dedup = 0
         if dups:

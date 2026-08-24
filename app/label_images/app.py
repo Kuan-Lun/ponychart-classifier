@@ -1,6 +1,7 @@
 """圖片標註工具的主 UI 協調器。"""
 
 import random
+import shutil
 import tkinter as tk
 from pathlib import Path
 from tkinter import messagebox, simpledialog
@@ -9,14 +10,48 @@ from ponychart_classifier.inference.label_selection import select_predictions
 from ponychart_classifier.training.sampling import Sample
 
 from .analysis import AnalysisManager, AnalysisTable
-from .constants import IMAGE_SUBDIR, LABEL_FILE, LABEL_MAP
+from .constants import (
+    IMAGE_DIR,
+    IMAGE_SUBDIR,
+    LABEL_FILE,
+    LABEL_MAP,
+    RETIREMENT_RECEIPT_FILE,
+)
 from .data_viewer import DataOverviewViewer, ModelInfoViewer, ValF1Viewer
 from .file_actions import FileActions
-from .file_ops import is_crop_image, organize_single
+from .file_ops import (
+    cleanup_empty_dirs,
+    is_crop_image,
+    organize_single,
+    target_path_for,
+)
 from .filter_panel import FilterPanel
 from .image_viewer import ImageViewer
 from .label_store import LabelStore
+from .mutation_guard import RawImageMutationGuard
 from .navigator import ImageNavigator
+from .retirement_ledger import RetirementReceiptLedger
+from .sample_retirement import (
+    plan_source_save,
+    save_and_retire_oldest_sample,
+)
+
+
+def _rollback_organized_path(
+    old_path: Path,
+    new_path: Path,
+    expected_target: Path,
+    target_existed: bool,
+) -> None:
+    """在標籤交易失敗時，把 organize_single 的檔案變更復原。"""
+    if new_path == old_path or old_path.exists():
+        return
+    old_path.parent.mkdir(parents=True, exist_ok=True)
+    if new_path == expected_target and target_existed:
+        # organize_single 遇到同內容目標時會刪除來源；保留原目標並複製回來源。
+        shutil.copy2(new_path, old_path)
+    else:
+        new_path.replace(old_path)
 
 
 class _KeyHandler:
@@ -103,19 +138,86 @@ class _LabelActions:
 
     def save(self) -> None:
         a = self._app
+        # A prior crash journal owns the labels/receipt commit boundary.  No save,
+        # including crops, pre-cutoff images, or repeat labels, may mutate state
+        # until startup recovery has resolved it.
+        a.mutation_guard.ensure_allowed()
         key = a.nav.current_key
         old_path = a.nav.current_path
-        a.store.set(key, a.current_labels)
+        retirement_plan = plan_source_save(
+            old_path,
+            a.current_labels,
+            a.store,
+            a.retirement_receipts,
+        )
+        store_snapshot = a.store.snapshot()
+        persisted_store = a.store.persisted_snapshot()
+        ledger_snapshot = (
+            a.retirement_receipts.snapshot() if retirement_plan is not None else None
+        )
+        expected_target = target_path_for(old_path.name, a.current_labels)
+        target_existed = expected_target.exists()
+        new_path = old_path
+        try:
+            a.store.set(key, a.current_labels)
+            new_path = organize_single(old_path, a.current_labels)
+            if new_path != old_path:
+                new_key = a.store.path_to_key(new_path)
+                a.store.rename_key(key, new_key)
+                key = new_key
 
-        new_path = organize_single(old_path, a.current_labels)
+            if retirement_plan is None:
+                a.store.save()
+                retired = None
+            else:
+                retired = save_and_retire_oldest_sample(
+                    IMAGE_DIR,
+                    a.store,
+                    a.retirement_receipts,
+                    retirement_plan,
+                    before_retire=a.analysis.purge_source,
+                )
+        except Exception as error:
+            a.store.restore(store_snapshot)
+            rollback_errors: list[OSError] = []
+            try:
+                a.store.restore_persisted(persisted_store)
+            except OSError as restore_error:
+                rollback_errors.append(restore_error)
+            if ledger_snapshot is not None:
+                try:
+                    a.retirement_receipts.restore(ledger_snapshot)
+                except OSError as restore_error:
+                    rollback_errors.append(restore_error)
+            try:
+                _rollback_organized_path(
+                    old_path,
+                    new_path,
+                    expected_target,
+                    target_existed,
+                )
+            except OSError as restore_error:
+                rollback_errors.append(restore_error)
+            if rollback_errors:
+                raise RuntimeError(
+                    "Failed to restore label-save transaction"
+                ) from error
+            raise
+
+        analysis_changed = False
         if new_path != old_path:
-            new_key = a.store.path_to_key(new_path)
-            a.store.rename_key(key, new_key)
-            a.analysis.rename_key(key, new_key)
+            a.analysis.rename_key(a.nav.current_key, key)
             a.nav.replace_path(old_path, new_path)
-            key = new_key
-
-        a.store.save()
+            analysis_changed = True
+        if retired is not None:
+            for retired_path in retired.paths:
+                a.nav.remove_path(retired_path)
+            a.nav.go_to_key(key)
+            analysis_changed = True
+        if new_path != old_path or retired is not None:
+            cleanup_empty_dirs(IMAGE_DIR)
+        if analysis_changed:
+            a.analysis.save_cache_fail_safe()
 
         if not a.nav.is_filtered:
             a.update_display("saved")
@@ -177,6 +279,7 @@ class _CropActions:
 
     def save(self) -> None:
         a = self._app
+        a.mutation_guard.ensure_allowed()
         save_path = a.viewer.save_crop(a.nav.current_path)
         if save_path is None:
             return
@@ -322,8 +425,12 @@ class LabelApp:
     def __init__(self, root: tk.Tk, image_paths: list[Path]):
         self.root = root
         self.store = LabelStore(LABEL_FILE, IMAGE_SUBDIR)
+        self.retirement_receipts = RetirementReceiptLedger(RETIREMENT_RECEIPT_FILE)
+        self.mutation_guard = RawImageMutationGuard(IMAGE_DIR)
         self.nav = ImageNavigator(image_paths, self.store)
         self.analysis = AnalysisManager()
+        if self.analysis.purge_missing_files(IMAGE_DIR):
+            self.analysis.save_cache_fail_safe()
         self.analysis.refresh_staleness()
         self.nav.set_probs_provider(self.analysis.get_image_probs)
 
@@ -333,7 +440,12 @@ class LabelApp:
         self.crop_actions = _CropActions(self)
         self.filter_actions = _FilterActions(self)
         self.analysis_actions = _AnalysisActions(self)
-        self._file_actions = FileActions(self.nav, self.store, self.analysis)
+        self._file_actions = FileActions(
+            self.nav,
+            self.store,
+            self.analysis,
+            self.mutation_guard,
+        )
         self._key_handler = _KeyHandler(self)
 
         root.title(

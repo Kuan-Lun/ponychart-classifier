@@ -2,7 +2,7 @@
 
 Runtime code accepts one schema only::
 
-    pony_chart_YYYYMMDD_HHMMSS_ffffff_<8-char-token>[_cropN].ext
+    pony_chart_YYYYMMDD_HHMMSS_ffffff_<8-char-token>[_cropN][_conflictN].ext
 
 Legacy names are handled exclusively by the one-time migration script.
 """
@@ -22,7 +22,9 @@ _SOURCE_STEM_PATTERN = (
     r"(?P<token>[a-z0-9_]{8})"
 )
 _IMAGE_STEM_RE = re.compile(
-    rf"^(?P<source>{_SOURCE_STEM_PATTERN})(?:_crop(?P<crop>[1-9]\d*))?$"
+    rf"^(?P<source>{_SOURCE_STEM_PATTERN})"
+    rf"(?:_crop(?P<crop>[1-9]\d*))?"
+    rf"(?:_conflict(?P<conflict>[1-9]\d*))?$"
 )
 
 
@@ -33,6 +35,7 @@ class ParsedImageName:
     source_stem: str
     captured_at: dt.datetime
     crop_index: int | None
+    conflict_index: int | None = None
 
     @property
     def is_original(self) -> bool:
@@ -61,10 +64,12 @@ def parse_image_name(filename: str) -> ParsedImageName | None:
     except ValueError:
         return None
     crop = match.group("crop")
+    conflict = match.group("conflict")
     return ParsedImageName(
         source_stem=match.group("source"),
         captured_at=captured_at,
         crop_index=int(crop) if crop is not None else None,
+        conflict_index=int(conflict) if conflict is not None else None,
     )
 
 

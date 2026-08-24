@@ -4,7 +4,7 @@ import json
 import threading
 import tkinter as tk
 from collections.abc import Callable
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import ponychart_classifier as _pkg
 from ponychart_classifier.inference import artifacts
@@ -21,6 +21,7 @@ from .constants import (
 )
 from .label_store import LabelStore
 from .navigator import ImageNavigator
+from .source_identity import parse_key_identity
 
 
 def _load_thresholds(path: Path) -> list[float] | None:
@@ -42,12 +43,15 @@ class AnalysisManager:
     """管理模型分析的背景執行緒與結果。"""
 
     def __init__(self) -> None:
+        self._state_lock = threading.RLock()
         self.model_probs: dict[str, list[float]] | None = None
         self.model_thresholds: list[float] | None = None
         self._thread: threading.Thread | None = None
         self._result: tuple[dict[str, list[float]], list[float]] | None = None
         self._error: str | None = None
         self._progress: tuple[int, int] | None = None
+        self._active_keys: set[str] = set()
+        self._tombstones: set[str] = set()
         self._cache_path: Path = ANALYSIS_CACHE_FILE
         self._model_path: Path = artifacts.DEFAULT_MODEL_PATH
         self.model_probs = prob_cache.load(self._cache_path, self._model_path)
@@ -62,12 +66,14 @@ class AnalysisManager:
         既有預測會被誤判為「已分析」而永遠不會重新推論。啟動時檢查一次，
         讓所有圖片重新回到「尚未分析」狀態，交由既有的補跑邏輯全部重算。
         """
-        if self.model_probs is None:
-            return False
+        with self._state_lock:
+            if self.model_probs is None:
+                return False
         if not _pkg.has_pending_update():
             return False
-        self.model_probs = None
-        self.model_thresholds = None
+        with self._state_lock:
+            self.model_probs = None
+            self.model_thresholds = None
         return True
 
     @property
@@ -76,7 +82,8 @@ class AnalysisManager:
 
     @property
     def has_results(self) -> bool:
-        return self.model_probs is not None
+        with self._state_lock:
+            return self.model_probs is not None
 
     def collect_samples(
         self,
@@ -112,44 +119,63 @@ class AnalysisManager:
         if self.is_running:
             return
 
-        self._result = None
-        self._error = None
-        self._progress = None
-        self._thread = threading.Thread(
-            target=self._run,
-            args=(samples, keys),
-            daemon=True,
-        )
-        self._thread.start()
+        with self._state_lock:
+            self._result = None
+            self._error = None
+            self._progress = None
+            self._active_keys = set(keys)
+            self._tombstones.clear()
+            self._thread = threading.Thread(
+                target=self._run,
+                args=(samples, keys),
+                daemon=True,
+            )
+            self._thread.start()
 
         def poll() -> None:
             if self.is_running:
-                if on_progress is not None and self._progress is not None:
-                    done, total = self._progress
+                with self._state_lock:
+                    progress = self._progress
+                if on_progress is not None and progress is not None:
+                    done, total = progress
                     on_progress(done, total)
                 root.after(200, poll)
                 return
-            self._thread = None
-            if self._error is not None:
-                err = self._error
+            with self._state_lock:
+                self._thread = None
+                error = self._error
+                result = self._result
                 self._error = None
-                on_error(err)
-                return
-            if self._result is not None:
-                new_probs, new_thresholds = self._result
                 self._result = None
-                if self.model_probs is None:
-                    self.model_probs = new_probs
-                else:
-                    merged = dict(self.model_probs)
-                    merged.update(new_probs)
-                    self.model_probs = merged
-                self.model_thresholds = new_thresholds
-                if self.model_probs is not None:
+                cache_probs: dict[str, list[float]] | None = None
+                if error is None and result is not None:
+                    new_probs, new_thresholds = result
+                    new_probs = {
+                        key: probs
+                        for key, probs in new_probs.items()
+                        if key not in self._tombstones
+                    }
+                    if self.model_probs is None:
+                        self.model_probs = new_probs
+                    else:
+                        merged = dict(self.model_probs)
+                        merged.update(new_probs)
+                        self.model_probs = merged
+                    self.model_thresholds = new_thresholds
+                    cache_probs = (
+                        dict(self.model_probs) if self.model_probs is not None else None
+                    )
+                self._active_keys.clear()
+                self._tombstones.clear()
+            if error is not None:
+                on_error(error)
+                return
+            if result is not None:
+                if cache_probs is not None:
                     prob_cache.save(
                         self._cache_path,
                         self._model_path,
-                        self.model_probs,
+                        cache_probs,
                     )
                 on_complete()
 
@@ -166,8 +192,15 @@ class AnalysisManager:
             result: dict[str, list[float]] = {}
             total = len(samples)
             for i, ((img_path, _labels), key) in enumerate(zip(samples, keys)):
-                pred = _pkg.predict(img_path)
-                result[key] = [
+                try:
+                    pred = _pkg.predict(img_path)
+                except Exception:
+                    with self._state_lock:
+                        if key in self._tombstones:
+                            self._progress = (i + 1, total)
+                            continue
+                    raise
+                probs = [
                     pred.twilight_sparkle,
                     pred.rarity,
                     pred.fluttershy,
@@ -175,39 +208,151 @@ class AnalysisManager:
                     pred.pinkie_pie,
                     pred.applejack,
                 ]
-                self._progress = (i + 1, total)
-            self._result = (result, thresholds)
+                with self._state_lock:
+                    if key not in self._tombstones:
+                        result[key] = probs
+                    self._progress = (i + 1, total)
+            with self._state_lock:
+                result = {
+                    key: probs
+                    for key, probs in result.items()
+                    if key not in self._tombstones
+                }
+                self._result = (result, thresholds)
         except Exception as e:
-            self._error = str(e)
+            with self._state_lock:
+                self._error = str(e)
 
     def get_image_probs(self, key: str) -> list[float] | None:
         """取得指定圖片的模型預測機率。"""
-        if self.model_probs is None:
-            return None
-        return self.model_probs.get(key)
+        with self._state_lock:
+            if self.model_probs is None:
+                return None
+            return self.model_probs.get(key)
 
     def rename_key(self, old_key: str, new_key: str) -> None:
         """同步圖片搬移後的 key 變更，避免遺失既有預測結果。"""
-        if self.model_probs is None:
-            return
-        if old_key in self.model_probs:
-            self.model_probs[new_key] = self.model_probs.pop(old_key)
+        with self._state_lock:
+            if old_key in self._active_keys:
+                self._tombstones.add(old_key)
+            if self.model_probs is not None and old_key in self.model_probs:
+                self.model_probs[new_key] = self.model_probs.pop(old_key)
+            if self._result is not None:
+                pending, thresholds = self._result
+                if old_key in pending:
+                    pending = dict(pending)
+                    pending[new_key] = pending.pop(old_key)
+                    self._result = (pending, thresholds)
 
     def delete_key(self, key: str) -> None:
         """移除已刪除圖片對應的預測結果。"""
-        if self.model_probs is None:
-            return
-        self.model_probs.pop(key, None)
+        with self._state_lock:
+            if key in self._active_keys:
+                self._tombstones.add(key)
+            if self.model_probs is not None:
+                self.model_probs.pop(key, None)
+            if self._result is not None and key in self._result[0]:
+                pending, thresholds = self._result
+                pending = dict(pending)
+                pending.pop(key, None)
+                self._result = (pending, thresholds)
 
     def delete_keys(self, keys: list[str]) -> None:
         """批次移除多張已不存在圖片的預測結果。"""
         for key in keys:
             self.delete_key(key)
 
+    def purge_source(self, source_stem: str) -> list[str]:
+        """Remove every cached, pending, or active key for one retired source."""
+        with self._state_lock:
+            keys: set[str] = set(self._active_keys)
+            if self.model_probs is not None:
+                keys.update(self.model_probs)
+            if self._result is not None:
+                keys.update(self._result[0])
+            matches = {
+                key
+                for key in keys
+                if (parsed := parse_key_identity(key)) is not None
+                and parsed.source_stem == source_stem
+            }
+            self._tombstones.update(matches & self._active_keys)
+            if self.model_probs is not None:
+                for key in matches:
+                    self.model_probs.pop(key, None)
+            if self._result is not None:
+                pending, thresholds = self._result
+                self._result = (
+                    {
+                        key: value
+                        for key, value in pending.items()
+                        if key not in matches
+                    },
+                    thresholds,
+                )
+            return sorted(matches)
+
+    @staticmethod
+    def _safe_existing_cache_path(image_dir: Path, key: str) -> bool:
+        normalized = key.replace("\\", "/")
+        relative = PurePosixPath(normalized)
+        if (
+            not normalized
+            or relative.is_absolute()
+            or any(part in {"", ".", ".."} for part in relative.parts)
+        ):
+            return False
+        path = image_dir.joinpath(*relative.parts)
+        try:
+            path.resolve(strict=False).relative_to(image_dir.resolve(strict=True))
+        except OSError, ValueError:
+            return False
+        return path.is_file()
+
+    def purge_missing_files(self, image_dir: Path) -> list[str]:
+        """Drop startup cache orphans while retaining any existing image file."""
+        with self._state_lock:
+            if self.model_probs is None:
+                return []
+            missing = sorted(
+                key
+                for key in self.model_probs
+                if not self._safe_existing_cache_path(image_dir, key)
+            )
+        self.delete_keys(missing)
+        return missing
+
     def save_cache(self) -> None:
         """將目前的 model_probs 寫回 analysis_cache.json。"""
-        if self.model_probs is not None:
-            prob_cache.save(self._cache_path, self._model_path, self.model_probs)
+        with self._state_lock:
+            probs = dict(self.model_probs) if self.model_probs is not None else None
+        if probs is not None:
+            prob_cache.save(self._cache_path, self._model_path, probs)
+
+    def save_cache_fail_safe(self) -> bool:
+        """Persist derived predictions or invalidate them completely on failure.
+
+        Label/file changes are the source of truth and may already be committed when
+        this runs. A stale cache is therefore removed and in-memory predictions are
+        cleared instead of letting a cache error leave keys pointing at old paths.
+        """
+        with self._state_lock:
+            if self.model_probs is None:
+                return True
+        try:
+            self.save_cache()
+        except Exception:
+            with self._state_lock:
+                self.model_probs = None
+                self.model_thresholds = None
+            try:
+                self._cache_path.unlink(missing_ok=True)
+            except OSError as cleanup_error:
+                raise RuntimeError(
+                    "Prediction cache save failed and stale cache removal also failed"
+                ) from cleanup_error
+            return False
+        return True
 
 
 class AnalysisTable:

@@ -3,6 +3,7 @@
 import json
 from pathlib import Path
 
+from .atomic_io import atomic_write, restore_file
 from .constants import IMAGE_DIR
 
 
@@ -14,6 +15,11 @@ class LabelStore:
         self._subdir = image_subdir
         self._data: dict[str, list[int]] = {}
         self._load()
+
+    @property
+    def file_path(self) -> Path:
+        """Metadata path used by the crash-recovery transaction journal."""
+        return self._file
 
     def _load(self) -> None:
         if not self._file.exists():
@@ -48,7 +54,7 @@ class LabelStore:
 
     def set(self, key: str, labels: list[int]) -> None:
         if labels:
-            self._data[key] = labels
+            self._data[key] = list(labels)
         elif key in self._data:
             del self._data[key]
 
@@ -68,6 +74,22 @@ class LabelStore:
         """回傳所有 key。"""
         return list(self._data)
 
+    def snapshot(self) -> dict[str, list[int]]:
+        """建立可供交易失敗時復原的獨立快照。"""
+        return {key: list(labels) for key, labels in self._data.items()}
+
+    def restore(self, snapshot: dict[str, list[int]]) -> None:
+        """以先前建立的快照復原記憶體狀態。"""
+        self._data = {key: list(labels) for key, labels in snapshot.items()}
+
+    def persisted_snapshot(self) -> bytes | None:
+        """取得 labels.json 原始內容，供跨檔案交易 rollback。"""
+        return self._file.read_bytes() if self._file.exists() else None
+
+    def restore_persisted(self, snapshot: bytes | None) -> None:
+        """原子復原先前的 labels.json；原本不存在時移除新檔。"""
+        restore_file(self._file, snapshot)
+
     def purge_orphans(self, base_dir: Path) -> list[str]:
         """移除檔案不存在的孤兒 entries，回傳被清除的 keys。"""
         orphans = [k for k in self._data if not (base_dir / k).is_file()]
@@ -76,10 +98,9 @@ class LabelStore:
         return orphans
 
     def save(self) -> None:
-        self._file.write_text(
-            json.dumps(self._data, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
+        """以同目錄暫存檔原子替換 labels.json。"""
+        payload = json.dumps(self._data, ensure_ascii=False, indent=2).encode("utf-8")
+        atomic_write(self._file, payload)
 
     def path_to_key(self, p: Path) -> str:
         """將絕對路徑轉為 labels.json 的 key（相對於 IMAGE_DIR）。

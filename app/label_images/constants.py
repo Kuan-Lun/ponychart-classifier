@@ -15,7 +15,11 @@ IMAGE_SUBDIR = "rawimage"
 IMAGE_DIR = REPO_DIR / "rawimage"
 LABEL_FILE = IMAGE_DIR / "labels.json"
 ANALYSIS_CACHE_FILE = IMAGE_DIR / "analysis_cache.json"
+RETIREMENT_RECEIPT_FILE = IMAGE_DIR / "retirement_receipts.json"
 MAX_SIZE = ORIGINAL_IMAGE_SIZE.width
+
+# 只比較 PonyChart 檔名中的 YYYYMMDD_HHMMSS；後方 microseconds 不參與門檻判定。
+RETIREMENT_CUTOFF = "20260825_000000"
 
 # 裁切框：長寬比鎖定為 INPUT_SIZE，確保訓練時 resize 不會造成比例失真
 CROP_ASPECT_RATIO = INPUT_SIZE.width / INPUT_SIZE.height

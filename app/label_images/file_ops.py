@@ -13,6 +13,7 @@ from ponychart_classifier.image_names import (
     SUPPORTED_IMAGE_SUFFIXES,
     is_crop,
     is_original,
+    parse_image_name,
 )
 
 from .constants import (
@@ -81,12 +82,21 @@ def organize_single(current_path: Path, labels: list[int]) -> Path:
             return target
         conflict_dir = IMAGE_DIR / CONFLICT_SUBDIR
         conflict_dir.mkdir(parents=True, exist_ok=True)
-        conflict_path = conflict_dir / current_path.name
+        parsed = parse_image_name(current_path.name)
+        identity_stem = current_path.stem
+        if parsed is not None:
+            identity_stem = parsed.source_stem
+            if parsed.crop_index is not None:
+                identity_stem += f"_crop{parsed.crop_index}"
         n = 1
+        conflict_path = conflict_dir / (
+            f"{identity_stem}_conflict{n}{current_path.suffix}"
+        )
         while conflict_path.exists():
-            stem = f"{current_path.stem}_{n}"
-            conflict_path = conflict_dir / f"{stem}{current_path.suffix}"
             n += 1
+            conflict_path = conflict_dir / (
+                f"{identity_stem}_conflict{n}{current_path.suffix}"
+            )
         shutil.move(str(current_path), str(conflict_path))
         return conflict_path
     shutil.move(str(current_path), str(target))
