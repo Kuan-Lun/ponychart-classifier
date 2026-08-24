@@ -77,19 +77,19 @@ def _build_efficientnet_b4(pretrained: bool) -> nn.Module:
 # Backbone reference specs (ImageNet defaults; not used at runtime)
 # Train mem is approximate — activation overhead means larger models scale slightly
 # higher than the param ratio alone; use as a rough OOM risk guide.
-# Orig divisor = sqrt((554 × 1004) / (ImageNet width × height)).  Divide
+# Orig divisor = sqrt((550 × 1000) / (ImageNet width × height)).  Divide
 # both original dimensions by this value to preserve the original aspect ratio
 # at roughly the same pixel count as the square ImageNet input.
 #
 # Backbone            ImageNet size  Orig divisor  Params   ONNX size  Train mem (×B0, approx)
 # ------------------  -------------  ------------  -------  ---------  -----------------------
-# mobilenet_v3_small  224×224        3.33×         2.5 M    ~4 MB      ~0.5×
-# mobilenet_v3_large  224×224        3.33×         5.4 M    ~9 MB      ~1.0×
-# efficientnet_b0     224×224        3.33×         5.3 M    ~11 MB     1.0× (baseline)
-# efficientnet_b1     240×240        3.11×         7.8 M    ~15 MB     ~1.5×
-# efficientnet_b2     260×260        2.87×         9.1 M    ~18 MB     ~1.7×
-# efficientnet_b3     300×300        2.49×         12 M     ~24 MB     ~2.3×
-# efficientnet_b4     380×380        1.96×         19 M     ~67 MB     ~3.6×
+# mobilenet_v3_small  224×224        3.31×         2.5 M    ~4 MB      ~0.5×
+# mobilenet_v3_large  224×224        3.31×         5.4 M    ~9 MB      ~1.0×
+# efficientnet_b0     224×224        3.31×         5.3 M    ~11 MB     1.0× (baseline)
+# efficientnet_b1     240×240        3.09×         7.8 M    ~15 MB     ~1.5×
+# efficientnet_b2     260×260        2.85×         9.1 M    ~18 MB     ~1.7×
+# efficientnet_b3     300×300        2.47×         12 M     ~24 MB     ~2.3×
+# efficientnet_b4     380×380        1.95×         19 M     ~67 MB     ~3.6×
 BACKBONE_REGISTRY: dict[str, BackboneConfig] = {
     "mobilenet_v3_small": BackboneConfig(
         name="mobilenet_v3_small",

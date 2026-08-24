@@ -5,6 +5,7 @@ from pathlib import Path
 from ponychart_classifier.model_spec import (
     DISPLAY_NAME_BY_CLASS,
     INPUT_SIZE,
+    ORIGINAL_IMAGE_SIZE,
     PONY_CLASSES,
 )
 
@@ -14,7 +15,7 @@ IMAGE_SUBDIR = "rawimage"
 IMAGE_DIR = REPO_DIR / "rawimage"
 LABEL_FILE = IMAGE_DIR / "labels.json"
 ANALYSIS_CACHE_FILE = IMAGE_DIR / "analysis_cache.json"
-MAX_SIZE = 1004
+MAX_SIZE = ORIGINAL_IMAGE_SIZE.width
 
 # 裁切框：長寬比鎖定為 INPUT_SIZE，確保訓練時 resize 不會造成比例失真
 CROP_ASPECT_RATIO = INPUT_SIZE.width / INPUT_SIZE.height

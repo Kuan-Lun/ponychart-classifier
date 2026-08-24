@@ -25,9 +25,13 @@ def test_find_candidates_returns_small_crops(
     small_crop_name = "pony_chart_20240101_000000_000000_abcdefgh_crop1.png"
     large_crop_name = "pony_chart_20240101_000000_000000_abcdefgh_crop2.png"
 
-    _make_image(tmp_path / orig_name, (1004, 1004))
-    _make_image(tmp_path / small_crop_name, (200, 100))  # min < 554 -> too small
-    _make_image(tmp_path / large_crop_name, (600, 600))  # min >= 554 -> ok
+    _make_image(tmp_path / orig_name, (1000, 1000))
+    _make_image(
+        tmp_path / small_crop_name, (200, 100)
+    )  # 短邊 < _CROP_MIN_SHORT_SIDE -> too small
+    _make_image(
+        tmp_path / large_crop_name, (600, 600)
+    )  # 短邊 >= _CROP_MIN_SHORT_SIDE -> ok
 
     monkeypatch.setattr(script, "IMAGE_DIR", tmp_path)
 
@@ -111,7 +115,7 @@ def test_find_candidates_with_require_includes_match(
     orig_name = "pony_chart_20240101_000000_000000_abcdefgh.png"
     small_crop_name = "pony_chart_20240101_000000_000000_abcdefgh_crop1.png"
 
-    _make_image(tmp_path / orig_name, (1004, 1004))
+    _make_image(tmp_path / orig_name, (1000, 1000))
     _make_image(tmp_path / small_crop_name, (200, 100))
 
     monkeypatch.setattr(script, "IMAGE_DIR", tmp_path)
@@ -134,7 +138,7 @@ def test_find_candidates_with_require_excludes_mismatch(
     orig_name = "pony_chart_20240101_000000_000000_abcdefgh.png"
     small_crop_name = "pony_chart_20240101_000000_000000_abcdefgh_crop1.png"
 
-    _make_image(tmp_path / orig_name, (1004, 1004))
+    _make_image(tmp_path / orig_name, (1000, 1000))
     _make_image(tmp_path / small_crop_name, (200, 100))
 
     monkeypatch.setattr(script, "IMAGE_DIR", tmp_path)
