@@ -14,7 +14,7 @@ from ponychart_classifier.image_names import parse_image_name
 from .atomic_io import atomic_write, durable_mkdir, fsync_directory, restore_file
 from .source_identity import parse_key_identity, parse_path_identity
 
-_JOURNAL_VERSION = 1
+_JOURNAL_VERSION = 2
 _TRANSACTION_ID_RE = re.compile(r"[0-9a-f]{32}")
 _PHASE_PREPARED = "prepared"
 _PHASE_COMMITTED = "committed"
@@ -32,7 +32,6 @@ class RetirementJournal:
     source_stem: str
     candidate_paths: tuple[PurePosixPath, ...]
     labels_before: bytes | None
-    ledger_before: bytes | None
     phase: str
 
 
@@ -86,7 +85,6 @@ def _payload(journal: RetirementJournal, image_dir: Path) -> bytes:
             "source_stem": journal.source_stem,
             "candidate_paths": [path.as_posix() for path in journal.candidate_paths],
             "labels_before": _encode_snapshot(journal.labels_before),
-            "ledger_before": _encode_snapshot(journal.ledger_before),
             "phase": journal.phase,
         },
         ensure_ascii=True,
@@ -110,7 +108,6 @@ def _load(image_dir: Path) -> RetirementJournal:
         "source_stem",
         "candidate_paths",
         "labels_before",
-        "ledger_before",
         "phase",
     }
     if not isinstance(raw, dict) or set(raw) != expected_fields:
@@ -167,7 +164,6 @@ def _load(image_dir: Path) -> RetirementJournal:
         source_stem=source_stem,
         candidate_paths=candidate_paths,
         labels_before=_decode_snapshot(raw.get("labels_before"), "labels"),
-        ledger_before=_decode_snapshot(raw.get("ledger_before"), "ledger"),
         phase=phase,
     )
 
@@ -210,27 +206,19 @@ def _validate_staging_contents(
             raise RetirementRecoveryError("Unexpected retirement staging content")
 
 
-def _validate_metadata_paths(
-    image_dir: Path, label_file: Path, ledger_file: Path
-) -> None:
+def _validate_metadata_paths(image_dir: Path, label_file: Path) -> None:
     expected_parent = image_dir.resolve(strict=True)
-    for path in (label_file, ledger_file):
-        try:
-            parent = path.parent.resolve(strict=True)
-        except OSError as error:
-            raise RetirementRecoveryError(
-                "Metadata directory is unavailable"
-            ) from error
-        if parent != expected_parent or path.is_symlink():
-            raise RetirementRecoveryError("Unsafe retirement metadata path")
+    try:
+        parent = label_file.parent.resolve(strict=True)
+    except OSError as error:
+        raise RetirementRecoveryError("Metadata directory is unavailable") from error
+    if parent != expected_parent or label_file.is_symlink():
+        raise RetirementRecoveryError("Unsafe retirement metadata path")
 
 
-def _validate_committed_metadata(
-    journal: RetirementJournal, label_file: Path, ledger_file: Path
-) -> None:
+def _validate_committed_metadata(journal: RetirementJournal, label_file: Path) -> None:
     try:
         labels: object = json.loads(label_file.read_text(encoding="utf-8"))
-        ledger: object = json.loads(ledger_file.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
         raise RetirementRecoveryError(
             "Committed retirement metadata is unreadable"
@@ -246,23 +234,6 @@ def _validate_committed_metadata(
         parsed = parse_key_identity(str(key))
         if parsed is not None and parsed.source_stem in candidate_sources:
             raise RetirementRecoveryError("Committed labels retain retired source")
-    receipts = (
-        ledger.get("completed_source_stems") if isinstance(ledger, dict) else None
-    )
-    if (
-        not isinstance(ledger, dict)
-        or ledger.get("version") != 1
-        or not isinstance(receipts, list)
-        or not all(
-            isinstance(source, str)
-            and (parsed := parse_image_name(source)) is not None
-            and parsed.is_original
-            and parsed.source_stem == source
-            for source in receipts
-        )
-        or journal.source_stem not in receipts
-    ):
-        raise RetirementRecoveryError("Committed receipt metadata is inconsistent")
 
 
 def _best_effort_remove_unowned_staging(staging_dir: Path) -> None:
@@ -283,7 +254,6 @@ def prepare_retirement_journal(
     source_stem: str,
     candidate_paths: tuple[Path, ...],
     labels_before: bytes | None,
-    ledger_before: bytes | None,
 ) -> RetirementJournal:
     """Durably record prior state before staging any candidate file."""
     journal_path = journal_path_for(image_dir)
@@ -305,7 +275,6 @@ def prepare_retirement_journal(
         source_stem=source_stem,
         candidate_paths=tuple(sorted(relative_paths, key=lambda item: item.as_posix())),
         labels_before=labels_before,
-        ledger_before=ledger_before,
         phase=_PHASE_PREPARED,
     )
     staging_dir = staging_path_for(image_dir, journal.transaction_id)
@@ -362,14 +331,12 @@ def mark_retirement_committed(
     return committed
 
 
-def committed_retirement_is_valid(
-    image_dir: Path, label_file: Path, ledger_file: Path
-) -> bool:
+def committed_retirement_is_valid(image_dir: Path, label_file: Path) -> bool:
     """Confirm the irreversible commit boundary without changing any state."""
     journal = _load(image_dir)
     if journal.phase != _PHASE_COMMITTED:
         return False
-    _validate_metadata_paths(image_dir, label_file, ledger_file)
+    _validate_metadata_paths(image_dir, label_file)
     staging_dir = staging_path_for(image_dir, journal.transaction_id)
     locations = _candidate_locations(image_dir, journal)
     _validate_staging_contents(staging_dir, locations)
@@ -378,7 +345,7 @@ def committed_retirement_is_valid(
             raise RetirementRecoveryError(
                 "Committed retirement candidate unexpectedly exists"
             )
-    _validate_committed_metadata(journal, label_file, ledger_file)
+    _validate_committed_metadata(journal, label_file)
     return True
 
 
@@ -395,9 +362,7 @@ def clear_retirement_journal(image_dir: Path) -> None:
     fsync_directory(path.parent)
 
 
-def recover_retirement_transaction(
-    image_dir: Path, label_file: Path, ledger_file: Path
-) -> bool:
+def recover_retirement_transaction(image_dir: Path, label_file: Path) -> bool:
     """Recover one pending transaction, returning whether a journal existed.
 
     Prepared transactions are rolled back exactly. Committed transactions retain
@@ -408,7 +373,7 @@ def recover_retirement_transaction(
     if not journal_path.exists() and not journal_path.is_symlink():
         return False
     journal = _load(image_dir)
-    _validate_metadata_paths(image_dir, label_file, ledger_file)
+    _validate_metadata_paths(image_dir, label_file)
     staging_dir = staging_path_for(image_dir, journal.transaction_id)
     locations = _candidate_locations(image_dir, journal)
     _validate_staging_contents(staging_dir, locations)
@@ -433,14 +398,13 @@ def recover_retirement_transaction(
             fsync_directory(staged.parent)
             fsync_directory(original.parent)
         restore_file(label_file, journal.labels_before)
-        restore_file(ledger_file, journal.ledger_before)
     else:
         for original, _staged in locations:
             if original.exists() or original.is_symlink():
                 raise RetirementRecoveryError(
                     "Committed retirement candidate unexpectedly exists"
                 )
-        _validate_committed_metadata(journal, label_file, ledger_file)
+        _validate_committed_metadata(journal, label_file)
 
     _remove_staging(staging_dir)
     clear_retirement_journal(image_dir)

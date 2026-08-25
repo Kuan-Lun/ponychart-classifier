@@ -8,7 +8,7 @@ import tkinter as tk
 from tkinter import messagebox
 
 from .app import LabelApp
-from .constants import IMAGE_DIR, LABEL_FILE, RETIREMENT_RECEIPT_FILE
+from .constants import IMAGE_DIR, LABEL_FILE
 from .file_ops import scan_image_paths
 from .retirement_journal import (
     RetirementRecoveryError,
@@ -21,11 +21,7 @@ def main() -> None:
         messagebox.showerror("Error", f"找不到資料夾: {IMAGE_DIR}")
         return
     try:
-        recover_retirement_transaction(
-            IMAGE_DIR,
-            LABEL_FILE,
-            RETIREMENT_RECEIPT_FILE,
-        )
+        recover_retirement_transaction(IMAGE_DIR, LABEL_FILE)
     except (OSError, RetirementRecoveryError) as error:
         messagebox.showerror(
             "Retirement Recovery Error",

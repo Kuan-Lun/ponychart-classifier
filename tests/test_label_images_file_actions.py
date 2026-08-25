@@ -91,7 +91,6 @@ def _pending_journal(image_dir: Path, journal_kind: str) -> Path:
             "pony_chart_20260826_000001_000000_journal1",
             (),
             None,
-            None,
         )
     else:
         journal.write_text("{malformed", encoding="utf-8")

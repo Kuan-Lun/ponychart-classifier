@@ -1,4 +1,4 @@
-"""以新 canonical 原圖漸進取代最舊的已標註來源樣本。"""
+"""以新 canonical 原圖按 N:1 比例漸進取代最舊的已標註來源樣本。"""
 
 import dataclasses
 from collections.abc import Callable
@@ -7,7 +7,7 @@ from pathlib import Path
 from ponychart_classifier.image_names import ParsedImageName
 
 from .atomic_io import durable_mkdir, fsync_directory
-from .constants import RETIREMENT_CUTOFF
+from .constants import NEW_SOURCES_PER_RETIREMENT, RETIREMENT_CUTOFF
 from .label_store import LabelStore
 from .retirement_journal import (
     RetirementRecoveryError,
@@ -18,7 +18,6 @@ from .retirement_journal import (
     recover_retirement_transaction,
     staging_path_for,
 )
-from .retirement_ledger import RetirementReceiptLedger
 from .source_identity import parse_key_identity, parse_path_identity
 
 
@@ -33,10 +32,9 @@ class RetiredSample:
 
 @dataclasses.dataclass(frozen=True)
 class SourceSavePlan:
-    """Receipt and optional one-for-one retirement due on successful save."""
+    """One retirement due when this first-time original save succeeds."""
 
     source_stem: str
-    retire_oldest: bool
 
 
 @dataclasses.dataclass(frozen=True)
@@ -62,38 +60,35 @@ def plan_source_save(
     path: Path,
     labels: list[int],
     store: LabelStore,
-    ledger: RetirementReceiptLedger,
 ) -> SourceSavePlan | None:
-    """Plan a once-only receipt and possible retirement for an original save.
+    """Plan a retirement for every Nth first-time post-cutoff original save.
 
-    Existing labeled originals without a receipt are upgrade/backfill cases: their next
-    successful save records a receipt without retiring again. Crop labels never count.
+    The tally of labeled post-cutoff sources (including this save) is derived from
+    the label store, so no counter is persisted. Repeat saves of an already labeled
+    source never trigger, and crop labels never count.
     """
     parsed = parse_path_identity(path)
     if (
         parsed is None
         or not parsed.is_original
         or _capture_second(parsed) <= RETIREMENT_CUTOFF
-        or ledger.contains(parsed.source_stem)
+        or not labels
     ):
         return None
 
-    was_labeled = False
-    for key in store.all_keys():
-        existing = parse_key_identity(key)
-        if (
-            existing is not None
-            and existing.is_original
-            and existing.source_stem == parsed.source_stem
-            and bool(store.get(key))
-        ):
-            was_labeled = True
-            break
-    if was_labeled:
-        return SourceSavePlan(parsed.source_stem, retire_oldest=False)
-    if labels:
-        return SourceSavePlan(parsed.source_stem, retire_oldest=True)
-    return None
+    labeled_new_sources = {
+        existing.source_stem
+        for key in store.all_keys()
+        if (existing := parse_key_identity(key)) is not None
+        and existing.is_original
+        and _capture_second(existing) > RETIREMENT_CUTOFF
+        and bool(store.get(key))
+    }
+    if parsed.source_stem in labeled_new_sources:
+        return None
+    if (len(labeled_new_sources) + 1) % NEW_SOURCES_PER_RETIREMENT != 0:
+        return None
+    return SourceSavePlan(parsed.source_stem)
 
 
 def _find_candidate(
@@ -168,66 +163,57 @@ def _find_candidate(
 def save_and_retire_oldest_sample(
     image_dir: Path,
     store: LabelStore,
-    ledger: RetirementReceiptLedger,
     plan: SourceSavePlan,
     *,
     before_retire: Callable[[str], object] | None = None,
 ) -> RetiredSample | None:
-    """Atomically save labels, a once-only receipt, and optional retirement.
+    """Atomically save labels and retire the oldest labeled source, if any.
 
-    Old files are renamed outside ``image_dir`` before the two metadata files commit.
-    An ordinary exception restores staged files, exact previous metadata bytes, and
-    both in-memory stores. No-candidate saves still persist the receipt.
+    Old files are renamed outside ``image_dir`` before the label file commits.
+    An ordinary exception restores staged files, exact previous label bytes, and
+    the in-memory store. Without a candidate this is an ordinary label save.
     """
     # Candidate discovery is read-only but must never advance while a prior journal
     # remains unresolved, even when that journal is malformed.
     ensure_no_pending_retirement(image_dir)
-    candidate = (
-        _find_candidate(image_dir, store, plan.source_stem)
-        if plan.retire_oldest
-        else None
-    )
+    candidate = _find_candidate(image_dir, store, plan.source_stem)
+    if candidate is None:
+        store.save()
+        return None
     store_snapshot = store.snapshot()
     persisted_store = store.persisted_snapshot()
-    ledger_snapshot = ledger.snapshot()
-    candidate_paths = candidate.paths if candidate is not None else ()
     journal = prepare_retirement_journal(
         image_dir,
         plan.source_stem,
-        candidate_paths,
+        candidate.paths,
         persisted_store,
-        ledger_snapshot.persisted,
     )
     staging_dir = staging_path_for(image_dir, journal.transaction_id)
     try:
-        if candidate is not None:
-            # Tombstone active/background analysis keys while every source file
-            # still exists. A prediction that starts after this point can then
-            # safely treat FileNotFoundError from the move as a retired sample.
-            if before_retire is not None:
-                before_retire(candidate.source_stem)
-            if staging_dir.is_symlink() or not staging_dir.is_dir():
-                raise RetirementRecoveryError("Unsafe retirement staging root")
-            for original_path in candidate.paths:
-                relative_path = original_path.relative_to(image_dir)
-                staged_path = staging_dir / relative_path
-                durable_mkdir(staged_path.parent)
-                original_path.replace(staged_path)
-                fsync_directory(original_path.parent)
-                fsync_directory(staged_path.parent)
+        # Tombstone active/background analysis keys while every source file
+        # still exists. A prediction that starts after this point can then
+        # safely treat FileNotFoundError from the move as a retired sample.
+        if before_retire is not None:
+            before_retire(candidate.source_stem)
+        if staging_dir.is_symlink() or not staging_dir.is_dir():
+            raise RetirementRecoveryError("Unsafe retirement staging root")
+        for original_path in candidate.paths:
+            relative_path = original_path.relative_to(image_dir)
+            staged_path = staging_dir / relative_path
+            durable_mkdir(staged_path.parent)
+            original_path.replace(staged_path)
+            fsync_directory(original_path.parent)
+            fsync_directory(staged_path.parent)
 
-            for key in candidate.label_keys:
-                store.delete(key)
+        for key in candidate.label_keys:
+            store.delete(key)
         store.save()
-        ledger.record(plan.source_stem)
-        ledger.save()
         journal = mark_retirement_committed(image_dir, journal)
     except Exception as error:
         try:
             crossed_commit_boundary = committed_retirement_is_valid(
                 image_dir,
                 store.file_path,
-                ledger.file_path,
             )
         except Exception:
             crossed_commit_boundary = False
@@ -237,23 +223,14 @@ def save_and_retire_oldest_sample(
             # to LabelActions: its rollback would resurrect old metadata after the
             # retired files crossed the irreversible boundary.
             try:
-                recover_retirement_transaction(
-                    image_dir,
-                    store.file_path,
-                    ledger.file_path,
-                )
+                recover_retirement_transaction(image_dir, store.file_path)
             except Exception:
                 pass
         else:
             store.restore(store_snapshot)
-            ledger.restore_memory(ledger_snapshot)
             rollback_errors: list[BaseException] = []
             try:
-                recover_retirement_transaction(
-                    image_dir,
-                    store.file_path,
-                    ledger.file_path,
-                )
+                recover_retirement_transaction(image_dir, store.file_path)
             except Exception as restore_error:
                 rollback_errors.append(restore_error)
             if rollback_errors:
@@ -267,15 +244,9 @@ def save_and_retire_oldest_sample(
     # startup keeps metadata and only finishes deleting the staging tree.  Ordinary
     # cleanup errors likewise leave the journal in place to fail closed next time.
     try:
-        recover_retirement_transaction(
-            image_dir,
-            store.file_path,
-            ledger.file_path,
-        )
+        recover_retirement_transaction(image_dir, store.file_path)
     except Exception:
         pass
-    if candidate is None:
-        return None
     return RetiredSample(
         source_stem=candidate.source_stem,
         paths=candidate.paths,

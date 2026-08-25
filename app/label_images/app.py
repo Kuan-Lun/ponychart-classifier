@@ -15,7 +15,6 @@ from .constants import (
     IMAGE_SUBDIR,
     LABEL_FILE,
     LABEL_MAP,
-    RETIREMENT_RECEIPT_FILE,
 )
 from .data_viewer import DataOverviewViewer, ModelInfoViewer, ValF1Viewer
 from .file_actions import FileActions
@@ -30,7 +29,6 @@ from .image_viewer import ImageViewer
 from .label_store import LabelStore
 from .mutation_guard import RawImageMutationGuard
 from .navigator import ImageNavigator
-from .retirement_ledger import RetirementReceiptLedger
 from .sample_retirement import (
     plan_source_save,
     save_and_retire_oldest_sample,
@@ -148,13 +146,9 @@ class _LabelActions:
             old_path,
             a.current_labels,
             a.store,
-            a.retirement_receipts,
         )
         store_snapshot = a.store.snapshot()
         persisted_store = a.store.persisted_snapshot()
-        ledger_snapshot = (
-            a.retirement_receipts.snapshot() if retirement_plan is not None else None
-        )
         expected_target = target_path_for(old_path.name, a.current_labels)
         target_existed = expected_target.exists()
         new_path = old_path
@@ -173,7 +167,6 @@ class _LabelActions:
                 retired = save_and_retire_oldest_sample(
                     IMAGE_DIR,
                     a.store,
-                    a.retirement_receipts,
                     retirement_plan,
                     before_retire=a.analysis.purge_source,
                 )
@@ -184,11 +177,6 @@ class _LabelActions:
                 a.store.restore_persisted(persisted_store)
             except OSError as restore_error:
                 rollback_errors.append(restore_error)
-            if ledger_snapshot is not None:
-                try:
-                    a.retirement_receipts.restore(ledger_snapshot)
-                except OSError as restore_error:
-                    rollback_errors.append(restore_error)
             try:
                 _rollback_organized_path(
                     old_path,
@@ -425,7 +413,6 @@ class LabelApp:
     def __init__(self, root: tk.Tk, image_paths: list[Path]):
         self.root = root
         self.store = LabelStore(LABEL_FILE, IMAGE_SUBDIR)
-        self.retirement_receipts = RetirementReceiptLedger(RETIREMENT_RECEIPT_FILE)
         self.mutation_guard = RawImageMutationGuard(IMAGE_DIR)
         self.nav = ImageNavigator(image_paths, self.store)
         self.analysis = AnalysisManager()

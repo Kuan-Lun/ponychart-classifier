@@ -307,11 +307,6 @@ def test_startup_recovers_before_scanning_images(
     fake_root = SimpleNamespace(mainloop=lambda: events.append("mainloop"))
     monkeypatch.setattr(label_images_main, "IMAGE_DIR", image_dir)
     monkeypatch.setattr(label_images_main, "LABEL_FILE", image_dir / "labels.json")
-    monkeypatch.setattr(
-        label_images_main,
-        "RETIREMENT_RECEIPT_FILE",
-        image_dir / "retirement_receipts.json",
-    )
 
     def recover(*args: object) -> bool:
         del args
@@ -557,7 +552,6 @@ def test_crop_save_is_unchanged_when_recovery_journal_is_pending(
             image_dir,
             "pony_chart_20260826_000001_000000_source01",
             (),
-            None,
             None,
         )
     else:
