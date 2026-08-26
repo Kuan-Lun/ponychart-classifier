@@ -3,7 +3,6 @@
 import functools
 import logging
 import os
-import shutil
 import ssl
 import sys
 import tempfile
@@ -187,12 +186,13 @@ def update_artifact(path: Path, filename: str) -> bool:
 
 
 def clear_artifacts() -> None:
-    """Delete the entire runtime artifact cache directory if it exists."""
-    if not DEFAULT_ARTIFACT_DIR.exists():
-        return
-    try:
-        shutil.rmtree(DEFAULT_ARTIFACT_DIR)
-    except OSError as exc:
-        raise RuntimeError(
-            f"Failed to clear runtime artifacts at {DEFAULT_ARTIFACT_DIR}: {exc}"
-        ) from exc
+    """Delete classifier-owned canonical artifacts without clearing shared state."""
+    for filename in (MODEL_FILENAME, THRESHOLDS_FILENAME):
+        artifact_path = DEFAULT_ARTIFACT_DIR / filename
+        for path in (artifact_path, _etag_path(artifact_path)):
+            try:
+                path.unlink(missing_ok=True)
+            except OSError as exc:
+                raise RuntimeError(
+                    f"Failed to clear runtime artifact at {path}: {exc}"
+                ) from exc

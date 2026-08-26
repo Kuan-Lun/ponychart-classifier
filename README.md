@@ -172,7 +172,7 @@ with open("path/to/image.png", "rb") as image_file:
 # 取得各角色的分類閾值
 thresholds: ClassThresholds = get_thresholds()
 
-# 清除 runtime cache，下一次載入時會重新下載
+# 清除 classifier 自己的 canonical artifacts，下一次載入時會重新下載
 clear_artifacts()
 ```
 
@@ -200,6 +200,8 @@ with open("path/to/image.png", "rb") as image_file:
 - Windows: `%LOCALAPPDATA%\\ponychart-classifier\\Cache\\`
 
 這些檔案不隨 package 發佈；若 cache 被清掉，下一次 `preload()`、`predict()` 或 `update()` 會重新下載。
+`clear_artifacts()` 只刪除預設的 `model.onnx`、`thresholds.json` 與各自的 ETag；
+它會保留共享 cache root、子目錄，以及其他 consumer 擁有的檔案。
 
 ## 工作流程
 

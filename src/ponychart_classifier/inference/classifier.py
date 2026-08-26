@@ -79,7 +79,7 @@ class PonyChartClassifier:
         return build_thresholds(scores)
 
     def clear_artifacts(self) -> None:
-        """Clear runtime artifact cache and reset in-memory state."""
+        """Clear default classifier-owned artifacts and reset in-memory state."""
         artifacts.clear_artifacts()
         self._loaded = False
         self._session = None

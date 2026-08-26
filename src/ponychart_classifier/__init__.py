@@ -18,7 +18,7 @@ has_pending_update = _classifier.has_pending_update
 
 
 def clear_artifacts() -> None:
-    """Delete the runtime artifact cache directory and reset the default classifier."""
+    """Delete default classifier-owned artifacts and reset the classifier."""
     _classifier.clear_artifacts()
 
 

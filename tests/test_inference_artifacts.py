@@ -31,7 +31,7 @@ class _FakeOpener:
         return _FakeResponse(self._payload)
 
 
-def test_clear_artifacts_deletes_only_runtime_cache(
+def test_clear_artifacts_deletes_only_owned_canonical_files(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -41,7 +41,18 @@ def test_clear_artifacts_deletes_only_runtime_cache(
 
     (runtime_cache / "model.onnx").parent.mkdir(parents=True)
     (runtime_cache / "model.onnx").write_bytes(b"model")
+    (runtime_cache / "model.onnx.etag").write_text("model-etag", encoding="utf-8")
     (runtime_cache / "thresholds.json").write_text("{}", encoding="utf-8")
+    (runtime_cache / "thresholds.json.etag").write_text(
+        "thresholds-etag",
+        encoding="utf-8",
+    )
+    (runtime_cache / "current.json").write_text("{}", encoding="utf-8")
+    (runtime_cache / ".update.lock").write_bytes(b"\0")
+    generation = runtime_cache / "generations" / "generation-1"
+    generation.mkdir(parents=True)
+    (generation / "manifest.json").write_text("{}", encoding="utf-8")
+    (runtime_cache / "foreign.cache").write_bytes(b"foreign")
 
     repo_artifacts.mkdir()
     (repo_artifacts / "model.onnx").write_bytes(b"repo-model")
@@ -53,9 +64,66 @@ def test_clear_artifacts_deletes_only_runtime_cache(
 
     artifacts.clear_artifacts()
 
-    assert not runtime_cache.exists()
+    assert runtime_cache.is_dir()
+    for owned_name in (
+        "model.onnx",
+        "model.onnx.etag",
+        "thresholds.json",
+        "thresholds.json.etag",
+    ):
+        assert not (runtime_cache / owned_name).exists()
+    assert (runtime_cache / "current.json").read_text(encoding="utf-8") == "{}"
+    assert (runtime_cache / ".update.lock").read_bytes() == b"\0"
+    assert (generation / "manifest.json").read_text(encoding="utf-8") == "{}"
+    assert (runtime_cache / "foreign.cache").read_bytes() == b"foreign"
     assert (repo_artifacts / "model.onnx").exists()
     assert (custom_dir / "model.onnx").exists()
+
+
+def test_clear_artifacts_is_idempotent_with_partial_owned_files(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    runtime_cache = tmp_path / "cache" / "ponychart-classifier"
+    runtime_cache.mkdir(parents=True)
+    (runtime_cache / "model.onnx").write_bytes(b"model")
+    (runtime_cache / "thresholds.json.etag").write_text(
+        "thresholds-etag",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(artifacts, "DEFAULT_ARTIFACT_DIR", runtime_cache)
+
+    artifacts.clear_artifacts()
+    artifacts.clear_artifacts()
+
+    assert runtime_cache.is_dir()
+    assert not (runtime_cache / "model.onnx").exists()
+    assert not (runtime_cache / "thresholds.json.etag").exists()
+
+
+def test_clear_artifacts_unlinks_owned_symlinks_without_touching_targets(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    runtime_cache = tmp_path / "cache" / "ponychart-classifier"
+    runtime_cache.mkdir(parents=True)
+    external_model = tmp_path / "external-model.onnx"
+    external_thresholds = tmp_path / "external-thresholds.json"
+    external_model.write_bytes(b"external-model")
+    external_thresholds.write_text('{"external": 0.5}', encoding="utf-8")
+    try:
+        (runtime_cache / "model.onnx").symlink_to(external_model)
+        (runtime_cache / "thresholds.json").symlink_to(external_thresholds)
+    except OSError as exc:
+        pytest.skip(f"Symlinks are unavailable: {exc}")
+    monkeypatch.setattr(artifacts, "DEFAULT_ARTIFACT_DIR", runtime_cache)
+
+    artifacts.clear_artifacts()
+
+    assert not (runtime_cache / "model.onnx").exists()
+    assert not (runtime_cache / "thresholds.json").exists()
+    assert external_model.read_bytes() == b"external-model"
+    assert external_thresholds.read_text(encoding="utf-8") == '{"external": 0.5}'
 
 
 def test_update_artifact_skips_download_when_etag_matches(
